@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">一次模型调用与 Agent 运行过程的差别</title>
+  <desc id="desc">左侧模型调用从输入消息到输出消息后结束；右侧 Agent 由宿主程序维护上下文和状态，在模型与工具之间循环，直到满足停止条件。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f8fafc"/><stop offset="1" stop-color="#eef2ff"/></linearGradient>
+    <linearGradient id="primary" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#312e81" flood-opacity="0.14"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#818cf8"/></marker>
+    <marker id="greenArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#14b8a6"/></marker>
+  </defs>
+  <rect width="1200" height="520" rx="28" fill="url(#bg)"/>
+  <g font-family="Inter, 'Noto Sans SC', sans-serif">
+    <text x="600" y="50" text-anchor="middle" font-size="26" font-weight="700" fill="#1e1b4b">模型调用是一段生成；Agent 是宿主控制的一段运行过程</text>
+
+    <rect x="55" y="91" width="500" height="372" rx="24" fill="#ffffff" stroke="#dbeafe"/>
+    <text x="305" y="130" text-anchor="middle" font-size="21" font-weight="700" fill="#334155">一次普通模型调用</text>
+    <text x="305" y="156" text-anchor="middle" font-size="14" fill="#64748b">输入 → 生成 → 输出，然后结束</text>
+    <g filter="url(#shadow)">
+      <rect x="87" y="230" width="120" height="78" rx="16" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="147" y="263" text-anchor="middle" font-size="17" font-weight="700" fill="#334155">消息</text>
+      <text x="147" y="287" text-anchor="middle" font-size="13" fill="#64748b">本次输入</text>
+      <rect x="245" y="213" width="120" height="112" rx="55" fill="url(#primary)"/>
+      <text x="305" y="264" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Model</text>
+      <text x="305" y="288" text-anchor="middle" font-size="13" fill="#e0e7ff">生成内容</text>
+      <rect x="403" y="230" width="120" height="78" rx="16" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="463" y="263" text-anchor="middle" font-size="17" font-weight="700" fill="#334155">响应</text>
+      <text x="463" y="287" text-anchor="middle" font-size="13" fill="#64748b">文本或结构</text>
+    </g>
+    <g stroke="#818cf8" stroke-width="3" fill="none" marker-end="url(#arrow)">
+      <path d="M207 269H235"/><path d="M365 269H393"/>
+    </g>
+    <rect x="105" y="370" width="400" height="55" rx="14" fill="#fff7ed" stroke="#fed7aa"/>
+    <text x="305" y="393" text-anchor="middle" font-size="14" font-weight="700" fill="#9a3412">没有宿主能力时，“我读取了文件”仍只是一句话</text>
+    <text x="305" y="414" text-anchor="middle" font-size="12" fill="#c2410c">模型不会从动词中自动获得操作系统权限</text>
+
+    <rect x="600" y="91" width="545" height="372" rx="24" fill="#ffffff" stroke="#c7d2fe" stroke-width="2"/>
+    <text x="872" y="130" text-anchor="middle" font-size="21" font-weight="700" fill="#312e81">Agent 运行过程</text>
+    <text x="872" y="156" text-anchor="middle" font-size="14" fill="#64748b">宿主持有状态，在模型与工具之间循环</text>
+    <rect x="630" y="177" width="485" height="244" rx="20" fill="#f8fafc" stroke="#e2e8f0" stroke-dasharray="7 6"/>
+    <text x="650" y="203" font-size="13" font-weight="700" fill="#475569">HOST PROGRAM · 宿主程序</text>
+    <g filter="url(#shadow)">
+      <rect x="662" y="236" width="135" height="78" rx="16" fill="#ffffff" stroke="#cbd5e1"/>
+      <text x="729" y="267" text-anchor="middle" font-size="17" font-weight="700" fill="#334155">Context</text>
+      <text x="729" y="291" text-anchor="middle" font-size="13" fill="#64748b">消息与工具说明</text>
+      <rect x="831" y="221" width="120" height="108" rx="54" fill="url(#primary)"/>
+      <text x="891" y="270" text-anchor="middle" font-size="18" font-weight="700" fill="#ffffff">Model</text>
+      <text x="891" y="294" text-anchor="middle" font-size="13" fill="#e0e7ff">提出下一步</text>
+      <rect x="985" y="236" width="100" height="78" rx="16" fill="#ecfeff" stroke="#5eead4"/>
+      <text x="1035" y="267" text-anchor="middle" font-size="17" font-weight="700" fill="#115e59">Tool</text>
+      <text x="1035" y="291" text-anchor="middle" font-size="13" fill="#0f766e">执行动作</text>
+    </g>
+    <g fill="none" stroke-width="3">
+      <path d="M797 275H821" stroke="#818cf8" marker-end="url(#arrow)"/>
+      <path d="M951 275H975" stroke="#14b8a6" marker-end="url(#greenArrow)"/>
+      <path d="M1035 319C1035 375 729 375 729 324" stroke="#14b8a6" marker-end="url(#greenArrow)"/>
+    </g>
+    <text x="968" y="219" text-anchor="middle" font-size="12" fill="#0f766e">Tool Call</text>
+    <text x="882" y="394" text-anchor="middle" font-size="12" fill="#0f766e">Tool Result 回到上下文，再进行下一轮</text>
+    <rect x="633" y="430" width="480" height="24" rx="12" fill="#eef2ff"/>
+    <text x="873" y="447" text-anchor="middle" font-size="12" fill="#4f46e5">Loop + State 决定继续、停止、取消、报错与保存</text>
+  </g>
+</svg>

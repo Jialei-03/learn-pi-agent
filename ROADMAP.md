@@ -36,6 +36,8 @@
 
 - [从大模型到 Agent](docs/01-foundations/01-from-llm-to-agent.md)
 
+这篇已经建立后续章节共用的最小直觉：模型生成消息，宿主执行动作，工具结果回到上下文，循环决定继续或停止。阶段 1 仍为“进行中”，因为具体 API 格式、流式事件与错误边界尚未展开。
+
 计划中：
 
 - OpenAI Chat Completions / Responses 与 Anthropic Messages 的消息格式对比
