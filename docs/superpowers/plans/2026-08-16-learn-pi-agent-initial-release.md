@@ -555,8 +555,8 @@ $forbiddenPatterns = @(
   'sk-[A-Za-z0-9]{16,}',
   'gh[pousr]_[A-Za-z0-9]{16,}',
   'C:\\Users\\',
-  '/Users/[^/]+/',
-  '/home/[^/]+/'
+  ('/' + 'Users/' + '[^/]+/'),
+  ('/' + 'home/' + '[^/]+/')
 )
 foreach ($pattern in $forbiddenPatterns) {
   if ($content -match $pattern) { throw "Sensitive or local-path pattern found: $pattern" }
@@ -572,8 +572,8 @@ Run:
 
 ```powershell
 $allMarkdown = (Get-ChildItem -Recurse -File -Filter '*.md' | ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }) -join "`n"
-if ($allMarkdown.Contains('github.com/earendil-works/pi/blob/main/')) { throw 'Found unpinned Pi blob link' }
-if ($allMarkdown.Contains('github.com/earendil-works/pi/tree/main/')) { throw 'Found unpinned Pi tree link' }
+if ($allMarkdown.Contains('github.com/earendil-works/pi/blob/' + 'main/')) { throw 'Found unpinned Pi blob link' }
+if ($allMarkdown.Contains('github.com/earendil-works/pi/tree/' + 'main/')) { throw 'Found unpinned Pi tree link' }
 git diff --check
 git status --short
 ```
