@@ -1,0 +1,89 @@
+# Pi 源码地图：先找到主干
+
+源码地图的作用不是一次展示所有目录，而是帮你回答第一个工程问题：**一次 coding agent 交互大致跨过哪些层？**
+
+本文所有 Pi 链接固定到 commit `086c32e74530564922d011ade23ff582c9d63116`。如果你阅读最新 `main`，目录和职责可能已经变化，请先看[版本基线](version-baseline.md)。
+
+![Pi 主要包的职责与依赖方向](../assets/diagrams/pi-package-map.svg)
+
+## 第一层：五个需要先认识的包
+
+| 源码入口 | 初学者可以先记住的一句话 | 暂时不要误解为 |
+| --- | --- | --- |
+| [`packages/ai`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/ai) | 统一多供应商模型 API、消息、工具与流式事件 | 它不是完整 Agent，也不负责直接执行编码工具 |
+| [`packages/agent`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/agent) | Agent runtime：维护运行状态，组织模型调用、工具调用和事件 | 它不是完整 CLI 产品界面 |
+| [`packages/coding-agent`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent) | 面向编码场景的产品运行层，装配会话、工具、资源和交互 | 它不等于底层模型 Provider |
+| [`packages/tui`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/tui) | 终端 UI 与差分渲染能力 | UI 显示的事件不是模型直接控制终端 |
+| [`packages/telemetry`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/telemetry) | 供应商中立的遥测契约、适配与类型 | 可观测性本身不会保证任务正确 |
+
+可以先把主依赖方向理解成：
+
+```text
+模型供应商
+    ↑ 请求与流式响应
+pi-ai
+    ↑ 统一消息、模型与工具类型
+pi-agent-core
+    ↑ Agent 状态、事件与工具循环
+pi-coding-agent
+    ↙                 ↘
+ pi-tui            编码工具 / 资源 / 会话
+
+pi-telemetry 从关键边界观察运行，但不是主控制链。
+```
+
+箭头表达“上层调用下层、响应向上返回”的学习视角，不是完整的构建依赖图。
+
+## 第二层：先读三份关键文件
+
+### 1. 模型世界的类型：`pi-ai/src/types.ts`
+
+打开 [`packages/ai/src/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts)，先搜索这些概念：Message、Content、Tool、Context、Stream Event。
+
+阅读目标不是记住所有联合类型，而是看出模型边界需要表达哪些事实：谁发的消息，消息包含文字还是工具请求，工具结果如何关联，响应为何可以增量到达。
+
+### 2. Agent 世界的类型：`pi-agent-core/src/types.ts`
+
+打开 [`packages/agent/src/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/types.ts)，观察 AgentMessage、AgentTool、AgentEvent、AgentLoopConfig 等类型如何在模型消息之外增加运行所需的信息。
+
+一个重要阅读问题是：哪些类型要传给模型，哪些只存在于宿主程序？两者不一定相同。
+
+### 3. 低层循环：`agent-loop.ts`
+
+打开 [`packages/agent/src/agent-loop.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent-loop.ts)，搜索 `runAgentLoop`、`runLoop`、`streamAssistantResponse` 和 `executeToolCalls`。
+
+这个固定版本体现了几件关键事实：
+
+- 循环内部主要使用 `AgentMessage[]`，到 LLM 调用边界才转换为模型可接受的 `Message[]`；
+- 循环发出 agent、turn、message、tool execution 等事件，界面可以消费这些事件；
+- assistant 响应中出现 tool call 后，宿主执行工具并把结果追加到上下文；
+- 循环还处理停止、错误、中止、steering 与 follow-up，并非只有一条永远成功的 happy path。
+
+## 推荐阅读顺序
+
+### 第一次阅读：只跟“消息”
+
+1. 用户消息从哪里进入 `runAgentLoop`？
+2. 什么时候被加入 `currentContext.messages`？
+3. 什么时候转换为 LLM 消息？
+4. assistant 消息和工具结果什么时候再被追加？
+
+### 第二次阅读：只跟“事件”
+
+从 `agent_start`、`turn_start`、`message_start` 追到 `agent_end`。记录每类事件是“动作发生前”“增量过程中”还是“完成后”发出。
+
+### 第三次阅读：只跟“工具”
+
+定位 tool call 的筛选、参数校验、执行、结果消息和终止条件。特别留意：模型生成了什么，宿主验证了什么，工具实现执行了什么。
+
+完成这三轮后，再进入 `coding-agent` 查找 AgentSession 与具体工具。这样你带着明确问题进入产品层，不会同时展开 CLI、TUI、会话存储、扩展和所有命令。
+
+## 为什么不从 CLI 入口一路单步
+
+CLI 入口往往同时处理参数、配置、认证、终端、主题、扩展和会话恢复。对初学者而言，入口最“真实”，却未必最适合第一次理解核心机制。先从类型和 loop 建立最小主干，再回到 coding-agent 看能力怎样装配，能显著减少无关细节。
+
+## 地图之外还有什么
+
+固定版本 `packages` 目录还包括 client、protocol、server、evals 与 session backend 等内容。它们会在需要解释远程协议、评测或存储时进入课程，不在第一张图上并不代表不重要。
+
+回到学习主线：[第一章：从大模型到 Agent](../docs/01-foundations/01-from-llm-to-agent.md)。

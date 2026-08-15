@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">Pi 主要包的职责与依赖方向</title>
+  <desc id="desc">模型供应商通过 pi-ai 接入 pi-agent-core，再由 pi-coding-agent 装配会话、工具和界面；pi-tui 位于交互侧，pi-telemetry 观察关键边界。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f8fafc"/><stop offset="1" stop-color="#eef2ff"/></linearGradient>
+    <linearGradient id="primary" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="7" stdDeviation="9" flood-color="#312e81" flood-opacity="0.13"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#818cf8"/></marker>
+    <marker id="dashArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#94a3b8"/></marker>
+  </defs>
+  <rect width="1200" height="650" rx="28" fill="url(#bg)"/>
+  <g font-family="Inter, 'Noto Sans SC', sans-serif">
+    <text x="600" y="50" text-anchor="middle" font-size="26" font-weight="700" fill="#1e1b4b">从模型 API 到 Coding Agent：先看主控制链</text>
+    <text x="600" y="79" text-anchor="middle" font-size="14" fill="#64748b">实线表示主要调用与返回方向；虚线表示观察或交互，不是完整依赖图</text>
+
+    <g filter="url(#shadow)">
+      <rect x="400" y="105" width="400" height="76" rx="18" fill="#ffffff" stroke="#c7d2fe"/>
+      <text x="600" y="136" text-anchor="middle" font-size="19" font-weight="700" fill="#312e81">OpenAI · Anthropic · Google · …</text>
+      <text x="600" y="161" text-anchor="middle" font-size="14" fill="#64748b">模型供应商：各自的请求格式与流式协议</text>
+
+      <rect x="400" y="224" width="400" height="88" rx="18" fill="#ffffff" stroke="#a5b4fc" stroke-width="2"/>
+      <text x="600" y="258" text-anchor="middle" font-size="21" font-weight="700" fill="#312e81">@earendil-works/pi-ai</text>
+      <text x="600" y="285" text-anchor="middle" font-size="14" fill="#64748b">统一模型、消息、内容块、工具与流式事件</text>
+
+      <rect x="400" y="355" width="400" height="88" rx="18" fill="#ffffff" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="600" y="389" text-anchor="middle" font-size="21" font-weight="700" fill="#312e81">@earendil-works/pi-agent-core</text>
+      <text x="600" y="416" text-anchor="middle" font-size="14" fill="#64748b">Agent 状态、事件、模型调用与工具循环</text>
+
+      <rect x="400" y="486" width="400" height="105" rx="18" fill="url(#primary)"/>
+      <text x="600" y="524" text-anchor="middle" font-size="21" font-weight="700" fill="#ffffff">@earendil-works/pi-coding-agent</text>
+      <text x="600" y="553" text-anchor="middle" font-size="14" fill="#e0e7ff">装配 AgentSession、编码工具、资源、扩展与 CLI</text>
+      <text x="600" y="575" text-anchor="middle" font-size="13" fill="#c7d2fe">这里形成用户实际操作的 coding agent</text>
+    </g>
+
+    <g fill="none" stroke="#818cf8" stroke-width="3" marker-end="url(#arrow)">
+      <path d="M600 181V216"/>
+      <path d="M600 312V347"/>
+      <path d="M600 443V478"/>
+    </g>
+    <g font-size="12" fill="#6366f1">
+      <text x="615" y="205">API 请求 / 流式响应</text>
+      <text x="615" y="336">统一类型与 Provider 调用</text>
+      <text x="615" y="467">状态、事件与工具请求</text>
+    </g>
+
+    <g filter="url(#shadow)">
+      <rect x="65" y="486" width="235" height="105" rx="18" fill="#ffffff" stroke="#cbd5e1"/>
+      <text x="182" y="526" text-anchor="middle" font-size="20" font-weight="700" fill="#334155">pi-tui</text>
+      <text x="182" y="555" text-anchor="middle" font-size="14" fill="#64748b">终端 UI 与差分渲染</text>
+      <text x="182" y="577" text-anchor="middle" font-size="13" fill="#94a3b8">消费事件，呈现交互</text>
+
+      <rect x="900" y="289" width="235" height="125" rx="18" fill="#ffffff" stroke="#cbd5e1"/>
+      <text x="1017" y="329" text-anchor="middle" font-size="20" font-weight="700" fill="#334155">pi-telemetry</text>
+      <text x="1017" y="358" text-anchor="middle" font-size="14" fill="#64748b">供应商中立的遥测契约</text>
+      <text x="1017" y="382" text-anchor="middle" font-size="13" fill="#94a3b8">观察关键边界与运行结果</text>
+    </g>
+
+    <g fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-dasharray="7 7" marker-end="url(#dashArrow)">
+      <path d="M300 538H390"/>
+      <path d="M808 398H890"/>
+      <path d="M808 538Q950 538 1017 424"/>
+    </g>
+    <text x="345" y="526" text-anchor="middle" font-size="12" fill="#64748b">用户交互</text>
+    <text x="849" y="386" text-anchor="middle" font-size="12" fill="#64748b">事件</text>
+
+    <rect x="70" y="109" width="250" height="105" rx="16" fill="#ffffff" fill-opacity="0.72" stroke="#e2e8f0"/>
+    <text x="92" y="137" font-size="14" font-weight="700" fill="#334155">阅读顺序</text>
+    <text x="92" y="162" font-size="13" fill="#64748b">① pi-ai 类型</text>
+    <text x="92" y="184" font-size="13" fill="#64748b">② agent 类型与 loop</text>
+    <text x="92" y="206" font-size="13" fill="#64748b">③ coding-agent 装配</text>
+  </g>
+</svg>
