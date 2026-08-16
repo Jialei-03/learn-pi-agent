@@ -340,7 +340,20 @@ if ($oldPathHits) { throw "Public content still references old guides:`n$($oldPa
 Run:
 
 ```powershell
-$markdownFiles = Get-ChildItem -Recurse -File -Filter '*.md'
+$readerRoots = @(
+  'README.md',
+  'ROADMAP.md',
+  'CONTRIBUTING.md',
+  'docs/01-foundations',
+  'references'
+)
+$markdownFiles = foreach ($root in $readerRoots) {
+  if (Test-Path -LiteralPath $root -PathType Leaf) {
+    Get-Item -LiteralPath $root
+  } else {
+    Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.md'
+  }
+}
 $broken = [System.Collections.Generic.List[string]]::new()
 foreach ($file in $markdownFiles) {
   $content = Get-Content -Raw -LiteralPath $file.FullName
