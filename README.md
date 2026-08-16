@@ -35,17 +35,12 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例，�
 
 ## 从这里开始
 
-第一次来，建议依次阅读：
+按编号从头读到尾即可，不需要先选择阅读路线：
 
-1. [你将学到什么](docs/00-start/01-what-you-will-learn.md)：先建立学习目标；
-2. [如何使用本仓库](docs/00-start/02-how-to-use-this-repo.md)：选择适合自己的阅读路线；
-3. [源码版本为什么重要](docs/00-start/03-source-version.md)：理解为什么源码链接必须固定 commit；
-4. [第一章：从大模型到 Agent](docs/01-foundations/01-from-llm-to-agent.md)：从一次模型调用走到最小 Agent Loop；
-5. [完整学习路线](ROADMAP.md)：查看后续章节如何逐层展开。
+1. [第 1 章：从大模型到 Agent](docs/01-foundations/01-from-llm-to-agent.md)
+2. 后续章节按照 [ROADMAP](ROADMAP.md) 的顺序继续。
 
-如果你只有 30 分钟，直接完成[这里的第一次练习](docs/00-start/02-how-to-use-this-repo.md#第一个-30-分钟)即可。
-
-当前首篇正文已经完成：**[从大模型到 Agent：中间到底多了什么？](docs/01-foundations/01-from-llm-to-agent.md)**。它用一次天气工具调用解释模型、宿主程序、工具结果与循环之间的边界。
+源码仍在变化。正文中的 Pi 源码链接固定到同一 commit；遇到路径或行为差异时，再查阅[版本基线](references/version-baseline.md)。
 
 ## 为什么选择 Pi
 
