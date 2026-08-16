@@ -1,1 +1,47 @@
+# Local worktrees and agent state
 .worktrees/
+.codex/
+.claude/
+docs/superpowers/
+
+# Secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Dependencies, caches, and build output
+node_modules/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+coverage/
+dist/
+build/
+
+# Temporary and generated output
+tmp/
+temp/
+out/
+output/
+generated_images/
