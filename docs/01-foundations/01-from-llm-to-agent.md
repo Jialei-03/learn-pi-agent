@@ -22,7 +22,7 @@ const response = await model.generate(messages);
 
 假设用户问：“法国的首都是什么？”模型返回“巴黎”。这是一条完整的普通问答路径：输入消息，生成输出消息。
 
-![一次模型调用与一个 Agent 运行过程的差别](../../assets/diagrams/model-vs-agent.svg)
+![一次模型调用与一个 Agent 运行过程的差别](../../assets/from-llm-to-agent-illustrations/01-model-vs-agent.png)
 
 ### 对话历史是谁记住的？
 
@@ -101,7 +101,7 @@ Agent ≈ Model + Context + Loop + Tools + State
 
 用户问：“北京现在天气怎么样？”假设模型的训练知识无法提供可靠的实时天气，而宿主向它描述了一个 `get_weather` 工具。
 
-![从用户问题到工具结果再到最终回答的完整闭环](../../assets/diagrams/tool-call-loop.svg)
+![从用户问题到工具结果再到最终回答的完整闭环](../../assets/from-llm-to-agent-illustrations/02-tool-call-loop.png)
 
 完整过程可以压缩成五步：
 
@@ -238,7 +238,7 @@ OpenAI 的 [Function calling 指南](https://developers.openai.com/api/docs/guid
 
 ### 误解三：工具 schema 能保证安全
 
-Schema 可以验证输入形状，不能回答“这个用户能否删除这个文件”“这个域名是否允许访问”。权限和副作用控制必须在宿主执行边界实现。Pi 固定版本的 README 也明确提醒其默认继承启动进程的权限，必要时应使用容器或沙箱；详情见[版本基线](../../references/version-baseline.md#安全相关的版本事实)。
+Schema 可以验证输入形状，不能回答“这个用户能否删除这个文件”“这个域名是否允许访问”。权限和副作用控制必须在宿主执行边界实现。Pi 固定版本的 README 也明确提醒其默认继承启动进程的权限，必要时应使用容器或沙箱；详情见[版本基线](https://github.com/Jialei-03/learn-pi-agent/blob/main/references/version-baseline.md#安全相关的版本事实)。
 
 ## 8. 回到 Pi：三层主导航
 
@@ -255,7 +255,7 @@ pi-coding-agent
   把核心能力组织成交互式 coding agent，装配会话、编码工具和资源
 ```
 
-这三层分别承担“怎样和不同模型说话”“怎样持续运行 Agent”“怎样成为可用的编码产品”。详细固定链接和阅读顺序见 [Pi 源码地图](../../references/source-map.md)。
+这三层分别承担“怎样和不同模型说话”“怎样持续运行 Agent”“怎样成为可用的编码产品”。详细固定链接和阅读顺序见 [Pi 源码地图](https://github.com/Jialei-03/learn-pi-agent/blob/main/references/source-map.md)。
 
 后面阅读源码时，我们会沿这条路径验证：
 
@@ -283,4 +283,4 @@ pi-ai provider
 
 ---
 
-**延伸入口：** [术语表](../../references/glossary.md) · [论文索引](../../references/papers.md) · [版本基线](../../references/version-baseline.md) · [Pi 源码地图](../../references/source-map.md)
+**延伸入口：** [术语表](https://github.com/Jialei-03/learn-pi-agent/blob/main/references/glossary.md) · [论文索引](https://github.com/Jialei-03/learn-pi-agent/blob/main/references/papers.md) · [版本基线](https://github.com/Jialei-03/learn-pi-agent/blob/main/references/version-baseline.md) · [Pi 源码地图](https://github.com/Jialei-03/learn-pi-agent/blob/main/references/source-map.md)
