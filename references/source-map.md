@@ -59,24 +59,21 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 - assistant 响应中出现 tool call 后，宿主执行工具并把结果追加到上下文；
 - 循环还处理停止、错误、中止、steering 与 follow-up，并非只有一条永远成功的 happy path。
 
-## 推荐阅读顺序
+## 三条核心观察主线
 
-### 第一次阅读：只跟“消息”
+### 消息主线
 
-1. 用户消息从哪里进入 `runAgentLoop`？
-2. 什么时候被加入 `currentContext.messages`？
-3. 什么时候转换为 LLM 消息？
-4. assistant 消息和工具结果什么时候再被追加？
+用户消息通过 `runAgentLoop` 进入循环，并加入 `currentContext.messages`。Agent 内部消息到达模型调用边界时，由 `convertToLlm` 转换为 LLM 能接受的消息；模型响应和 Tool Result 随后继续追加到上下文。
 
-### 第二次阅读：只跟“事件”
+### 事件主线
 
-从 `agent_start`、`turn_start`、`message_start` 追到 `agent_end`。记录每类事件是“动作发生前”“增量过程中”还是“完成后”发出。
+`agent_start` 和 `turn_start` 标记运行边界，`message_start`、增量事件与 `message_end` 描述响应过程，`agent_end` 给出这次循环的结束结果。UI、日志和遥测通过这些事件观察运行，而不需要接管核心循环。
 
-### 第三次阅读：只跟“工具”
+### 工具主线
 
-定位 tool call 的筛选、参数校验、执行、结果消息和终止条件。特别留意：模型生成了什么，宿主验证了什么，工具实现执行了什么。
+模型响应中的 Tool Call 先被筛选并校验参数，宿主再执行对应工具，把结果转换为 Tool Result。循环根据工具结果、错误和终止条件决定继续调用模型还是结束。
 
-完成这三轮后，再进入 `coding-agent` 查找 AgentSession 与具体工具。这样你带着明确问题进入产品层，不会同时展开 CLI、TUI、会话存储、扩展和所有命令。
+消息、事件和工具三条主线共同构成进入 `coding-agent` 前的最小地图。`coding-agent` 在这套运行机制之上继续装配 AgentSession、CLI、会话存储、扩展和具体编码工具。
 
 ## 为什么不从 CLI 入口一路单步
 
