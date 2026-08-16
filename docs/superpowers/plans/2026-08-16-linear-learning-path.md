@@ -14,7 +14,10 @@
 - 不新增多路线、读者分流或“第一个 30 分钟”等学习方法内容。
 - 第一个学习入口必须直接指向 `docs/01-foundations/01-from-llm-to-agent.md`。
 - `references/version-baseline.md` 保留，但不列为读者开始学习前的必读步骤。
-- 不重写第一章，不新增第二章，不修改 Pi 基线 commit。
+- 面向读者的正文不布置练习、作业、自测或思考题，不要求读者回答、记录、画图或复述。
+- 可以用问题引出讲解，但必须在正文中直接给出解释，不能把问题留给读者。
+- 不改写第一章的知识讲解，只清理结尾自测并改写衔接；不新增第二章，不修改 Pi 基线 commit。
+- CONTRIBUTING 中面向贡献者的质量检查清单保留。
 - 历史 specs 和 plans 保留为决策记录，不按当前导航倒改历史。
 
 ---
@@ -34,6 +37,10 @@ docs/00-start/03-source-version.md
 ```text
 README.md       # 唯一、直接的阅读入口
 ROADMAP.md      # 简短的线性章节清单
+CONTRIBUTING.md # 增加“正文不布置作业”的写作规则
+docs/01-foundations/01-from-llm-to-agent.md # 删除结尾自测，保留知识讲解
+references/source-map.md # 把三轮阅读任务改成三条直接讲解的观察主线
+references/papers.md # 删除记录任务
 ```
 
 保留：
@@ -200,13 +207,118 @@ git commit -m "docs: simplify the learning roadmap"
 
 ---
 
-### Task 3: 全仓验证、合并并推送
+### Task 3: 删除面向读者的作业和自测
+
+**Files:**
+- Modify: `docs/01-foundations/01-from-llm-to-agent.md`
+- Modify: `references/source-map.md`
+- Modify: `references/papers.md`
+- Modify: `CONTRIBUTING.md`
+
+**Interfaces:**
+- Consumes: 第一章、源码地图和论文索引中的现有教学内容。
+- Produces: 只负责解释、不向读者布置任务的正文规则与内容。
+
+- [ ] **Step 1: 运行作业式表达检查并确认当前存在匹配**
+
+Run:
+
+```powershell
+$readerFiles = @(
+  'README.md',
+  'ROADMAP.md',
+  'docs/01-foundations/01-from-llm-to-agent.md',
+  'references/source-map.md',
+  'references/papers.md'
+)
+$taskPhrases = @(
+  '第一次练习',
+  '带着三个问题',
+  '先不用查看答案',
+  '用一张不超过',
+  '第一次阅读：只跟',
+  '第二次阅读：只跟',
+  '第三次阅读：只跟',
+  '读论文时建议记录'
+)
+$hits = foreach ($file in $readerFiles) {
+  Select-String -LiteralPath $file -SimpleMatch -Pattern $taskPhrases
+}
+if (-not $hits) { throw 'Expected homework-style phrases before Task 3' }
+$hits
+```
+
+Expected: 至少命中第一章、源码地图和论文索引中的任务式表达。
+
+- [ ] **Step 2: 把第一章结尾改成直接衔接**
+
+删除 `## 带着三个问题进入下一阶段` 及其三个问题和“画图讲给别人听”的要求，替换为：
+
+```markdown
+## 下一阶段：模型 API 如何表达这个过程
+
+本章建立了模型、宿主程序、上下文、工具与循环之间的基本关系。下一章会沿同一次工具调用，直接比较 OpenAI 与 Anthropic 如何表示消息、Tool Call 和 Tool Result，并说明这些差异为什么需要由 `pi-ai` 的 Provider 层吸收。
+```
+
+保留此前已经直接解释答案的教学问句，例如“如果没有循环会发生什么”。
+
+- [ ] **Step 3: 把源码地图的阅读任务改成观察主线**
+
+把 `## 推荐阅读顺序` 改为 `## 三条核心观察主线`：
+
+- `### 消息主线`：直接说明消息进入、转换和追加的位置；
+- `### 事件主线`：直接说明从 `agent_start` 到 `agent_end` 的事件作用；
+- `### 工具主线`：直接说明 Tool Call、校验、执行、Tool Result 和终止条件；
+- 结尾说明这三条主线共同构成进入 `coding-agent` 前的最小地图，不要求读者分三轮完成任务。
+
+- [ ] **Step 4: 清理论文任务并增加写作规则**
+
+从 `references/papers.md` 删除：
+
+```markdown
+读论文时建议记录四项：**任务设置、输入输出、主要比较、作者承认的局限**。只记住方法名字，很容易把研究结论扩张到论文没有验证的场景。
+```
+
+在 `CONTRIBUTING.md` 的“写作原则”下增加：
+
+```markdown
+### 正文只负责讲解
+
+面向读者的章节不布置练习、作业、自测或思考题，也不要求读者回答、记录、画图或复述。可以用问题引出概念，但必须紧接着给出解释；章节结尾只做知识总结和下一章衔接。
+```
+
+- [ ] **Step 5: 验证作业式表达已经消失**
+
+Run:
+
+```powershell
+$hits = foreach ($file in $readerFiles) {
+  Select-String -LiteralPath $file -SimpleMatch -Pattern $taskPhrases
+}
+if ($hits) { throw "Homework-style phrases remain:`n$($hits -join "`n")" }
+$contributing = Get-Content -Raw -LiteralPath 'CONTRIBUTING.md'
+if (-not $contributing.Contains('正文只负责讲解')) { throw 'CONTRIBUTING lacks the no-homework rule' }
+'Task 3 passed'
+```
+
+Expected: `Task 3 passed`。
+
+- [ ] **Step 6: 提交教学表达调整**
+
+```powershell
+git add -- CONTRIBUTING.md docs/01-foundations/01-from-llm-to-agent.md references/source-map.md references/papers.md
+git commit -m "docs: remove homework from reader content"
+```
+
+---
+
+### Task 4: 全仓验证、合并并推送
 
 **Files:**
 - Modify: Markdown files only if validation finds a concrete broken link.
 
 **Interfaces:**
-- Consumes: Task 1 的唯一入口和 Task 2 的线性 ROADMAP。
+- Consumes: Task 1 的唯一入口、Task 2 的线性 ROADMAP 和 Task 3 的纯讲解内容。
 - Produces: 公开仓库 `main` 上无断链的简化学习路径。
 
 - [ ] **Step 1: 检查公开内容是否仍引用旧导读**
