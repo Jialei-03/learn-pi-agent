@@ -20,14 +20,13 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 
 本项目只负责讲解，不布置作业，也不要求你先自己实现一个 Agent。
 
-![Mox 带着读者从基础直觉走向源码追踪](assets/mox-illustrations/mox-learning-path.png)
+![从基础直觉到源码追踪的学习路径](assets/mox-illustrations/mox-learning-path.png)
 
 ## 从哪里开始
 
-按编号从头读到尾即可：
+从第一章开始，按章节编号继续阅读：
 
 1. [第 1 章：从大模型到 Agent](https://github.com/Jialei-03/learn-pi-agent/blob/main/docs/01-foundations/01-from-llm-to-agent.md)
-2. [完整阅读路线](https://github.com/Jialei-03/learn-pi-agent/blob/main/ROADMAP.md)
 
 第一章先建立 Model、Context、Loop、Tools、State 的直觉，再进入 OpenAI 与 Anthropic 的工具调用表达，最后回到 Pi 的三层包结构。
 
@@ -47,23 +46,6 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 - 连接 ReAct、Toolformer 等经典论文；
 - 沿固定版本追踪 Pi 的调用链和运行事件；
 - 解释 Pi 为什么拆成 `pi-ai`、`pi-agent-core` 和 `pi-coding-agent`。
-
-## Mox：本仓库的 IP
-
-Mox 是 `dive into X` 的白色状态助手：白色圆润身体、黑色椭圆脸、顶部橙灯、右肩功能模块和小 X。它不是装饰，而是用动作解释“模型—工具—上下文—循环”如何共同工作。
-
-配图使用独立的 [Mox Illustrations Skill](https://github.com/Jialei-03/mox-illustrations) 生成。角色外形以[这张九状态设定图](https://github.com/Jialei-03/learn-pi-agent/blob/main/assets/mox-illustrations/mox-reference-sheet.png)为准；仓库中的配图会优先使用 Mox。保留的旧 SVG 只作为尚未替换章节的过渡资产。
-
-## 参考入口
-
-- [Pi 官方仓库](https://github.com/earendil-works/pi)
-- [Pi 官方文档](https://pi.dev/docs/latest)
-- [OpenAI Function Calling](https://developers.openai.com/api/docs/guides/function-calling)
-- [Anthropic Tool Use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools)
-- [ReAct 论文](https://arxiv.org/abs/2210.03629)
-- [Toolformer 论文](https://arxiv.org/abs/2302.04761)
-
-外部 API 与上游源码会变化；正文会标注核对日期，关键说明尽量固定到对应版本。
 
 ## 参与方式
 
