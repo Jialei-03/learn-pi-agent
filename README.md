@@ -52,7 +52,7 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 
 Mox 是 `dive into X` 的白色状态助手：白色圆润身体、黑色椭圆脸、顶部橙灯、右肩功能模块和小 X。它不是装饰，而是用动作解释“模型—工具—上下文—循环”如何共同工作。
 
-配图使用独立的 [Mox Illustrations Skill](https://github.com/Jialei-03/mox-illustrations) 生成。仓库中的配图会优先使用 Mox；保留的旧 SVG 只作为尚未替换章节的过渡资产。
+配图使用独立的 [Mox Illustrations Skill](https://github.com/Jialei-03/mox-illustrations) 生成。角色外形以[这张九状态设定图](https://github.com/Jialei-03/learn-pi-agent/blob/main/assets/mox-illustrations/mox-reference-sheet.png)为准；仓库中的配图会优先使用 Mox。保留的旧 SVG 只作为尚未替换章节的过渡资产。
 
 ## 参考入口
 
