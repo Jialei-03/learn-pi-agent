@@ -649,6 +649,14 @@ Pi 把核心循环保持得较小，同时提供扩展入口。新的工具、�
 - `stopReason` 结束的是一次模型生成；Runtime 根据响应内容和运行规则，落实整段 Agent 运行的继续或停止。
 - Harness 把 Runtime、模型连接、工具、Session、执行环境和界面装配成完整 Agent 系统；Pi 正是沿着这条思路组织代码。
 
+## 下一章：模型 API 与消息协议
+
+Agent Loop 已经需要反复调用模型。下一步要弄清楚：宿主怎样把 Context 发送给模型，模型又怎样返回文本、Tool Call 和 Tool Result？
+
+下一章将比较 OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 三种常见格式，再回到 Pi，看看它怎样通过统一消息类型和 Provider Adapter 接入不同模型。
+
+[继续阅读第 2 章：模型 API 与消息协议](02-model-api-and-message-protocols.md)
+
 ## 参考资料
 
 - [Pi Agent Harness：固定版本 README](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/README.md)：Pi 的包结构、定位与运行权限说明。
