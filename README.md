@@ -24,11 +24,14 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 
 ## 从哪里开始
 
+完整章节结构记录在[课程章节结构](docs/00-course-structure.md)中；下面只保留当前学习入口：
+
 从第一章开始，按章节编号继续阅读：
 
-1. [第 1 章：从大模型到 Agent](https://github.com/Jialei-03/learn-pi-agent/blob/main/docs/01-foundations/01-from-llm-to-agent.md)
+1. [第 1 章：从 LLM 到 Agent，再到 Harness](docs/01-from-llm-to-agent.md)
+2. [第 2 章：模型 API 与消息协议](docs/02-model-api-and-message-protocols.md)
 
-第一章先建立 Model、Context、Loop、Tools、State 的直觉，再进入 OpenAI 与 Anthropic 的工具调用表达，最后回到 Pi 的三层包结构。
+第一章从一次模型调用进入 Agent Loop、Runtime 与 Harness；第二章再比较 OpenAI、Anthropic 与 Pi 对模型消息和工具调用的表达方式。
 
 ## 适合谁
 

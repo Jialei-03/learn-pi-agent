@@ -83,4 +83,4 @@ CLI 入口往往同时处理参数、配置、认证、终端、主题、扩展�
 
 固定版本 `packages` 目录还包括 client、protocol、server、evals 与 session backend 等内容。它们会在需要解释远程协议、评测或存储时进入课程，不在第一张图上并不代表不重要。
 
-回到学习主线：[第一章：从大模型到 Agent](../docs/01-foundations/01-from-llm-to-agent.md)。
+回到学习主线：[第一章：从大模型到 Agent](../docs/01-from-llm-to-agent.md)。

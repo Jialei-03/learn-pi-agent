@@ -133,4 +133,4 @@ Agent 尚在执行时，宿主把新用户指令注入后续 turn，用于纠正
 模型返回 Tool Call ≠ 工具已经执行
 ```
 
-这两个边界能消除大量关于 “memory” 和 “autonomous action” 的误解。带着它们进入[第一章](../docs/01-foundations/01-from-llm-to-agent.md)。
+这两个边界能消除大量关于 “memory” 和 “autonomous action” 的误解。带着它们进入[第一章](../docs/01-from-llm-to-agent.md)。
