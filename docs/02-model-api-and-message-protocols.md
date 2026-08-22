@@ -1,107 +1,30 @@
 # 模型 API 与消息协议：OpenAI、Anthropic 与 Pi
 
-> **本章问题：同一个 Agent Loop，为什么面对不同模型供应商时不能直接复用同一份请求和响应？**
-
-第一章用 `model.generate(context)` 表示一次调用。现实中，模型服务通过 API 接收输入并返回输出；不同服务对消息、工具调用和工具结果的写法并不相同。
-
-OpenAI 的 Chat Completions、Responses 和 Anthropic 的 Messages 都可以承载文本、工具调用和多轮上下文，下面用它们的请求与响应对照这些写法。
-
-## 1. API、SDK、Runtime：三个不要混淆的层次
-
-### 1.1 API 是通信契约
-
-API 规定了：
-
-- 请求发送到哪里；
-- 请求体有哪些字段；
-- 消息和内容块怎样表示；
-- 工具如何声明；
-- 响应如何表达文本、工具调用、错误和停止原因；
-- 如何进行流式传输。
-
-它解决的是“应用和模型服务如何通信”。
-
-### 1.2 SDK 是语言绑定
-
-SDK 把发送请求、认证和数据格式转换封装成 TypeScript、Python 或其他语言中的方法。例如：
+第一章用下面这行代码表示一次模型调用：
 
 ```ts
-const response = await client.responses.create({
-  model: "your-model",
-  input: "你好",
-});
+const response = await model.generate(context);
 ```
 
-SDK 让调用更方便，但它不一定替你管理完整的 Agent Loop。是否自动执行工具、保存会话或重试，要看 SDK 的层级和配置。
+这行代码帮助我们先看清 Agent Loop，却隐藏了宿主程序与模型服务之间的通信过程。通过 OpenAI、Anthropic 这类在线服务调用大模型时，宿主程序需要按照服务规定的格式发送请求，再按照同一套格式读取响应。
 
-### 1.3 Runtime / Harness 是更上层的运行系统
+这种由调用地址、请求结构、响应结构和交互规则组成的接口就是**模型 API**。它规定请求里怎样表示消息和工具，响应里怎样表示文本、工具调用与停止信息。
 
-Runtime 需要在 API 之上处理：
+OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 都能完成这些事情，但使用的字段并不相同。Pi 的 `pi-ai` 位于这条边界上：它把统一的 Context 转换成供应商请求，再把不同响应转换回 Agent Runtime 能理解的消息。
 
-- 多轮消息如何保存；
-- Tool Call 如何分发；
-- Tool Result 如何关联；
-- 哪些响应可以继续；
-- 哪些错误可以重试；
-- 何时等待用户或结束运行。
+本章仍然沿用两个熟悉的例子：
 
-所以，下面三段代码的抽象层次不同：
+- “法国的首都是什么？”用来观察普通文本调用；
+- “北京现在天气怎么样？”用来观察 Tool Call 与 Tool Result。
 
-```text
-fetch("/v1/responses")       // 直接使用 API
-client.responses.create(...) // 使用 SDK
-runAgent(...)                 // 使用 Agent Runtime / Harness
-```
+## 1. 一次真实的 API 调用怎样表达
 
-Runtime 使用 API 和 SDK 组织模型调用；工具的定义、参数校验和执行则由宿主程序负责。
-
-## 2. 一次模型调用需要表达哪些事实
-
-虽然供应商字段不同，但 Agent Runtime 通常需要从 API 中提取下面几类事实：
-
-| 要表达的内容 | 作用 |
-| --- | --- |
-| 指令 | 系统或开发者希望模型遵守的规则 |
-| 输入 | 用户消息、历史消息、文件、图片或其他内容 |
-| 工具说明 | 模型可以请求哪些工具，以及参数格式（Schema） |
-| 模型输出 | 文本、结构化内容、工具调用或拒答 |
-| 调用编号 | 哪个工具结果对应哪个工具调用 |
-| 结束原因 | 这一轮为什么结束或需要继续 |
-| 用量统计 | token、缓存、延迟和费用等信息 |
-| 流式事件 | 响应如何分成多次增量到达 |
-
-可以用一个简化的数据流表示：
-
-```text
-输入 + 工具说明
-          ↓
-       模型 API
-          ↓
-文本 / 工具调用 / 错误 / 结束原因
-          ↓
-宿主程序
-          ↓
-运行状态
-```
-
-宿主程序需要从不同 API 的响应中读出这些共同信息，同时保留供应商提供的特殊能力。
-
-## 3. OpenAI Chat Completions：以角色和消息为中心
-
-Chat Completions 是较早、也仍然广泛使用的聊天接口。它以 `messages` 数组为中心，用角色和消息字段表示对话。[Create chat completion](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
-
-### 3.1 最小文本请求
-
-下面用一个最小请求说明这些字段，模型名写成示例值：
+先从 OpenAI Chat Completions 的文本请求开始。宿主把一组对话消息提交到 `/v1/chat/completions`：
 
 ```json
 {
   "model": "your-model",
   "messages": [
-    {
-      "role": "system",
-      "content": "你是一个简洁、准确的助手。"
-    },
     {
       "role": "user",
       "content": "法国的首都是什么？"
@@ -110,14 +33,17 @@ Chat Completions 是较早、也仍然广泛使用的聊天接口。它以 `mess
 }
 ```
 
-文本响应的核心部分可以理解为：
+JSON 是一种用键和值表示结构化数据的文本格式。这份 JSON 是请求体，也就是宿主发送给服务的主要数据。两个字段分别表达：
+
+- `model`：这次要调用哪个模型；
+- `messages`：这次要交给模型的消息。
+
+服务完成生成后，会返回一份响应。下面保留与本章有关的字段：
 
 ```json
 {
-  "id": "chatcmpl_example",
   "choices": [
     {
-      "index": 0,
       "message": {
         "role": "assistant",
         "content": "法国的首都是巴黎。"
@@ -128,16 +54,111 @@ Chat Completions 是较早、也仍然广泛使用的聊天接口。它以 `mess
 }
 ```
 
-这里需要注意两个层次：
+宿主程序从 `choices[0].message` 取得模型消息，从 `finish_reason` 取得这一次生成的停止信息。
 
-- `message.content` 是模型生成的内容；
-- `finish_reason` 是供应商对这一轮结束原因的描述。
+请求和响应共同组成一次 API 调用：
 
-Runtime 可以把它们转换成自己的 `text` 和 `stopReason`，但不能假设所有供应商都有同名字段。
+```text
+宿主准备 JSON 请求
+        ↓
+发送到模型 API
+        ↓
+模型服务生成响应
+        ↓
+宿主读取 JSON 响应
+```
 
-### 3.2 在请求中声明函数工具
+![一次 API 调用中的请求、模型服务与响应](../assets/model-api-illustrations/00-api-request-response.png)
 
-Chat Completions 使用 `tools` 声明函数工具。函数名、描述和参数 Schema 会成为模型选择工具时看到的接口说明：
+### 1.1 `role` 标记消息在协议中的角色
+
+消息中的 `role` 表示这条记录在对话协议中承担什么角色。常见角色包括：
+
+| 角色 | 表达的内容 |
+| --- | --- |
+| `system` / `developer` | 应用提供的行为说明或高优先级指令 |
+| `user` | 用户输入或宿主放入用户侧的内容 |
+| `assistant` | 模型生成的内容 |
+| `tool` | OpenAI Chat Completions 中的工具结果 |
+
+这些名字属于 API 协议。不同 API 对同一种内容可能使用不同角色。例如，Anthropic 把工具结果放进 `user` 消息里的 `tool_result` 内容块，而不是使用 `tool` 角色。
+
+因此，看到 `role: "user"` 时，应先理解它在当前协议里的位置，不能只按日常语言推断“这一定是人手动输入的”。
+
+### 1.2 `content` 不一定只是一段字符串
+
+最简单的 `content` 是字符串：
+
+```json
+{
+  "role": "user",
+  "content": "法国的首都是什么？"
+}
+```
+
+当一条消息需要容纳多个部分时，API 可以把 `content` 组织成多个有类型的**内容块**。例如，Anthropic Messages 中的一段文字使用下面这个真实结构：
+
+```json
+{
+  "role": "user",
+  "content": [
+    {
+      "type": "text",
+      "text": "法国的首都是什么？"
+    }
+  ]
+}
+```
+
+这里的 `type: "text"` 说明这个 block 是文字。其他内容也会使用自己的类型和字段；后面的 Anthropic 与 Responses 示例会分别展示它们的真实格式。
+
+可以先记住两个层次：
+
+```text
+Message：说明整条记录由哪个协议角色承载
+Content Block：说明记录里每一部分是什么
+```
+
+### 1.3 SDK 把 API 调用包装成语言方法
+
+直接发送请求时，宿主要自己处理地址、请求头和 JSON。SDK 把这些步骤包装成 TypeScript、Python 等语言中的方法。
+
+使用 OpenAI TypeScript SDK 时，同一次调用可以写成：
+
+```ts
+import OpenAI from "openai";
+
+const client = new OpenAI();
+
+const completion = await client.chat.completions.create({
+  model: "your-model",
+  messages: [
+    { role: "user", content: "法国的首都是什么？" },
+  ],
+});
+```
+
+`your-model` 是模型 ID 的占位符，运行时要换成服务实际提供的模型。`new OpenAI()` 默认从 `OPENAI_API_KEY` 环境变量读取 API key；它是服务发给调用者的访问凭据，不应直接写进源码或提交到仓库。
+
+`client.chat.completions.create(...)` 是 SDK 方法；它最终仍要按照 Chat Completions API 的格式发送请求。
+
+现在可以区分三个层次：
+
+| 层次 | 解决的问题 | 例子 |
+| --- | --- | --- |
+| API | 应用与模型服务交换什么数据 | `messages`、`tool_calls`、`finish_reason` |
+| SDK | 在某种编程语言里怎样方便地调用 API | `client.chat.completions.create(...)` |
+| Runtime | 怎样反复调用模型、执行工具并推进任务 | 第一章的 Agent Loop |
+
+SDK 可以提供便捷方法，但不会自动等于完整的 Agent Runtime。是否管理循环、工具和会话，要看具体 SDK 提供了哪一层能力。
+
+## 2. OpenAI Chat Completions：消息里的 Tool Call
+
+普通文本调用只需要 `messages`。当模型可以请求工具时，宿主还要在请求中提供工具说明。
+
+### 2.1 用 `tools` 告诉模型有哪些能力
+
+天气工具可以这样声明：
 
 ```json
 {
@@ -172,11 +193,11 @@ Chat Completions 使用 `tools` 声明函数工具。函数名、描述和参数
 }
 ```
 
-这里的 `parameters` 只是工具的输入契约，不是工具实现。模型可以选择调用它，但网络请求仍然由宿主程序执行。
+`parameters` 描述工具接受什么参数。它帮助模型生成结构化输入，也帮助宿主检查参数形状；真正的 `get_weather` 实现仍然在宿主程序中。
 
-### 3.3 Tool Call 与 Tool Result
+### 2.2 模型用 `tool_calls` 提出请求
 
-当模型决定调用工具时，assistant message 可能包含 `tool_calls`：
+模型决定查询天气时，返回的 assistant message 可能包含：
 
 ```json
 {
@@ -195,13 +216,27 @@ Chat Completions 使用 `tools` 声明函数工具。函数名、描述和参数
 }
 ```
 
-有三个细节值得记住：
+这里有三个关键字段：
 
-1. `id` 用来关联后续工具结果；
-2. `name` 告诉宿主查找哪个工具；
-3. `arguments` 在这个协议形状中通常是 JSON 字符串，需要解析、校验，再交给执行器。
+- `id` 标识这一次工具调用；
+- `name` 指明要调用 `get_weather`；
+- `arguments` 提供参数。
 
-执行工具后，宿主要把 assistant 的 Tool Call 和一个 `tool` role 消息一起放回下一次请求：
+在 Chat Completions 的这个结构中，`arguments` 是一段 JSON 字符串。宿主需要先解析它，再进行参数校验。它看起来像对象，并不意味着已经通过检查。
+
+这条 `message` 所在的 `choice` 通常还会带有：
+
+```json
+{
+  "finish_reason": "tool_calls"
+}
+```
+
+它表示模型本次生成停在了工具调用处，不表示工具已经执行。
+
+### 2.3 工具结果使用 `role: "tool"`
+
+宿主执行 `get_weather` 后，把 assistant 的完整 Tool Call 和对应结果放入下一次请求。工具结果写成：
 
 ```json
 {
@@ -211,138 +246,25 @@ Chat Completions 使用 `tools` 声明函数工具。函数名、描述和参数
 }
 ```
 
-`tool_call_id` 不是装饰字段。如果一轮有多个调用，Runtime 必须按 ID 关联结果，而不是假定返回顺序永远可靠。
+`tool_call_id` 与原来的 `id` 都是 `call_1`。模型由此知道这份天气数据回答了哪一个请求。
 
-### 3.4 `system` 与 `developer`
-
-当前 OpenAI 文档对较新的模型还区分了 `developer` 消息和传统 `system` 消息。初学时可以先把它们理解为“比 user 指令优先级更高的应用指令”，但不要把供应商的角色层级直接当成通用 Agent 类型。
-
-指令优先级、项目规则和用户输入之间的关系，会直接影响 Context 的组织方式。
-
-## 4. OpenAI Responses：以输入和输出项目为中心
-
-Responses API 是 OpenAI 当前推荐用于新项目的更完整接口。它仍然可以表达消息和工具调用，但组织方式从单一 `messages` 数组扩展为 `input` 与 `output` item。[OpenAI Developer Quickstart](https://platform.openai.com/docs/quickstart/make-your-first-api-request)、[Responses API Reference](https://developers.openai.com/api/reference/resources/responses/methods/create)
-
-### 4.1 文本请求
-
-最小调用可以直接使用字符串输入：
-
-```json
-{
-  "model": "your-model",
-  "input": "法国的首都是什么？"
-}
-```
-
-如果要明确表达角色和内容类型，可以使用输入消息：
-
-```json
-{
-  "model": "your-model",
-  "instructions": "你是一个简洁、准确的助手。",
-  "input": [
-    {
-      "role": "user",
-      "content": [
-        {
-          "type": "input_text",
-          "text": "法国的首都是什么？"
-        }
-      ]
-    }
-  ]
-}
-```
-
-Responses 返回的是 output item 列表。文本消息可以写成：
-
-```json
-{
-  "id": "resp_example",
-  "status": "completed",
-  "output": [
-    {
-      "type": "message",
-      "role": "assistant",
-      "content": [
-        {
-          "type": "output_text",
-          "text": "法国的首都是巴黎。"
-        }
-      ]
-    }
-  ]
-}
-```
-
-SDK 里的 `response.output_text` 是一个方便读取文本的聚合属性；在 Runtime 层，仍然应该理解底层的 output item，而不是只取一段字符串。
-
-### 4.2 Responses 中的函数工具
-
-Responses 的函数工具声明不再嵌套在 `function` 对象中，而是直接作为一个 function tool item：
-
-```json
-{
-  "model": "your-model",
-  "tools": [
-    {
-      "type": "function",
-      "name": "get_weather",
-      "description": "查询某个城市的当前天气",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "city": { "type": "string" }
-        },
-        "required": ["city"],
-        "additionalProperties": false
-      },
-      "strict": true
-    }
-  ],
-  "input": "北京现在天气怎么样？"
-}
-```
-
-### 4.3 Function Call 与 Function Call Output
-
-模型请求工具时，Responses 输出一个 `function_call` item：
-
-```json
-{
-  "type": "function_call",
-  "id": "fc_example",
-  "call_id": "call_1",
-  "name": "get_weather",
-  "arguments": "{\"city\":\"北京\"}",
-  "status": "completed"
-}
-```
-
-执行工具后，宿主使用同一个 `call_id` 把结果作为下一个 input item 传回：
-
-```json
-{
-  "type": "function_call_output",
-  "call_id": "call_1",
-  "output": "{\"temperature\":\"28°C\",\"condition\":\"多云\"}"
-}
-```
-
-这和 Chat Completions 的 `tool_call_id` 作用相同，但承载方式不同：
+这条协议链可以压缩成：
 
 ```text
-Chat Completions：assistant.tool_calls → role=tool
-Responses：       output.function_call → input.function_call_output
+assistant.tool_calls[].id
+            ↓
+      宿主执行工具
+            ↓
+tool.tool_call_id
 ```
 
-Responses 还可以表达 OpenAI 托管的 Web Search、File Search、Code Interpreter 等工具。对于这些服务端工具，宿主参与的执行边界可能和自定义函数工具不同；Runtime 不能把所有工具都假设成“收到 JSON 后在本地执行”。
+## 3. Anthropic Messages：Tool Use 也是内容块
 
-## 5. Anthropic Messages：以内容块为中心
+Anthropic Messages API 同样接收消息并返回 assistant 响应，但它更明确地使用内容块表达文本和工具调用。
 
-Anthropic Messages API 也表达多轮消息和工具调用，但它把内容组织成 `content` block。工具调用和工具结果分别出现在 assistant 与 user 消息的内容块中，而不是使用单独的 `tool` role。[Claude Messages API](https://platform.claude.com/docs/en/api/go/messages)、[How tool use works](https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works)
+### 3.1 文本请求与响应
 
-### 5.1 最小文本请求
+同一个文本请求可以写成：
 
 ```json
 {
@@ -363,11 +285,31 @@ Anthropic Messages API 也表达多轮消息和工具调用，但它把内容组
 }
 ```
 
-Anthropic 的 `system` 通常是顶层字段，普通对话通过 `messages` 传入。消息的 `content` 可以是字符串，也可以是多个内容块；为了和工具、图片和文档保持一致，教程示例使用数组。
+与 Chat Completions 相比，有两个直接可见的差别：
 
-### 5.2 声明工具
+- 高优先级说明放在顶层 `system` 字段；
+- 普通消息使用 `user` 和 `assistant` 角色，内容可以由多个 block 组成。
 
-Anthropic 的自定义工具以 `name`、`description` 和 `input_schema` 描述：
+响应的核心部分可以写成：
+
+```json
+{
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "法国的首都是巴黎。"
+    }
+  ],
+  "stop_reason": "end_turn"
+}
+```
+
+`stop_reason: "end_turn"` 表示模型自然结束了这一次响应。
+
+### 3.2 工具定义使用 `input_schema`
+
+Anthropic 请求的 `tools` 数组中，天气工具这一项可以这样声明：
 
 ```json
 {
@@ -386,15 +328,15 @@ Anthropic 的自定义工具以 `name`、`description` 和 `input_schema` 描述
 }
 ```
 
-参数 Schema 的作用仍然是约束工具输入，不是授权工具执行。模型的选择、宿主的校验和真正的副作用依然是三个不同步骤。
+作用仍然相同：告诉模型工具叫什么、用来做什么、参数是什么形状。
 
-### 5.3 `tool_use` 与 `tool_result`
+### 3.3 模型返回 `tool_use` block
 
-模型可能返回：
+模型请求天气工具时，Tool Call 位于 assistant message 的 `content` 中：
 
 ```json
 {
-  "stop_reason": "tool_use",
+  "role": "assistant",
   "content": [
     {
       "type": "text",
@@ -402,17 +344,22 @@ Anthropic 的自定义工具以 `name`、`description` 和 `input_schema` 描述
     },
     {
       "type": "tool_use",
-      "id": "toolu_example",
+      "id": "toolu_1",
       "name": "get_weather",
       "input": {
         "city": "北京"
       }
     }
-  ]
+  ],
+  "stop_reason": "tool_use"
 }
 ```
 
-宿主执行工具后，需要把 assistant 的完整响应和一个新的 user 消息放回下一次请求：
+与 Chat Completions 相比，这里的参数已经位于 `input` 对象中，但宿主仍然需要校验它。`stop_reason: "tool_use"` 同样只表示本次生成需要宿主处理工具。
+
+### 3.4 工具结果是 user message 中的 `tool_result`
+
+工具执行后，宿主把结果放进一条新的 user message：
 
 ```json
 {
@@ -420,210 +367,436 @@ Anthropic 的自定义工具以 `name`、`description` 和 `input_schema` 描述
   "content": [
     {
       "type": "tool_result",
-      "tool_use_id": "toolu_example",
+      "tool_use_id": "toolu_1",
       "content": "{\"temperature\":\"28°C\",\"condition\":\"多云\"}"
     }
   ]
 }
 ```
 
-这里的关键差异是：
+这里的 `role: "user"` 是 Anthropic Messages 协议承载工具结果的方式，并不表示结果由用户亲自编写。`tool_use_id` 把结果与原来的 `tool_use.id` 关联起来。
+
+对应关系是：
 
 ```text
-OpenAI Chat：tool result 是 role=tool 的消息
-OpenAI Responses：tool result 是 function_call_output item
-Anthropic：tool result 是 user 消息中的 tool_result block
+assistant.content[].tool_use.id
+                 ↓
+           宿主执行工具
+                 ↓
+user.content[].tool_result.tool_use_id
 ```
 
-Anthropic 文档还区分客户端执行的工具和服务端执行的工具。客户端工具需要应用驱动循环；服务端工具可能在 Anthropic 的基础设施中完成一部分循环。这个区别会直接影响宿主何时收到结果、是否需要提交 `tool_result`，以及停止原因如何解释。
+## 4. OpenAI Responses：消息之外还有 Item
 
-### 5.4 `stop_reason` 不是单一的“成功/失败”字段
+OpenAI 还提供 Responses API。[OpenAI 当前的模型指南](https://developers.openai.com/api/docs/guides/latest-model)把 Responses 作为推理、工具调用和多轮工作流的主要接口；Chat Completions 仍然存在，但两者的数据形状不同。
 
-Anthropic 的 `stop_reason` 可能表示：
+### 4.1 输入使用 `input`
 
-- `tool_use`：需要宿主处理工具调用；
-- `end_turn`：模型认为这一轮完成；
-- `max_tokens`：输出达到限制；
-- `stop_sequence`：遇到停止序列；
-- `refusal`：模型拒绝继续；
-- 某些服务端工具场景下的暂停或继续信号。
+最小文本调用可以直接发送字符串：
 
-Runtime 不应该把所有非 `tool_use` 的情况简单地当成“用户问题已正确回答”。结束原因需要被保留，供重试、展示、评测和错误处理使用。
-
-## 6. 三种协议的对应关系
-
-| Agent 需要的语义 | OpenAI Chat Completions | OpenAI Responses | Anthropic Messages |
-| --- | --- | --- | --- |
-| 高优先级指令 | `system` / `developer` message | `instructions` 或输入消息 | 顶层 `system` |
-| 普通输入 | `messages` | `input` / input items | `messages` |
-| 文本内容 | `message.content` | `output_text` 或 `output.message.content` | `content` 中的 `text` block |
-| 工具声明 | `tools[].function` | `tools[]` function item | `tools[]` with `input_schema` |
-| 工具调用 | `assistant.tool_calls[]` | `output[].type = function_call` | assistant `tool_use` block |
-| 调用标识 | `tool_calls[].id` | `function_call.call_id` | `tool_use.id` |
-| 工具结果 | `role = tool` | `function_call_output` | user `tool_result` block |
-| 结束信息 | `finish_reason` | output item / response status | `stop_reason` |
-| 流式传输 | chat completion chunks | typed response events | SSE content block events |
-
-这张表不是为了把三个 API 强行压成一个格式，而是帮助我们找出不同接口之间需要转换的字段。
-
-## 7. 适配层：Pi 如何连接不同模型 API
-
-如果 Agent Runtime 直接读取某一个供应商的字段，循环就会被供应商差异绑住：
-
-```ts
-if (provider === "openai") {
-  // 读取 choices[0].message.tool_calls
-} else if (provider === "anthropic") {
-  // 遍历 content 中的 tool_use block
+```json
+{
+  "model": "your-model",
+  "input": "法国的首都是什么？"
 }
 ```
 
-短期可以运行，长期会让每个工具、事件和错误分支都带着供应商条件。把这些字段转换成运行循环能理解的统一格式，这段代码叫 Provider Adapter（供应商适配层）：
+也可以明确写出消息和内容块：
 
-```text
-OpenAI Chat / Responses / Anthropic Messages
-                  ↓
-       供应商适配层（Provider Adapter）
-                  ↓
-       统一消息 / 工具调用 / 流式事件
-                  ↓
-             Agent Runtime
+```json
+{
+  "model": "your-model",
+  "instructions": "你是一个简洁、准确的助手。",
+  "input": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "法国的首都是什么？"
+        }
+      ]
+    }
+  ]
+}
 ```
 
-Pi 把这部分能力放在 `pi-ai` 中，当前支持 `anthropic-messages`、`openai-completions`、`openai-responses` 等接口类型。对于不符合现有格式的服务，Pi 也可以通过扩展机制注册自定义的供应商接口。[Pi Providers](https://pi.dev/docs/latest/providers)、[Pi Custom Providers](https://pi.dev/docs/latest/custom-provider)
+Responses 返回的是一组 `output` item。文本消息只是 item 类型之一：
 
-![不同模型协议经过 Provider Adapter 统一](../assets/model-api-illustrations/01-provider-adapter.png)
+```json
+{
+  "status": "completed",
+  "output": [
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "法国的首都是巴黎。"
+        }
+      ]
+    }
+  ]
+}
+```
 
-### 7.1 统一共同语义，而不是抹平所有差异
+SDK 提供的 `response.output_text` 可以方便地汇总文本，但底层 `output` 还可能包含函数调用等其他 item。Runtime 不能假设 `output[0]` 永远是一条文本消息。
 
-下面的类型只保留运行循环需要的两种结果：文本和工具调用。
+### 4.2 函数工具直接放在 `tools` 中
+
+Responses 的函数工具没有 Chat Completions 中的外层 `function` 对象：
+
+```json
+{
+  "type": "function",
+  "name": "get_weather",
+  "description": "查询某个城市的当前天气",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "city": { "type": "string" }
+    },
+    "required": ["city"],
+    "additionalProperties": false
+  },
+  "strict": true
+}
+```
+
+模型请求工具时，`output` 中出现一个 `function_call` item：
+
+```json
+{
+  "type": "function_call",
+  "id": "fc_1",
+  "call_id": "call_1",
+  "name": "get_weather",
+  "arguments": "{\"city\":\"北京\"}"
+}
+```
+
+宿主执行工具后，把结果作为新的 input item 传回：
+
+```json
+{
+  "type": "function_call_output",
+  "call_id": "call_1",
+  "output": "{\"temperature\":\"28°C\",\"condition\":\"多云\"}"
+}
+```
+
+这里用于关联的是 `call_id`。`id` 标识 Responses 中的 output item，`call_id` 标识这一次函数调用；工具结果需要使用后者。
+
+## 5. 三种协议表达的是同一条语义链
+
+把三种格式放在一起，可以看到字段不同，但 Agent Runtime 关心的事实相似：
+
+| 共同语义 | OpenAI Chat Completions | OpenAI Responses | Anthropic Messages |
+| --- | --- | --- | --- |
+| 应用指令 | `system` / `developer` message | `instructions` 或输入消息 | 顶层 `system` |
+| 普通输入 | `messages` | `input` items | `messages` |
+| 模型文本 | `choices[].message.content` | `output` 中的 message item | assistant 的 `text` block |
+| 工具声明 | `tools[].function` | `tools[]` 中的 function item | `tools[]` 与 `input_schema` |
+| 工具调用 | `assistant.tool_calls[]` | `function_call` output item | assistant 的 `tool_use` block |
+| 调用标识 | `tool_calls[].id` | `function_call.call_id` | `tool_use.id` |
+| 工具结果 | `role: "tool"` | `function_call_output` input item | user 的 `tool_result` block |
+| 本次生成状态 | `finish_reason` | response `status` 与 output items | `stop_reason` |
+
+最重要的不变量是：
+
+```text
+模型给出结构化工具请求
+          ↓
+宿主按名称找到并执行工具
+          ↓
+工具结果使用同一个调用标识写回
+          ↓
+模型在下一次输入中看到结果
+```
+
+协议决定这条链在网络数据中怎样编码，Agent Loop 决定怎样执行并继续它。
+
+## 6. Pi 怎样吸收协议差异
+
+如果 Agent Loop 直接读取供应商字段，循环里会到处出现判断：
 
 ```ts
-type ToolCall = {
+if (api === "openai-completions") {
+  // 读取 assistant.tool_calls
+} else if (api === "anthropic-messages") {
+  // 读取 assistant.content 中的 tool_use
+}
+```
+
+工具执行、会话记录和界面随后也会被同样的条件分支影响。Pi 把这些差异留在 `pi-ai` 的模型边界，把 Agent Runtime 需要的共同事实转换成统一类型。
+
+![不同模型协议经过 Pi 的适配层转换为统一语义](../assets/model-api-illustrations/01-provider-adapter.png)
+
+### 6.1 Provider 与 API 不是同一个概念
+
+在 Pi 的 `Model` 类型中，有两个容易混淆的字段：
+
+| 字段 | 表示什么 | 示例 |
+| --- | --- | --- |
+| `provider` | 模型服务由谁提供 | `openai`、`anthropic`、`openrouter` |
+| `api` | 实际使用哪一种通信协议 | `openai-responses`、`anthropic-messages`、`openai-completions` |
+
+一个 Provider 可以提供多个模型；不同 Provider 也可能使用同一种 API 形状。例如，许多服务提供“OpenAI-compatible”接口，Pi 可以通过 `openai-completions` 实现与它们通信。
+
+但“兼容”不表示所有行为完全相同。不同服务可能不支持 `developer` 角色、`strict` 工具模式、某个输出长度字段或完整的 `finish_reason`。Pi 的兼容配置正是用来记录和处理这些差异。
+
+因此，更准确的关系是：
+
+```text
+Provider：服务来源、模型目录与访问凭据
+API：请求、响应和流式事件的协议形状
+Model：某个 Provider 中可以调用的具体模型
+```
+
+访问凭据是宿主用来证明自己可以调用服务的信息，例如 API key。Provider 负责找到对应凭据，并把请求交给所属模型。
+
+### 6.2 Pi 的统一消息类型
+
+本文源码基线中的 [`packages/ai/src/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts) 定义了下面这些核心关系：
+
+```ts
+type Message = UserMessage | AssistantMessage | ToolResultMessage;
+
+interface Context {
+  systemPrompt?: string;
+  messages: Message[];
+  tools?: Tool[];
+}
+
+interface ToolCall {
+  type: "toolCall";
   id: string;
   name: string;
-  arguments: unknown;
-};
+  arguments: Record<string, any>;
+}
 
-type ToolResult = {
-  callId: string;
-  output: unknown;
-  isError?: boolean;
-};
+type StopReason =
+  | "pending"
+  | "stop"
+  | "length"
+  | "toolUse"
+  | "error"
+  | "aborted"
+  | "deferred";
+```
 
-type ModelTurn =
+这段代码按 Pi 的真实名称摘出了本章需要的字段。`Record<string, any>` 表示一个以字符串为键、值类型暂不限定的对象。完整的 `ToolCall` 还保留供应商特有信息，完整的消息类型还包含模型、用量、时间戳和错误等字段。
+
+转换以后，同一个天气调用可以统一理解为：
+
+```json
+{
+  "role": "assistant",
+  "content": [
+    {
+      "type": "toolCall",
+      "id": "call_1",
+      "name": "get_weather",
+      "arguments": {
+        "city": "北京"
+      }
+    }
+  ],
+  "stopReason": "toolUse"
+}
+```
+
+这里同样只展示与协议转换有关的字段。Pi 的 Agent Loop 看到的是统一的 `toolCall`，不需要知道它最初来自：
+
+- Chat Completions 的 `tool_calls`；
+- Responses 的 `function_call`；
+- Anthropic Messages 的 `tool_use`。
+
+工具执行完成后，三种供应商格式也都会转换成 Pi 的 `ToolResultMessage`，并通过 `toolCallId` 与调用关联。
+
+### 6.3 `complete` 把不同 API 收敛成同一种调用方式
+
+第一章的 `model.generate(context)` 是教学抽象。在 Pi 的 `pi-ai` 中，获得完整响应的调用更接近：
+
+```ts
+const response = await models.complete(model, context);
+```
+
+这里：
+
+- `models` 是一个 `Models` 对象，它保存已注册的 Provider，并把请求交给拥有该模型的 Provider；
+- `model` 同时带有 `provider` 与 `api` 信息；
+- `context` 使用 Pi 的统一消息与工具类型；
+- `response` 是统一的 `AssistantMessage`。
+
+调用过程中，Pi 根据 `model.api` 选择对应实现，完成请求转换、发送、响应解析和停止原因映射。
+
+具体转换可以在固定源码中的 [`openai-completions.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/api/openai-completions.ts)、[`openai-responses-shared.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/api/openai-responses-shared.ts) 和 [`anthropic-messages.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/api/anthropic-messages.ts) 中找到。
+
+## 7. Streaming：先收到事件，再得到完整消息
+
+到目前为止，示例都像是等待完整响应一次返回。真实应用通常希望模型生成一点，界面就显示一点。这种逐步返回的方式叫作 **Streaming**。
+
+一次文本流可能经历：
+
+```text
+响应开始
+  → 文本块开始
+  → 收到“法国”
+  → 收到“的首都是”
+  → 收到“巴黎。”
+  → 文本块结束
+  → 响应完成
+```
+
+中途到达的每一条记录叫作**流式事件**。它描述生成过程中的增量变化，还不是最终 Message。
+
+### 7.1 工具参数也可能分段到达
+
+一个 Tool Call 的参数可能先后到达：
+
+```text
+第一个增量：{"ci
+第二个增量：ty":"北京"}
+```
+
+第一段不是完整 JSON，不能立刻解析，更不能据此执行工具。宿主需要等待工具调用完成事件，再解析、校验和执行。
+
+![流式增量先组成完整工具调用，再通过调用 ID 关联结果](../assets/model-api-illustrations/02-stream-and-id.png)
+
+### 7.2 Pi 统一流式事件
+
+不同 API 的原始事件名也不一样。Anthropic 使用 `content_block_start`、`content_block_delta` 等事件；OpenAI Responses 使用 `response.output_item.added`、`response.output_text.delta` 等事件。Pi 把它们转换成统一的 `AssistantMessageEvent`。
+
+下面从 Pi 的联合类型中摘出与本章直接相关的六种事件。事件名称和字段保持不变，类型名改成了 `SelectedAssistantEvent`，避免把这段摘录误认为完整定义：
+
+```ts
+type SelectedAssistantEvent =
+  | { type: "start"; partial: AssistantMessage }
   | {
-      kind: "text";
-      text: string;
-      stopReason?: string;
+      type: "text_delta";
+      contentIndex: number;
+      delta: string;
+      partial: AssistantMessage;
     }
   | {
-      kind: "tool_calls";
-      calls: ToolCall[];
-      stopReason?: string;
+      type: "toolcall_delta";
+      contentIndex: number;
+      delta: string;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "toolcall_end";
+      contentIndex: number;
+      toolCall: ToolCall;
+      partial: AssistantMessage;
+    }
+  | {
+      type: "done";
+      reason: "stop" | "length" | "toolUse" | "deferred";
+      message: AssistantMessage;
+    }
+  | {
+      type: "error";
+      reason: "aborted" | "error";
+      error: AssistantMessage;
     };
 ```
 
-这个类型能让 Agent Loop 不必知道 `tool_calls`、`function_call` 和 `tool_use` 的具体字段。但一个真实适配层还需要保留：
+`contentIndex` 指向当前正在更新的内容块，`partial` 是到这一刻为止已经拼出的 assistant message。完整的 `AssistantMessageEvent` 还包含文本开始与结束，以及模型推理内容的开始与结束等事件。这里可以先看清两个阶段：
 
-- 原始供应商和模型名称；
-- 原始响应或事件 ID；
-- 用量、缓存和成本信息；
-- 思考、推理、拒答等供应商特性；
-- 供应商特有的错误和结束原因。
+1. 界面消费 delta，逐步显示正在生成的内容；
+2. Runtime 取得最终 `AssistantMessage`，再根据完整内容推进循环。
 
-因此，适配器的原则是：
+使用 Pi 时，可以一边读取事件，一边在结束后取得完整消息：
 
-```text
-统一 Runtime 需要的共同语义
-保留供应商特有的信息
+```ts
+const stream = models.stream(model, context);
+
+for await (const event of stream) {
+  if (event.type === "text_delta") {
+    process.stdout.write(event.delta); // 在终端追加本次新到的文字
+  }
+}
+
+const finalMessage = await stream.result();
 ```
 
-### 7.2 Pi 的自定义供应商接口
+`process.stdout.write(...)` 是 Node.js 向终端追加文字的方法，这里用它演示文本怎样边到达边显示。`event` 是传输过程中的变化，`finalMessage` 才是可以稳定写入 Context 的完整模型响应。
 
-当服务使用代理、私有部署、OAuth/SSO 或非标准流式协议时，Pi 可以通过扩展机制注册自定义供应商接口。它适合代理、私有端点、自定义认证和自定义流式 API。[Pi Custom Providers](https://pi.dev/docs/latest/custom-provider)
+## 8. 停止原因也需要转换
 
-这说明 Pi 的扩展机制不仅可以增加命令，也可以扩展 Harness 与模型服务之间的连接方式。
+三个 API 对一次生成为什么停止有不同写法。Pi 会把常见情况映射到统一的 `StopReason`：
 
-## 8. 流式响应（Streaming）：响应不是一次性字符串
+| 情况 | Chat Completions | OpenAI Responses | Anthropic Messages | Pi `stopReason` |
+| --- | --- | --- | --- | --- |
+| 自然结束 | `stop` | `completed`，且没有函数调用 | `end_turn` | `stop` |
+| 达到输出上限 | `length` | `incomplete` + `max_output_tokens` | `max_tokens` | `length` |
+| 请求宿主工具 | `tool_calls` | `output` 中有 `function_call` | `tool_use` | `toolUse` |
 
-用户界面通常希望边生成边显示，因此三个 API 都提供流式事件。但流式事件不是最终消息的简单切片，而是一种需要状态累积的协议。
+Pi 处理 Responses 时，先根据 response `status` 映射停止原因；如果完整输出中存在 `function_call`，再把统一结果标记为 `toolUse`。
 
-### 8.1 文本流
+Pi 还保留 `rawStopReason`，让日志和错误诊断能够看到供应商原始值。统一字段方便 Agent Loop 判断，原始字段帮助排查供应商差异。
 
-文本流大致经历：
-
-```text
-开始一个响应
-  ↓
-收到一小段文本（delta）
-  ↓
-不断追加到当前内容块
-  ↓
-收到完成事件
-  ↓
-形成最终的助手消息（Assistant Message）
-```
-
-### 8.2 工具参数流
-
-工具参数也可能以增量字符串到达：
+这里仍要守住第一章建立的边界：
 
 ```text
-"{ \"ci"
-"ty\": \"北京\" }"
+供应商停止原因：一次模型生成为什么停止
+Runtime 运行状态：整段 Agent 运行接下来怎样变化
 ```
 
-Runtime 不能在收到第一段 `"{ \"ci"` 时就执行工具。它至少需要等待参数完成，再进行 JSON 解析、Schema 校验和执行策略检查。
+`toolUse` 表示这条模型响应以工具请求结束；Runtime 仍要从完整 `content` 中取得 `toolCall`，再进入工具处理。`length` 可能意味着内容或工具参数被截断；`error` 与 `aborted` 需要按失败或取消处理。它们不能全部理解成“Agent 已经完成”。
 
-### 8.3 事件与消息的区别
+## 9. 四个最容易混淆的地方
 
-一个流式事件可能只表达“参数增加了几个字符”，而一个完整消息才表达“这次 Tool Call 的最终参数是什么”。因此要区分：
+### 9.1 API 角色不是权限系统
 
-```text
-Stream Event = 传输过程中的增量事实
-Message      = 可以写入上下文的完整交互记录
-```
+`system`、`developer`、`user` 和 `assistant` 影响模型怎样理解内容，但不能代替文件权限、网络策略或工具审批。协议中的高优先级指令仍然只是模型输入。
 
-这也是 Pi 的模型适配层和 Agent 运行层需要分别处理流式事件、完整消息和工具执行事件的原因。UI 可以消费增量事件，但 Agent Loop 需要基于完整、可校验的语义推进。
+### 9.2 Tool Call 不是工具执行结果
 
-![流式增量完成后与调用 ID 关联](../assets/model-api-illustrations/02-stream-and-id.png)
+`tool_calls`、`function_call` 和 `tool_use` 都是结构化请求。只有宿主或供应商的工具执行层真正运行了动作，才会产生 Tool Result。
 
-## 9. 常见的协议误读
+### 9.3 流式事件不是完整 Message
 
-### 9.1 把 `arguments` 当成已经校验过的对象
+delta 可能只是半句话或半段 JSON。界面可以立即展示文本增量，Runtime 必须等待完整的工具调用和最终消息再推进状态。
 
-OpenAI 的某些工具调用形状会把参数作为 JSON 字符串返回；即使 SDK 帮你解析了，也不能跳过 Schema 和执行策略校验。
+### 9.4 OpenAI-compatible 不等于完全相同
 
-### 9.2 把 Tool Call 当成工具执行
-
-三种 API 都遵循一个核心边界：模型产生结构化请求，宿主或供应商的工具基础设施执行动作，结果再回到模型上下文。请求对象本身没有副作用。
-
-### 9.3 只看文本，不保存结构化内容
-
-如果 Runtime 只读取最终文本，就会丢失 Tool Call、拒答、停止原因、usage、引用和事件信息，因而不能可靠地继续循环或评估。
-
-### 9.4 用数组顺序代替调用 ID
-
-并行工具调用、重试和服务端工具都可能让返回顺序变得复杂。应始终使用 `call_id`、`tool_call_id` 或 `tool_use_id` 进行关联。
-
-### 9.5 把所有工具都看成客户端工具
-
-客户端工具需要宿主执行并回传结果；服务端工具可能在供应商基础设施中运行。工具的执行位置会改变权限、延迟、计费、审计和循环边界。
-
-### 9.6 把 Provider Adapter 当成“无损翻译器”
-
-适配器能统一核心循环需要的部分，但不应该抹掉供应商特有的能力。否则 Runtime 虽然看起来统一了，实际却失去了推理过程、服务端工具、缓存、拒答和错误诊断等重要信息。
+兼容接口通常复用 Chat Completions 的主要请求形状，但角色、工具严格模式、结束原因、用量统计和流式细节仍可能不同。Provider 适配层必须允许差异存在。
 
 ## 本章小结
 
-- API 是模型服务与应用之间的通信契约，SDK 是语言层包装，Runtime/Harness 负责更高层的循环与状态；
-- Chat Completions 以 role message 和 `tool_calls` 为中心；Responses 以 input/output item 和 `function_call` 为中心；Anthropic Messages 以 content block、`tool_use` 和 `tool_result` 为中心；
-- 三种 API 都需要表达工具声明、调用标识、工具结果和停止原因，但字段位置和消息形状不同；
-- Streaming Event 是传输增量，完整 Message 才能进入稳定的 Agent 状态；
-- Provider Adapter 应统一 Runtime 需要的共同语义，同时保留 Provider 特有信息；
-- Pi 的 `pi-ai` 正是吸收这些 API、消息、工具和流式事件差异的边界层。
+- API 是宿主与模型服务之间的数据契约；SDK 把 API 包装成编程语言方法；Runtime 在它们之上推进 Agent Loop。
+- Message 用 `role` 标记整条记录在协议中的位置，Content Block 表示消息内部各部分的内容类型。
+- Chat Completions 使用 `messages`、`tool_calls` 和 `role: "tool"`；Anthropic Messages 使用 `content` block、`tool_use` 和 `tool_result`；Responses 使用 `input` / `output` item、`function_call` 和 `function_call_output`。
+- 三种协议都必须保存工具调用标识，Tool Result 才能与原来的 Tool Call 一一对应。
+- Pi 用 `Context`、`Message`、`ToolCall`、`ToolResultMessage`、`AssistantMessageEvent` 和 `StopReason` 吸收协议差异。
+- Streaming 先产生增量事件，再组成完整消息；不完整的工具参数不能提前执行。
+- `provider` 表示服务来源，`api` 表示通信协议；“OpenAI-compatible”也可能需要兼容配置。
 
-## 与经典研究的连接
+## 与热门概念和经典研究的连接
 
-ReAct 把“推理—行动—观察”作为交替过程，是理解 Agent Loop 的经典研究背景；Toolformer 讨论模型如何学习选择工具、生成参数并吸收结果。但论文中的方法并不等于某个供应商 API：API 定义的是可执行的通信契约，Runtime 才负责把契约接入真实工具和状态。[ReAct](https://arxiv.org/abs/2210.03629)、[Toolformer](https://arxiv.org/abs/2302.04761)、[论文索引](../references/papers.md)
+**Function Calling / Tool Use** 是模型 API 中最常见的工具请求机制。它定义结构化请求怎样产生和返回，不负责宿主的实际工具实现与权限控制。
+
+**Provider Adapter** 泛指把供应商协议转换成统一类型的工程边界。它让 Runtime 面向统一语义工作，同时保留供应商特有的响应 ID、停止原因、用量和能力信息。
+
+**OpenAI-compatible API** 让许多模型服务复用相似的 Chat Completions 请求格式，但“字段相似”与“行为完全一致”是两回事。Pi 中的兼容配置展示了真实工程为什么仍需逐项适配。
+
+[Toolformer](https://arxiv.org/abs/2302.04761) 研究模型怎样学习何时调用工具以及生成什么参数；[Gorilla](https://arxiv.org/abs/2305.15334) 关注大量 API 的选择与调用准确性。它们讨论模型的工具使用能力，而本章的消息协议规定这些能力怎样进入一个可执行系统。
+
+## 下一章：进入 Pi 的 Agent Loop
+
+现在我们已经知道，`pi-ai` 怎样把不同模型服务转换成统一的消息和事件。下一章将沿固定版本的 `AgentContext`、`runAgentLoop`、`runLoop` 与 `AgentEvent` 阅读真实控制链：统一的 Assistant Message 怎样写入状态，Tool Call 怎样进入执行阶段，循环又怎样继续或停止。
+
+## 参考资料
+
+- [OpenAI Chat Completions API Reference](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions)
+- [OpenAI Function Calling Guide](https://developers.openai.com/api/docs/guides/function-calling)
+- [OpenAI：Migrate to the Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses)
+- [Anthropic Messages API Reference](https://platform.claude.com/docs/en/api/messages/create)
+- [Anthropic：Handle tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)
+- [Anthropic：Streaming messages](https://platform.claude.com/docs/en/build-with-claude/streaming)
+- [Pi `pi-ai` types：固定版本源码](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts)
+- [Pi `pi-ai` README：固定版本说明](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/README.md)

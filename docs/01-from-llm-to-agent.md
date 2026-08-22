@@ -549,7 +549,7 @@ async function runLoop(
 | `streamAssistantResponse`、`StreamFn` | 获得并保存一条模型响应 | 流式事件、增量内容、模型与服务商参数 |
 | `executeToolCalls` | 查找工具、执行工具、生成对应结果 | 参数校验、钩子、取消以及顺序或并行调度 |
 
-这些结构来自固定版本的 [`agent-loop.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent-loop.ts)、[`pi-ai/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts) 和 [`pi-agent-core/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/types.ts) 中。第 3 章会进入同一固定版本的 Agent Loop 源码，补上本章压缩掉的事件、流式响应和消息调度；第 4 章再展开工具执行。
+这些结构来自固定版本的 [`agent-loop.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent-loop.ts)、[`pi-ai/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts) 和 [`pi-agent-core/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/types.ts) 中。第 2 章会先解释不同模型 API 怎样被转换成统一消息和流式事件；第 3 章再进入 Agent Loop 源码，观察这些消息与事件怎样参与循环和消息调度。第 4 章继续展开工具执行。
 
 ### 5.3 Tool Call 的执行边界
 
