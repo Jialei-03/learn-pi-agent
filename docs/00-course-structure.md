@@ -63,7 +63,7 @@ flowchart TB
 
 ### 第 7 章：MCP：Agent 与外部世界的协议
 
-讲清 MCP Host、Client、Server、Tools、Resources、Prompts 和 Sampling。MCP 标准化外部能力接入，而不是 Agent 编排；Pi 可以通过 Extension 或 Package 接入 MCP。
+讲清 MCP Host、Client、Server、JSON-RPC、能力发现、stdio、Streamable HTTP、Tools、Resources、Prompts，以及 Elicitation 与 Multi Round-Trip Requests。说明 2026 版协议为什么改为无状态请求，Roots、Sampling、Logging 为什么已进入弃用期；MCP 标准化外部能力接入，而不是 Agent 编排，Pi 可以通过 Extension 或 Package 把 MCP 接进自己的 Harness。
 
 ### 第 8 章：Skills 与 Prompt Templates
 

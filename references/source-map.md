@@ -34,7 +34,7 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 
 箭头表达“上层调用下层、响应向上返回”的学习视角，不是完整的构建依赖图。
 
-## 第二层：先读五份关键文件
+## 第二层：先读六个关键入口
 
 ### 1. 模型世界的类型：`pi-ai/src/types.ts`
 
@@ -70,6 +70,10 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 打开 [`packages/agent/src/harness/agent-harness.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/harness/agent-harness.ts)，并配合 [`packages/agent/docs/harness.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/docs/harness.md) 阅读 Session、Lane、Operation State 与恢复策略。
 
 这里的重点不再只是“怎样保存消息”，而是崩溃后怎样识别已确认状态、未确认副作用与安全重放边界。coding-agent 的 server 装配入口位于 `packages/coding-agent/src/server/create-harness.ts`。
+
+### 6. MCP 适配入口：`extensions.md` 与 Tool 类型
+
+固定版本的 Pi 没有内置 MCP Client；接入点位于 coding-agent Extension。先看 [`packages/coding-agent/docs/extensions.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/extensions.md) 中的 `pi.registerTool(...)`、动态工具与 `session_shutdown`，再对照 [`packages/agent/src/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/types.ts) 的 `AgentTool`、[`packages/ai/src/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts) 的 `ToolResultMessage`，确认 MCP Tool 的 Schema、内容块、异常和取消信号怎样跨越两套类型边界。
 
 ## 三条核心观察主线
 

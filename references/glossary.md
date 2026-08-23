@@ -222,6 +222,46 @@ JavaScript 中协作式取消异步工作的信号。宿主触发取消后，Pro
 
 一种连接 AI 应用与外部工具、资源和提示的开放协议。MCP 解决互操作接口，不自动解决工具可信度、用户授权、数据泄露或提示注入；协议连接成功也不等于使用安全。
 
+### JSON-RPC
+
+用 JSON 表达远程过程调用的消息协议。Request 使用 `id` 与 `method` 请求操作，Response 用相同 `id` 返回 `result` 或 `error`，Notification 没有 `id`、不等待响应。MCP 的基础消息格式建立在 JSON-RPC 2.0 之上。
+
+### MCP Host
+
+承载模型与用户体验的 LLM 应用。Host 创建 MCP Client、管理连接生命周期、聚合 Context，并保留权限、用户同意、模型调用和跨 Server 隔离的控制权。Pi coding-agent 接入 MCP 时属于 Host 一侧。
+
+### MCP Client
+
+Host 内部连接一个特定 MCP Server 的协议组件。一个 Host 可以管理多个 Client，但每个 Client 与一个 Server 一对一通信；Client 负责版本、能力、请求、响应和 Transport 细节。
+
+### MCP Server
+
+通过 MCP 提供 Tools、Resources 或 Prompts 的本地进程或远程服务。Server 应只得到当前请求所需的信息，不自动得到 Host 的完整会话，也不自动取得另一个 Server 的 Context。
+
+### MCP Transport
+
+承载 MCP JSON-RPC 消息的传输方式。stdio 通常由 Client 启动本地子进程并通过标准流通信；Streamable HTTP 通过每个请求一次 POST 连接远程端点。Transport 决定消息怎样移动，不改变 Tool、Resource 或 Prompt 的语义。
+
+### MCP Resource
+
+由 URI 标识、供 Host 按需列举和读取的数据。发现 Resource 不代表内容已经进入模型 Context；Host 仍要选择、读取、检查权限并决定怎样使用。
+
+### MCP Prompt
+
+Server 提供的参数化消息模板。Host 可以把它展示给用户并通过 `prompts/get` 取得填充后的消息；它不是 Tool，也不会因为来自 MCP 就自动成为可信 system instruction。
+
+### Capability Negotiation / 能力协商
+
+通信双方声明自己支持哪些协议能力，并只使用双方都能处理的部分。现代 MCP Request 在 `_meta` 中携带 Client Capabilities，Server 可通过 `server/discover` 返回版本与 Server Capabilities。
+
+### Elicitation / 补充输入请求
+
+MCP Server 在完成操作前请求 Client 一侧补充用户信息的能力，例如表单字段或确认。Host 负责怎样展示、验证和取得输入，Server 不能借此绕过用户同意与权限策略。
+
+### MRTR / Multi Round-Trip Request
+
+现代 MCP 中让一次操作跨多个请求继续的模式。Server 先返回 `resultType: "input_required"`、所需输入和可选 `requestState`；Client 取得输入后，用新的 JSON-RPC ID 重试原方法并携带 `inputResponses`。
+
 ## 两个必须始终记住的边界
 
 ```text
