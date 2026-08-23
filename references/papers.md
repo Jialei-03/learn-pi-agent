@@ -62,7 +62,17 @@ MemGPT 用分层存储和显式管理类比操作系统的内存层次，帮助�
 
 LongLLMLingua 研究长上下文提示压缩，提示我们压缩不仅是“把字数变短”，还涉及哪些 token 被保留以及性能如何评估。Pi 的 compaction 是否采用同类方法必须由源码证据回答。
 
-## 六、评测：怎样判断 Agent 真的能完成任务
+## 六、上下文信任：模型怎样处理互相冲突的指令
+
+### [Not what you've signed up for: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection](https://arxiv.org/abs/2302.12173)
+
+这项工作系统讨论间接 Prompt Injection：攻击文字不一定由用户直接输入，也可能藏在 Agent 将要检索的网页、邮件或其他外部数据中。它帮助理解为什么“检索到的信息”不能自动获得“可执行指令”的信任级别。
+
+### [The Instruction Hierarchy: Training LLMs to Prioritize Privileged Instructions](https://arxiv.org/abs/2404.13208)
+
+论文研究如何让模型按权限层级处理系统、用户与第三方内容中的冲突指令。Instruction Hierarchy 能提升模型抵抗提示注入的能力，但不能取代宿主的最小权限、Tool Policy、审批与 Sandbox。
+
+## 七、评测：怎样判断 Agent 真的能完成任务
 
 ### [AgentBench: Evaluating LLMs as Agents](https://arxiv.org/abs/2308.03688)
 

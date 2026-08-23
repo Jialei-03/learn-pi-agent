@@ -42,6 +42,42 @@
 
 由宿主提供的高优先级行为与上下文说明，常用来描述角色、规则、环境和工具使用方式。它能影响模型输出，但不是强制安全边界；真正的权限控制仍需由程序、沙箱和策略实现。
 
+### Prompt Engineering / 提示工程
+
+设计和组织模型指令、输入边界、示例与输出要求的方法。它主要回答“怎样表达任务”，是 Context Engineering 的组成部分。
+
+### Context Engineering / 上下文工程
+
+在每次模型推理前选择、组织、更新和约束全部输入信息的工程过程。它不仅包含 prompt，还包含消息历史、工具定义、项目规则、检索资料、动态状态、信任边界与 token 预算。
+
+### Context File / 项目上下文文件
+
+由 Harness 自动发现并加入模型上下文的项目指令文件，例如 Pi 支持的 `AGENTS.md`、`CLAUDE.md` 与 `AGENTS.override.md`。它们影响模型行为，但不是可替代代码权限检查的安全策略。
+
+### Token Budget / Token 预算
+
+在有限 Context Window 中为系统提示、消息、工具、文档和模型输出分配容量的计划。预算既要防止输入溢出，也要给后续 Tool Result 与最终回答保留空间。
+
+### Prompt Cache / 提示缓存
+
+Provider 对重复提示前缀进行复用的机制，可以降低部分延迟或费用。被缓存内容通常仍占 Context Window；缓存命中不等于这些 token 已从模型输入中删除。
+
+### Instruction Hierarchy / 指令层级
+
+模型或应用按来源与信任级别解决指令冲突的规则。具体角色和优先级依 Provider 而异；宿主仍需保留来源并用权限、策略和 Sandbox 约束真实动作。
+
+### Prompt Injection / 提示注入
+
+把外部数据中的文字伪装成应被模型服从的指令，从而诱导系统偏离开发者或用户目标的攻击。注入可能来自用户输入，也可能间接藏在网页、邮件、代码或 Tool Result 中。
+
+### Structured Output / 结构化输出
+
+让模型按指定 Schema 返回可被程序消费的数据。Provider 原生 Structured Output 可以在支持的 Schema 子集内约束字段和类型，但宿主仍要处理拒绝、截断、传输错误和业务语义校验。
+
+### JSON Mode
+
+要求模型返回有效 JSON 的 Provider 能力。它通常只保证 JSON 可解析，不保证对象符合某个指定 Schema，因此不能与 Structured Output 视为同一层保证。
+
 ## 响应与行动
 
 ### Streaming / 流式响应

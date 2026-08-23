@@ -11,11 +11,16 @@
 | Pi docs | [pi.dev/docs/latest](https://pi.dev/docs/latest) | 2026-08-16 |
 | OpenAI function calling | [Function calling guide](https://developers.openai.com/api/docs/guides/function-calling) | 2026-08-22 |
 | OpenAI Tool Search | [Tool Search guide](https://developers.openai.com/api/docs/guides/tools-tool-search) | 2026-08-24 |
+| OpenAI prompt engineering | [Prompt engineering guide](https://developers.openai.com/api/docs/guides/prompt-engineering) | 2026-08-24 |
+| OpenAI Structured Outputs | [Structured model outputs](https://developers.openai.com/api/docs/guides/structured-outputs) | 2026-08-24 |
 | OpenAI Chat Completions | [Chat Completions reference](https://developers.openai.com/api/reference/cli/resources/chat/subresources/completions) | 2026-08-22 |
 | OpenAI Responses | [Migrate to the Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses) | 2026-08-22 |
 | Anthropic Messages | [Create a message](https://platform.claude.com/docs/en/api/messages/create) | 2026-08-22 |
 | Anthropic tool use | [Handle tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls) | 2026-08-22 |
 | Anthropic Tool Search | [Tool Search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool) | 2026-08-24 |
+| Anthropic Context Windows | [Context windows](https://platform.claude.com/docs/en/build-with-claude/context-windows) | 2026-08-24 |
+| Anthropic Structured Outputs | [Structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) | 2026-08-24 |
+| Anthropic Context Engineering | [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | 2026-08-24 |
 | Anthropic streaming | [Streaming Messages](https://platform.claude.com/docs/en/build-with-claude/streaming) | 2026-08-22 |
 | MCP specification | [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/) | 2026-08-16 |
 | JSON Schema | [Understanding JSON Schema：Object](https://json-schema.org/understanding-json-schema/reference/object) | 2026-08-24 |
