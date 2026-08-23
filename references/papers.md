@@ -38,7 +38,13 @@ Toolformer 研究模型如何学习何时以及怎样调用外部 API。它帮�
 
 Gorilla 关注大规模 API 选择与调用准确性，对理解工具描述、检索和参数生成很有价值。它也提醒我们：API 数量增加后，工具选择和接口漂移本身就成为系统问题。
 
-## 四、记忆与上下文：有限窗口怎样支撑长期任务
+## 四、运行控制：复杂循环怎样保持可解释的状态边界
+
+### [Statecharts: A Visual Formalism for Complex Systems](https://doi.org/10.1016/0167-6423(87)90035-9)
+
+Statecharts 在有限状态机之上组织层级、并发和事件，是理解复杂运行控制的经典工作。Pi 并没有直接声明一张 Statechart，但 agent、turn、message 与 tool 的层级事件，以及循环中的条件转移，可以借助状态机视角检查合法顺序和停止边界。
+
+## 五、记忆与上下文：有限窗口怎样支撑长期任务
 
 ### [Generative Agents: Interactive Simulacra of Human Behavior](https://arxiv.org/abs/2304.03442)
 
@@ -56,7 +62,7 @@ MemGPT 用分层存储和显式管理类比操作系统的内存层次，帮助�
 
 LongLLMLingua 研究长上下文提示压缩，提示我们压缩不仅是“把字数变短”，还涉及哪些 token 被保留以及性能如何评估。Pi 的 compaction 是否采用同类方法必须由源码证据回答。
 
-## 五、评测：怎样判断 Agent 真的能完成任务
+## 六、评测：怎样判断 Agent 真的能完成任务
 
 ### [AgentBench: Evaluating LLMs as Agents](https://arxiv.org/abs/2308.03688)
 
