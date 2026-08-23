@@ -32,6 +32,8 @@
 | Claude Code Plugins | [Create plugins](https://code.claude.com/docs/en/plugins) | 2026-08-24 |
 | Anthropic agent workflows | [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) | 2026-08-24 |
 | OpenAI Agents SDK orchestration | [Orchestrating multiple agents](https://openai.github.io/openai-agents-js/guides/multi-agent/) | 2026-08-24 |
+| OpenAI Agents SDK overview | [Agents SDK overview](https://developers.openai.com/api/docs/guides/agents) | 2026-08-24 |
+| OpenAI Agents SDK running and results | [Running agents](https://developers.openai.com/api/docs/guides/agents/running-agents) · [Results](https://developers.openai.com/api/docs/guides/agents/results) | 2026-08-24 |
 | OpenAI agent building guide | [A practical guide to building agents](https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/) | 2026-08-24 |
 | Google ADK workflow agents | [Workflow agents](https://adk.dev/agents/workflow-agents/) | 2026-08-24 |
 | JSON Schema | [Understanding JSON Schema：Object](https://json-schema.org/understanding-json-schema/reference/object) | 2026-08-24 |

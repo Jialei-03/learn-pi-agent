@@ -91,7 +91,7 @@ flowchart TB
 
 ### 第 13 章：Agent SDK 与应用集成
 
-比较直接调用模型 API、使用 Agent Runtime、使用 Agent SDK 和使用 CLI 的差异；以 Pi SDK 和 OpenAI Agents SDK 说明 Session、事件、Streaming、自定义 UI 与自定义 Provider。
+先比较直接调用模型 API、使用 Agent Runtime、使用 Agent SDK 和使用 CLI 时，应用分别要承担哪些循环、状态、会话与界面工作；再把 `pi-ai`、`pi-agent-core` 和 `pi-coding-agent` 放到这四层中定位。沿 Pi 固定源码解释 `createAgentSession()` 怎样装配 `ModelRuntime`、Tool、`ResourceLoader`、`SessionManager` 与 `SettingsManager`，并用真实接口完成事件订阅、最终消息提取、取消和清理。随后区分 Message、Turn、Run、Session、Streaming Event 与 View State，说明持久化、用户隔离、Session 替换和 Provider 适配边界；最后与 OpenAI Agents SDK 的 `Agent`、`run()`、`finalOutput`、Streaming 和 Run Context 对照，并给出 Web 应用的 Adapter 与生命周期设计。
 
 ### 第 14 章：Multi-Agent 与 A2A
 

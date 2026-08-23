@@ -164,6 +164,10 @@ Provider 对重复提示前缀进行复用的机制，可以降低部分延迟�
 
 循环中的一次模型响应及其相关工具处理边界。日常所说“一问一答”不一定等于 Pi 中一个 turn：一个用户目标可能触发多次模型—工具往返。
 
+### Run / 一次运行
+
+应用接受一项输入后，由 Agent Runtime 持续处理到完成、暂停、失败或取消的过程。一次 Run 可以跨越多个 Turn，并产生多条 Message 与 Tool Result；它通常短于 Session 的生命周期。
+
 ### Session / 会话
 
 跨多个 turn 保存的交互历史与元数据。Session 可以落盘、恢复、分支或压缩；它是宿主系统管理的状态，不等同于模型内部永久记忆。
@@ -217,6 +221,26 @@ JavaScript 中协作式取消异步工作的信号。宿主触发取消后，Pro
 ### Harness / 运行编排层
 
 把模型、工具、上下文、状态、事件、生命周期与宿主环境连接起来的工程层。Pi 将自己称为 Agent Harness，强调的不只是一个循环函数，还包括使 Agent 可交互、可扩展、可恢复的配套结构。
+
+### Model SDK / 模型 SDK
+
+把模型服务的 HTTP API 包装成某种编程语言方法的客户端库。它负责请求、认证、类型和流式响应等模型访问问题，但是否推进 Tool Loop、保存 Session 或执行工具，要看具体库是否另外提供 Agent Runtime 能力。
+
+### Agent SDK
+
+把 Agent 定义、运行循环、Tool、Session、事件与生命周期作为可编程接口交给应用的库。它适合把 Agent 嵌入网页、桌面应用、服务或 Workflow；应用仍负责用户体系、权限、部署、数据策略和产品界面。
+
+### ModelRuntime / 模型运行层
+
+Pi coding-agent 中集中管理 Provider、模型目录、认证状态、可用性与模型查找的对象。多个 AgentSession 可以共享应用级 ModelRuntime；它不等于某一次 Agent Run，也不替代 Session。
+
+### Run Context / 本地运行上下文
+
+某些 Agent SDK 在一次 Run 中传给 Tool、Handoff 或生命周期代码的本地依赖与业务数据，例如用户身份或数据库连接。它默认不等于发送给模型的 Context；模型需要的数据仍要经过明确选择后进入消息、指令或 Tool Result。
+
+### View State / 界面状态
+
+应用根据运行事件维护的展示状态，例如正在生成、正在调用工具、重试、完成或取消。View State 服务于按钮、气泡与进度卡片，可以由事件和权威消息重建，不应与模型消息或 Session 历史混为一体。
 
 ### Workflow / 工作流
 

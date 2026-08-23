@@ -40,8 +40,9 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 10. [第 10 章：Workflow 与 Agent——下一步由谁决定](docs/10-workflow-vs-agent.md)
 11. [第 11 章：Workflow Patterns——怎样连接多个模型与 Agent 节点](docs/11-workflow-patterns.md)
 12. [第 12 章：Planning 与 Reasoning Patterns——模型怎样形成、执行和修正行动方案](docs/12-planning-and-reasoning-patterns.md)
+13. [第 13 章：Agent SDK 与应用集成——把 Agent 能力装进真实产品](docs/13-agent-sdk-and-app-integration.md)
 
-前四章从模型协议进入 Agent Loop 与工具执行；第五、六章继续追踪 Context 怎样组成、信息怎样跨越多轮；第七章解释 Host 如何通过 MCP 发现并调用外部能力；第八、九章说明工作方法、扩展代码与分发单元怎样进入 Harness；第十、十一章进入多步骤任务，先划清 Workflow 与 Agent 的控制权，再学习串行、路由、并行、动态 worker 与评价循环等组合结构；第十二章进一步进入节点内部，区分 Reasoning、Execution Plan、ReAct、Reflection、搜索式推理与 Plan Mode。
+前四章从模型协议进入 Agent Loop 与工具执行；第五、六章继续追踪 Context 怎样组成、信息怎样跨越多轮；第七章解释 Host 如何通过 MCP 发现并调用外部能力；第八、九章说明工作方法、扩展代码与分发单元怎样进入 Harness；第十至十二章进入多步骤任务，依次划清 Workflow 与 Agent 的控制权、讲解常见组合结构，并区分 Reasoning、Execution Plan 与 Plan Mode；第十三章再把这些能力通过 Agent SDK 装进网页、桌面应用、服务或 Workflow。
 
 ## 适合谁
 

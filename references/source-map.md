@@ -93,6 +93,12 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 
 Pi Coding Agent README 明确说明核心不内置 Plan Mode，但仓库的 [`examples/extensions/plan-mode`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/plan-mode) 展示了扩展式实现：用 `setActiveTools()` 切换工具、在 `tool_call` 阶段拦截非只读 Bash、通过 `before_agent_start` 注入模式上下文，并用 Extension State 与 UI 保存计划进度。这正好说明“模型生成计划”和“产品真正限制、批准并执行计划”属于不同工程层。
 
+### 第 13 章的 Agent SDK 与应用集成源码锚点
+
+[`packages/coding-agent/src/core/sdk.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/sdk.ts) 定义 `CreateAgentSessionOptions` 与 `createAgentSession()` 的真实装配顺序：目录、`ModelRuntime`、模型、Tool Allowlist、`ResourceLoader`、`SessionManager` 和 `SettingsManager` 在这里汇合。[`packages/coding-agent/src/core/agent-session.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/agent-session.ts) 则给出应用最常接触的运行边界：`prompt()`、`subscribe()`、`messages`、`abort()`、`dispose()` 以及 Session 级事件。
+
+模型与认证目录由 [`model-runtime.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/model-runtime.ts) 集中管理；新建、切换、分叉和导入 Session 时，活跃对象替换逻辑位于 [`agent-session-runtime.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/agent-session-runtime.ts)。配合 [`examples/sdk`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/sdk) 阅读，可以验证内存/持久化 Session、工具选择、完整控制与运行时替换的公开用法。
+
 ## 三条核心观察主线
 
 ### 消息主线
