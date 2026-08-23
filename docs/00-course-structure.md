@@ -79,7 +79,7 @@ flowchart TB
 
 ### 第 10 章：Workflow 与 Agent 的区别
 
-区分代码预先定义流程的 Workflow、由模型动态决定下一步的 Agent，以及两者结合的混合系统；介绍 deterministic orchestration 与 LLM-based orchestration。
+以“下一步由谁决定”为判断标准，区分代码预先定义控制流的 Workflow、由模型根据中间结果动态选择行动的 Agent，以及外层流程约束内层 Agent 的混合系统；进一步解释 deterministic orchestration 确定的是控制结构，而不是模型文本或并发顺序，并用 Pi SDK 构造可嵌入 Workflow 的 Agent 节点。
 
 ### 第 11 章：Workflow Patterns
 

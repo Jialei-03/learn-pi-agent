@@ -30,6 +30,10 @@
 | Pi Packages | [Packages](https://pi.dev/docs/latest/packages) | 2026-08-24 |
 | OpenAI Plugins | [Plugins in ChatGPT and Codex](https://help.openai.com/en/articles/20001256-plugins-in-codex/) | 2026-08-24 |
 | Claude Code Plugins | [Create plugins](https://code.claude.com/docs/en/plugins) | 2026-08-24 |
+| Anthropic agent workflows | [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents) | 2026-08-24 |
+| OpenAI Agents SDK orchestration | [Orchestrating multiple agents](https://openai.github.io/openai-agents-js/guides/multi-agent/) | 2026-08-24 |
+| OpenAI agent building guide | [A practical guide to building agents](https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/) | 2026-08-24 |
+| Google ADK workflow agents | [Workflow agents](https://adk.dev/agents/workflow-agents/) | 2026-08-24 |
 | JSON Schema | [Understanding JSON Schema：Object](https://json-schema.org/understanding-json-schema/reference/object) | 2026-08-24 |
 | Temporal Event History | [Event History](https://docs.temporal.io/encyclopedia/event-history) | 2026-08-24 |
 | Temporal Workflow replay | [Workflow Definition](https://docs.temporal.io/workflow-definition) | 2026-08-24 |
