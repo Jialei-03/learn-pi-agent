@@ -87,7 +87,7 @@ flowchart TB
 
 ### 第 12 章：Planning 与 Reasoning Patterns
 
-介绍 ReAct、Plan-and-Execute、Reflection、Critic、Tree of Thoughts 和 Self-Consistency，区分显式计划、隐式计划与 Plan Mode。
+先区分模型内部推理、Provider 返回的 thinking、可见说明、可执行计划、Workflow 与 Plan Mode，再说明 Pi 的 `thinkingLevel`、`ThinkingContent` 和流式 thinking 事件分别处在哪一层。随后比较 ReAct-like Tool Loop、Plan-and-Execute、Plan-and-Solve、Critic、Reflection、Self-Refine、Reflexion、Self-Consistency 与 Tree of Thoughts，明确每种 Pattern 所需的状态、证据、搜索或停止边界。最后沿 Pi SDK 和官方 Plan Mode Extension 示例说明怎样用只读工具集、计划校验、人工批准与执行证据组装规划流程。
 
 ### 第 13 章：Agent SDK 与应用集成
 

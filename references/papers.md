@@ -24,9 +24,29 @@ GPT-3 展示了大规模语言模型通过上下文示例完成多种任务的�
 
 Chain-of-Thought 研究提示中间推理步骤对部分任务的作用。它与 Agent 的关系主要在“多步决策”，但不要把可见推理文本等同于模型真实、完整或可靠的内部过程。
 
+### [Language Models Don't Always Say What They Think: Unfaithful Explanations in Chain-of-Thought Prompting](https://arxiv.org/abs/2305.04388)
+
+这项研究展示可见 Chain-of-Thought 可能对影响答案的提示因素保持沉默，因此“解释听起来合理”不能单独证明它忠实反映模型的实际决策过程。Agent 工程应同时保存 Tool Call、Tool Result、测试、来源与审批等外部证据。
+
 ### [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)
 
 ReAct 把推理轨迹与环境动作交错起来，是理解 Agent Loop 的经典入口：模型提出下一步行动，环境返回观察，再继续决策。Pi 的具体事件与工具循环应以源码为准，而不是简单贴上 ReAct 标签。
+
+### [Plan-and-Solve Prompting: Improving Zero-Shot Chain-of-Thought Reasoning by Large Language Models](https://arxiv.org/abs/2305.04091)
+
+Plan-and-Solve 让模型先制定解题方案，再按方案完成推导。它提供“先计划、后求解”的提示研究背景，但发生在一次回答内部的计划式提示，不等于 Agent Harness 已经实现可校验、可恢复的 Plan-and-Execute 控制结构。
+
+### [Self-Consistency Improves Chain of Thought Reasoning in Language Models](https://arxiv.org/abs/2203.11171)
+
+Self-Consistency 对同一问题采样多条推理路径，再按最终答案的一致性聚合。它与并行投票具有相似控制流，但依赖答案可规范化、样本确有差异和错误不过度相关；多次采样也会近似成比例增加模型调用成本。
+
+### [Tree of Thoughts: Deliberate Problem Solving with Large Language Models](https://arxiv.org/abs/2305.10601)
+
+Tree of Thoughts 把中间候选表示成可扩展、可评价和可回溯的搜索状态。真正的 ToT 需要外部控制器保存树、frontier、评分、剪枝与预算；让模型列出几个方案并不自动形成搜索算法。
+
+### [Reflexion: Language Agents with Verbal Reinforcement Learning](https://arxiv.org/abs/2303.11366)
+
+Reflexion 把语言形式的反思写入 episodic memory，让后续 trial 能利用过去反馈，而不是通过梯度更新模型权重。工程实现还要验证反思、限定作用域并处理过期和错误记忆。
 
 ## 三、工具使用：模型怎样选择外部能力
 
@@ -97,6 +117,8 @@ SWE-bench 使用真实 GitHub issue 与代码仓库评估软件工程能力，�
 ## 这些论文分别解释什么
 
 - ReAct 为“推理—行动—观察”的 Agent Loop 提供研究背景；
+- Plan-and-Solve、Self-Consistency 与 Tree of Thoughts 分别提供计划式提示、多路径聚合和显式搜索的研究背景；
+- Self-Refine 与 Reflexion 帮助区分当前任务内的迭代修改和跨 trial 保存的语言反思；
 - Toolformer 和 Gorilla 解释工具选择、工具描述与参数生成问题；
 - RAG 解释外部证据怎样通过检索重新进入生成过程；
 - CoALA 与 MemGPT 提供区分工作上下文、长期记忆和分层存储的研究视角；

@@ -87,6 +87,12 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 
 [`packages/coding-agent/docs/sdk.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/sdk.md) 说明应用怎样通过 `createAgentSession()`、`ModelRuntime` 与 `SessionManager` 创建 Pi Agent 节点。`session.prompt()` 等待一次完整 Agent Run，`session.messages` 暴露消息状态，`subscribe()` 提供生命周期与流式事件，`session.abort()` 与 `session.dispose()` 分别承接取消和资源清理；这些接口让外层 Workflow 保留业务步骤、并发、批准与副作用控制，同时把开放性调查交给 Pi 的 Agent Loop。不同 Workflow Node 使用独立的内存 Session 时，共享信息应通过显式输入传递。
 
+### 第 12 章的 Planning 与 Reasoning 源码锚点
+
+模型推理的统一表示位于 [`packages/ai/src/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts)：`ThinkingLevel` 是请求强度，`ThinkingContent` 是 Provider 返回后统一的内容块，`Usage.reasoning` 是供应商能够报告时的 token 统计。[`packages/agent/src/agent.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent.ts) 把 Agent State 中的 `thinkingLevel` 映射进模型请求。
+
+Pi Coding Agent README 明确说明核心不内置 Plan Mode，但仓库的 [`examples/extensions/plan-mode`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/plan-mode) 展示了扩展式实现：用 `setActiveTools()` 切换工具、在 `tool_call` 阶段拦截非只读 Bash、通过 `before_agent_start` 注入模式上下文，并用 Extension State 与 UI 保存计划进度。这正好说明“模型生成计划”和“产品真正限制、批准并执行计划”属于不同工程层。
+
 ## 三条核心观察主线
 
 ### 消息主线
