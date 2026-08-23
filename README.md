@@ -33,8 +33,9 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 3. [第 3 章：Pi Agent Loop——状态、事件与停止条件](docs/03-agent-loop-state-machine-and-stopping.md)
 4. [第 4 章：Tools 与 Function Calling——从结构化请求到可控执行](docs/04-tools-and-function-calling.md)
 5. [第 5 章：Context Engineering 与 Structured Output——模型每轮究竟看见什么](docs/05-context-engineering-and-structured-output.md)
+6. [第 6 章：Session、Memory、Retrieval 与 Compaction——信息怎样跨越多轮任务](docs/06-session-memory-retrieval-and-compaction.md)
 
-前四章从模型协议进入 Agent Loop 与工具执行；第五章继续沿 Pi 的 Context 装配路径，解释项目指令、动态上下文、token 预算、Prompt Injection 与结构化输出。
+前四章从模型协议进入 Agent Loop 与工具执行；第五章解释模型每轮看见的 Context；第六章继续追踪信息怎样通过 Session 树、Compaction、Memory 与 Retrieval 跨越多轮和程序重启。
 
 ## 适合谁
 

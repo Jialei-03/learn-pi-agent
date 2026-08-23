@@ -46,6 +46,14 @@ Statecharts 在有限状态机之上组织层级、并发和事件，是理解�
 
 ## 五、记忆与上下文：有限窗口怎样支撑长期任务
 
+### [Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks](https://arxiv.org/abs/2005.11401)
+
+RAG 把参数化生成模型与可检索的非参数化知识源结合，是理解“先找证据，再把证据放进 Context”的经典工作。工程系统还要单独评估召回、排序、证据新鲜度与生成忠实度，不能把 RAG 简化成“接入向量数据库后不再幻觉”。
+
+### [Cognitive Architectures for Language Agents](https://arxiv.org/abs/2309.02427)
+
+CoALA 用 working memory、长期 procedural / semantic / episodic memory、内部与外部动作以及决策循环组织 Language Agent。它为区分 Context、经历、事实和行为规则提供了一套研究框架；这些分类是分析工具，不代表 Pi 必须实现同名组件。
+
 ### [Generative Agents: Interactive Simulacra of Human Behavior](https://arxiv.org/abs/2304.03442)
 
 论文用记忆流、反思和计划支撑长期行为，适合帮助区分原始经历、检索结果与高层摘要。它是理解 Agent memory 设计空间的案例，不代表所有 coding agent 都需要模拟相同结构。
@@ -86,6 +94,8 @@ SWE-bench 使用真实 GitHub issue 与代码仓库评估软件工程能力，�
 
 - ReAct 为“推理—行动—观察”的 Agent Loop 提供研究背景；
 - Toolformer 和 Gorilla 解释工具选择、工具描述与参数生成问题；
+- RAG 解释外部证据怎样通过检索重新进入生成过程；
+- CoALA 与 MemGPT 提供区分工作上下文、长期记忆和分层存储的研究视角；
 - Lost in the Middle 解释为什么长上下文装得下信息，却不代表模型能同等利用每个位置；
 - SWE-bench 展示 coding agent 的完成结果如何放进真实软件工程任务中评测。
 

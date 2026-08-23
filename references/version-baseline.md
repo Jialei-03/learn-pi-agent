@@ -24,6 +24,9 @@
 | Anthropic streaming | [Streaming Messages](https://platform.claude.com/docs/en/build-with-claude/streaming) | 2026-08-22 |
 | MCP specification | [Model Context Protocol Specification](https://modelcontextprotocol.io/specification/) | 2026-08-16 |
 | JSON Schema | [Understanding JSON Schema：Object](https://json-schema.org/understanding-json-schema/reference/object) | 2026-08-24 |
+| Temporal Event History | [Event History](https://docs.temporal.io/encyclopedia/event-history) | 2026-08-24 |
+| Temporal Workflow replay | [Workflow Definition](https://docs.temporal.io/workflow-definition) | 2026-08-24 |
+| Temporal Activity idempotency | [Activity Definition](https://docs.temporal.io/activity-definition) | 2026-08-24 |
 
 > API 文档是“在核对日期打开的最新官方文档”，不是本仓库保存的协议快照。打开链接时看到更新版本是正常现象；若字段或语义发生变化，应在正文中留下变更说明。
 

@@ -34,7 +34,7 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 
 箭头表达“上层调用下层、响应向上返回”的学习视角，不是完整的构建依赖图。
 
-## 第二层：先读三份关键文件
+## 第二层：先读五份关键文件
 
 ### 1. 模型世界的类型：`pi-ai/src/types.ts`
 
@@ -58,6 +58,18 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 - 循环发出 agent、turn、message、tool execution 等事件，界面可以消费这些事件；
 - assistant 响应中出现 tool call 后，宿主执行工具并把结果追加到上下文；
 - 循环还处理停止、错误、中止、steering 与 follow-up，并非只有一条永远成功的 happy path。
+
+### 4. coding-agent 会话树：`session-manager.ts`
+
+打开 [`packages/coding-agent/src/core/session-manager.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/session-manager.ts)，搜索 `SessionEntry`、`leafId`、`getBranch`、`buildContextEntries` 与 `buildSessionContext`。
+
+这条路径说明本地 coding-agent 怎样把 JSONL Entry 组织成追加写入的消息树，再从当前叶子投影出恢复后的活动消息。完整文件历史、活动分支与本轮 Context 是三个不同集合。
+
+### 5. 持久化 Harness：`harness/agent-harness.ts`
+
+打开 [`packages/agent/src/harness/agent-harness.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/harness/agent-harness.ts)，并配合 [`packages/agent/docs/harness.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/docs/harness.md) 阅读 Session、Lane、Operation State 与恢复策略。
+
+这里的重点不再只是“怎样保存消息”，而是崩溃后怎样识别已确认状态、未确认副作用与安全重放边界。coding-agent 的 server 装配入口位于 `packages/coding-agent/src/server/create-harness.ts`。
 
 ## 三条核心观察主线
 
