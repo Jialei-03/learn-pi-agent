@@ -204,7 +204,31 @@ JavaScript 中协作式取消异步工作的信号。宿主触发取消后，Pro
 
 ### Extension / 扩展
 
-通过项目定义的扩展点添加或改变能力的代码模块。它可能注册工具、命令或生命周期钩子。Extension 具有代码执行能力时，应像依赖和插件一样评估来源与权限。
+通过 Harness 定义的扩展点添加或改变能力的可执行代码模块。Pi Extension 由 factory function 接收 `ExtensionAPI`，可以注册 Tool、Command、Provider、UI 与生命周期事件处理器。它与宿主进程共享系统权限，应像依赖和插件一样评估来源、依赖、更新与运行权限。
+
+### ExtensionAPI / 扩展注册接口
+
+Pi 在加载 Extension factory 时传入的能力入口。它提供 `registerTool()`、`registerCommand()`、`registerProvider()`、`on()` 等注册方法，并让 Extension 在 Harness 已定义的边界接入运行，而不必自行接管 Agent Loop。
+
+### Hook / Event Handler / 生命周期处理器
+
+Extension 通过 `pi.on(event, handler)` 注册的函数。Harness 到达对应阶段时调用它；不同事件可以观察、修改、阻止或补充输入、Context、Tool Call、Tool Result、Session 与 Provider 请求。Hook 是确定边界上的代码，不是独立 Agent。
+
+### Command / 扩展命令
+
+由用户通过 slash command 直接触发的 Extension 入口。Command handler 默认不需要模型先做选择，也不会自然形成 Tool Call；它与会展开成用户消息的 Prompt Template、Skill Command 属于不同分发路径。
+
+### Pi Package / Pi 分发包
+
+Pi 可安装的资源目录，可以组合 Extension、Skill、Prompt Template 与 Theme，并通过 npm、Git 或本地路径获取。Package 既可以显式声明 `pi` manifest，也可以采用约定目录；它是分发单元，不等于单个 Extension，也不要求发布到 npm。
+
+### Plugin / 插件
+
+产品定义的可安装能力容器，而不是跨 Agent 产品统一的格式。不同产品支持的组件、manifest、权限与安装方式可能完全不同；能跨产品复用的通常是其中遵循 Agent Skills、MCP 等开放标准的部分，而不是整个 Plugin 包。
+
+### Middleware / 中间件
+
+多个处理器按确定顺序作用于同一运行边界，并把修改后的数据传给下一个处理器的组合方式。Pi 的 `context`、`before_agent_start` 与 `tool_result` 等事件具有这类串联语义；加载顺序会影响最终结果。
 
 ### Skill / 技能
 

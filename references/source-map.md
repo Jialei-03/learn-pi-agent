@@ -34,7 +34,7 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 
 箭头表达“上层调用下层、响应向上返回”的学习视角，不是完整的构建依赖图。
 
-## 第二层：先读七个关键入口
+## 第二层：先读八个关键入口
 
 ### 1. 模型世界的类型：`pi-ai/src/types.ts`
 
@@ -78,6 +78,10 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 ### 7. 工作方法怎样进入 Context：`skills.ts` 与 `prompt-templates.ts`
 
 [`packages/coding-agent/src/core/skills.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/skills.ts) 负责发现 Skill、解析 `name` 与 `description`，并生成 system prompt 中的 `<available_skills>` 索引；[`system-prompt.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/system-prompt.ts) 决定何时装入这份索引。再读 [`agent-session.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/agent-session.ts) 的 `_expandSkillCommand()` 与 [`prompt-templates.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/prompt-templates.ts)，区分模型通过 `read` 激活 Skill、用户显式展开 `/skill:name`，以及 Prompt Template 在模型调用前做字符串替换的三条路径。
+
+### 8. 扩展点怎样被加载与串联：`extensions`、`resource-loader.ts` 与 `package-manager.ts`
+
+先用 [`packages/coding-agent/docs/extensions.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/extensions.md) 建立 Extension API 与事件地图，再进入 [`extensions/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/extensions/types.ts)、[`extensions/loader.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/extensions/loader.ts) 和 [`extensions/runner.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/extensions/runner.ts)，分别观察类型边界、factory 注册和 Handler 串联。最后结合 [`resource-loader.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/resource-loader.ts) 的 project trust / reload 顺序与 [`package-manager.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/package-manager.ts) 的 npm、Git、本地来源及过滤规则，区分“运行时扩展点”和“资源分发单元”。
 
 ## 三条核心观察主线
 

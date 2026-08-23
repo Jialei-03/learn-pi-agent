@@ -71,7 +71,7 @@ flowchart TB
 
 ### 第 9 章：Extensions、Plugins 与 Packages
 
-解释 Pi 的扩展生命周期、自定义 Tool、Command、UI、事件处理、上下文注入、工具拦截和 Package 分发。这里把“协议是什么”与“Pi 如何接入协议”连接起来。
+解释 Pi Extension 的加载、项目信任、`ExtensionAPI`、自定义 Tool、Command、UI、Provider 与生命周期事件；区分 `input`、`before_agent_start`、`context` 和 Provider Payload 四个修改边界，追踪 `tool_call` / `tool_result` 中间件以及并行工具的预检、执行和写回顺序。再说明状态重建、`resources_discover`、reload、Package manifest、npm / Git / Local 来源和资源过滤，并比较 Pi Package、OpenAI Plugin 与 Claude Code Plugin 的不同语义。最后把 MCP 适配、供应链、权限、Sandbox 与审计放回完整扩展边界。
 
 ## 第三部分：Workflow 与 Agent 编排
 

@@ -26,6 +26,10 @@
 | MCP TypeScript SDK | [`3924de99df834302d89f5997a1b64ca268282284`](https://github.com/modelcontextprotocol/typescript-sdk/tree/3924de99df834302d89f5997a1b64ca268282284) (`@modelcontextprotocol/client` v2.0.0) | 2026-08-24 |
 | Agent Skills specification | [Agent Skills Specification](https://agentskills.io/specification) | 2026-08-24 |
 | OpenAI Codex Skills | [Build skills](https://developers.openai.com/codex/skills/) | 2026-08-24 |
+| Pi Extensions | [Extensions](https://pi.dev/docs/latest/extensions) | 2026-08-24 |
+| Pi Packages | [Packages](https://pi.dev/docs/latest/packages) | 2026-08-24 |
+| OpenAI Plugins | [Plugins in ChatGPT and Codex](https://help.openai.com/en/articles/20001256-plugins-in-codex/) | 2026-08-24 |
+| Claude Code Plugins | [Create plugins](https://code.claude.com/docs/en/plugins) | 2026-08-24 |
 | JSON Schema | [Understanding JSON Schema：Object](https://json-schema.org/understanding-json-schema/reference/object) | 2026-08-24 |
 | Temporal Event History | [Event History](https://docs.temporal.io/encyclopedia/event-history) | 2026-08-24 |
 | Temporal Workflow replay | [Workflow Definition](https://docs.temporal.io/workflow-definition) | 2026-08-24 |
