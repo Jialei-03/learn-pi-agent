@@ -34,7 +34,7 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 
 箭头表达“上层调用下层、响应向上返回”的学习视角，不是完整的构建依赖图。
 
-## 第二层：先读八个关键入口
+## 第二层：先读九个关键入口
 
 ### 1. 模型世界的类型：`pi-ai/src/types.ts`
 
@@ -85,7 +85,7 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 
 ### 9. 把 Pi 嵌入 Workflow：`sdk.md` 与 `AgentSession`
 
-[`packages/coding-agent/docs/sdk.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/sdk.md) 说明应用怎样通过 `createAgentSession()`、`ModelRuntime` 与 `SessionManager` 创建 Pi Agent 节点。`session.prompt()` 等待一次完整 Agent Run，`session.messages` 暴露消息状态，`subscribe()` 提供生命周期与流式事件；这些接口让外层 Workflow 保留业务步骤、批准与副作用控制，同时把开放性调查交给 Pi 的 Agent Loop。
+[`packages/coding-agent/docs/sdk.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/sdk.md) 说明应用怎样通过 `createAgentSession()`、`ModelRuntime` 与 `SessionManager` 创建 Pi Agent 节点。`session.prompt()` 等待一次完整 Agent Run，`session.messages` 暴露消息状态，`subscribe()` 提供生命周期与流式事件，`session.abort()` 与 `session.dispose()` 分别承接取消和资源清理；这些接口让外层 Workflow 保留业务步骤、并发、批准与副作用控制，同时把开放性调查交给 Pi 的 Agent Loop。不同 Workflow Node 使用独立的内存 Session 时，共享信息应通过显式输入传递。
 
 ## 三条核心观察主线
 

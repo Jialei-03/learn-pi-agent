@@ -83,7 +83,7 @@ flowchart TB
 
 ### 第 11 章：Workflow Patterns
 
-介绍 Prompt Chaining、Routing、Parallelization、Orchestrator-Workers、Evaluator-Optimizer 和带退出条件的循环，并说明 Structured Output 如何把模型判断交给代码执行。
+先用 Node、Contract、State、Transition 与 Gate 建立共同骨架，再把真实 Pi Agent Session 包成可取消、可隔离的 Workflow Node。依次解释 Prompt Chaining、Routing、Parallel Sectioning / Voting、Orchestrator-Workers、Evaluator-Optimizer 和通用 Loop，补齐运行时校验、依赖图、fan-out / fan-in、并发取消、最佳候选、硬上限、幂等与可观测性；最后把多种 Pattern 组合进一个外层固定、内层可动态行动的发布流程。
 
 ### 第 12 章：Planning 与 Reasoning Patterns
 

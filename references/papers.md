@@ -44,6 +44,10 @@ Gorilla 关注大规模 API 选择与调用准确性，对理解工具描述、�
 
 Statecharts 在有限状态机之上组织层级、并发和事件，是理解复杂运行控制的经典工作。Pi 并没有直接声明一张 Statechart，但 agent、turn、message 与 tool 的层级事件，以及循环中的条件转移，可以借助状态机视角检查合法顺序和停止边界。
 
+### [Self-Refine: Iterative Refinement with Self-Feedback](https://arxiv.org/abs/2303.17651)
+
+Self-Refine 研究模型怎样根据自己产生的反馈迭代修改输出，为理解 Evaluator-Optimizer 提供实验背景。论文展示的是特定任务和设置中的改进可能性；工程系统仍要明确评价标准、外部证据、最大次数、最佳候选与失败状态，不能把“重复自评”当成必然收敛。
+
 ## 五、记忆与上下文：有限窗口怎样支撑长期任务
 
 ### [Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks](https://arxiv.org/abs/2005.11401)
