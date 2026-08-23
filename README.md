@@ -31,8 +31,9 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 1. [第 1 章：从 LLM 到 Agent，再到 Harness](docs/01-from-llm-to-agent.md)
 2. [第 2 章：模型 API 与消息协议](docs/02-model-api-and-message-protocols.md)
 3. [第 3 章：Pi Agent Loop——状态、事件与停止条件](docs/03-agent-loop-state-machine-and-stopping.md)
+4. [第 4 章：Tools 与 Function Calling——从结构化请求到可控执行](docs/04-tools-and-function-calling.md)
 
-第一章从一次模型调用进入 Agent Loop、Runtime 与 Harness；第二章比较 OpenAI、Anthropic 与 Pi 对模型消息和工具调用的表达方式；第三章沿 Pi 源码进入真实循环，解释 Context、事件、消息队列与停止边界。
+第一章从一次模型调用进入 Agent Loop、Runtime 与 Harness；第二章比较 OpenAI、Anthropic 与 Pi 的消息协议；第三章沿 Pi 源码进入真实循环；第四章继续拆解工具契约、参数校验、执行钩子、并发与 Tool Search。
 
 ## 适合谁
 
