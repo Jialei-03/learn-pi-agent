@@ -35,8 +35,9 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 5. [第 5 章：Context Engineering 与 Structured Output——模型每轮究竟看见什么](docs/05-context-engineering-and-structured-output.md)
 6. [第 6 章：Session、Memory、Retrieval 与 Compaction——信息怎样跨越多轮任务](docs/06-session-memory-retrieval-and-compaction.md)
 7. [第 7 章：MCP——Agent 怎样用统一协议连接外部能力](docs/07-mcp-protocol-and-pi-integration.md)
+8. [第 8 章：Skills 与 Prompt Templates——怎样把工作方法交给 Agent](docs/08-skills-and-prompt-templates.md)
 
-前四章从模型协议进入 Agent Loop 与工具执行；第五、六章继续追踪 Context 怎样组成、信息怎样跨越多轮；第七章解释 Host 如何通过 MCP 发现并调用外部能力。
+前四章从模型协议进入 Agent Loop 与工具执行；第五、六章继续追踪 Context 怎样组成、信息怎样跨越多轮；第七章解释 Host 如何通过 MCP 发现并调用外部能力；第八章说明 Skill 怎样把工作方法按需交给 Agent，以及它与 Prompt Template 的边界。
 
 ## 适合谁
 

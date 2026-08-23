@@ -24,6 +24,8 @@
 | Anthropic streaming | [Streaming Messages](https://platform.claude.com/docs/en/build-with-claude/streaming) | 2026-08-22 |
 | MCP specification | [`2026-07-28` Specification](https://modelcontextprotocol.io/specification/2026-07-28) | 2026-08-24 |
 | MCP TypeScript SDK | [`3924de99df834302d89f5997a1b64ca268282284`](https://github.com/modelcontextprotocol/typescript-sdk/tree/3924de99df834302d89f5997a1b64ca268282284) (`@modelcontextprotocol/client` v2.0.0) | 2026-08-24 |
+| Agent Skills specification | [Agent Skills Specification](https://agentskills.io/specification) | 2026-08-24 |
+| OpenAI Codex Skills | [Build skills](https://developers.openai.com/codex/skills/) | 2026-08-24 |
 | JSON Schema | [Understanding JSON Schema：Object](https://json-schema.org/understanding-json-schema/reference/object) | 2026-08-24 |
 | Temporal Event History | [Event History](https://docs.temporal.io/encyclopedia/event-history) | 2026-08-24 |
 | Temporal Workflow replay | [Workflow Definition](https://docs.temporal.io/workflow-definition) | 2026-08-24 |

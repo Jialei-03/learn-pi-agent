@@ -67,7 +67,7 @@ flowchart TB
 
 ### 第 8 章：Skills 与 Prompt Templates
 
-解释 Skill 与 Tool 的区别、`SKILL.md`、渐进式披露、参考资料、脚本和资源，以及 Skill 如何指导 Agent 组合多个工具或 MCP 能力。
+解释 Skill 与 Tool、MCP、System Instruction 和 Prompt Template 的区别；沿 Pi 源码追踪 Skill Catalog、`description` 路由、`read(SKILL.md)`、`/skill:name` 与 Prompt Template 参数展开。讲清渐进式披露、参考资料、脚本、资产、跨 Harness 可移植边界、安全审查与 Skill 评估，以及 Skill 如何指导 Agent 组合多个 Tool 或 MCP 能力。
 
 ### 第 9 章：Extensions、Plugins 与 Packages
 

@@ -34,7 +34,7 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 
 箭头表达“上层调用下层、响应向上返回”的学习视角，不是完整的构建依赖图。
 
-## 第二层：先读六个关键入口
+## 第二层：先读七个关键入口
 
 ### 1. 模型世界的类型：`pi-ai/src/types.ts`
 
@@ -74,6 +74,10 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 ### 6. MCP 适配入口：`extensions.md` 与 Tool 类型
 
 固定版本的 Pi 没有内置 MCP Client；接入点位于 coding-agent Extension。先看 [`packages/coding-agent/docs/extensions.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/extensions.md) 中的 `pi.registerTool(...)`、动态工具与 `session_shutdown`，再对照 [`packages/agent/src/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/types.ts) 的 `AgentTool`、[`packages/ai/src/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts) 的 `ToolResultMessage`，确认 MCP Tool 的 Schema、内容块、异常和取消信号怎样跨越两套类型边界。
+
+### 7. 工作方法怎样进入 Context：`skills.ts` 与 `prompt-templates.ts`
+
+[`packages/coding-agent/src/core/skills.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/skills.ts) 负责发现 Skill、解析 `name` 与 `description`，并生成 system prompt 中的 `<available_skills>` 索引；[`system-prompt.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/system-prompt.ts) 决定何时装入这份索引。再读 [`agent-session.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/agent-session.ts) 的 `_expandSkillCommand()` 与 [`prompt-templates.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/prompt-templates.ts)，区分模型通过 `read` 激活 Skill、用户显式展开 `/skill:name`，以及 Prompt Template 在模型调用前做字符串替换的三条路径。
 
 ## 三条核心观察主线
 

@@ -208,7 +208,31 @@ JavaScript 中协作式取消异步工作的信号。宿主触发取消后，Pro
 
 ### Skill / 技能
 
-为 Agent 提供特定任务知识、步骤或资源的可加载单元。Skill 往往影响“怎样完成任务”，但不会凭空增加宿主未提供的权限；具体格式和加载方式取决于实现。
+为 Agent 提供特定任务知识、步骤或资源的可加载目录。Agent Skills 开放格式以 `SKILL.md` 为入口，可附带 scripts、references 与 assets。Skill 影响“怎样完成任务”，但不会凭空增加宿主未提供的 Tool 或权限；搜索路径、调用方式与额外字段由 Harness 决定。
+
+### SKILL.md
+
+Agent Skill 的入口文件，由 YAML frontmatter 与 Markdown 正文组成。开放规范要求 frontmatter 至少包含 `name` 与 `description`；正文存放核心工作方法，并用相对路径指向脚本、参考资料或资产。
+
+### YAML Frontmatter
+
+Markdown 文件开头、由两条 `---` 包围的结构化元数据。Harness 可以在不读取整篇正文的情况下解析字段，例如 Skill 的 `name`、`description`，或 Prompt Template 的 `argument-hint`。
+
+### Skill Catalog / Skill 索引
+
+Harness 在会话开始时提供给模型的可用 Skill 摘要，通常包含名称、描述和文件位置。它让模型知道有哪些方法可选，但不等于完整 `SKILL.md` 已经进入 Context。
+
+### Progressive Disclosure / 渐进式披露
+
+先提供少量元数据用于选择，再在任务相关时加载完整说明，最后按需读取脚本、参考资料与资产的 Context 管理方法。它降低初始 token 成本，也减少无关指令对模型注意力的干扰。
+
+### Prompt Template / 提示模板
+
+可复用、可带参数的提示文本。Pi 根据文件名注册 slash command，并在模型调用前把 `$1`、`$@` 或默认值等占位符替换为用户参数；展开结果是一条普通用户消息，不会自行执行 Tool。
+
+### `allowed-tools`
+
+Agent Skills 规范中的实验性可选字段，用于声明预批准工具。不同 Harness 对它的解析和权限含义并不一致，不能把它当成跨产品通用的安全授权；Pi 固定源码没有用它替代 Tool Runtime 的权限检查。
 
 ### ResourceLoader / 资源加载器
 
