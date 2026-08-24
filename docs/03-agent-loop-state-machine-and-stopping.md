@@ -238,51 +238,57 @@ const response = await streamFunction(
 模型开始生成时，Pi 先把 partial assistant message 放入 `context.messages`：
 
 ```typescript
-case "start":
-  partialMessage = event.partial;
-  context.messages.push(partialMessage);
-  addedPartial = true;
-  await emit({
-    type: "message_start",
-    message: { ...partialMessage },
-  });
-  break;
+switch (event.type) {
+  case "start":
+    partialMessage = event.partial;
+    context.messages.push(partialMessage);
+    addedPartial = true;
+    await emit({
+      type: "message_start",
+      message: { ...partialMessage },
+    });
+    break;
+}
 ```
 
 收到文本、思考内容或 Tool Call 的增量事件时，最后一条 Context 消息会被替换成更新后的 partial message：
 
 ```typescript
-case "text_delta":
-case "thinking_delta":
-case "toolcall_delta":
-  if (partialMessage) {
-    partialMessage = event.partial;
-    context.messages[context.messages.length - 1] = partialMessage;
+switch (event.type) {
+  case "text_delta":
+  case "thinking_delta":
+  case "toolcall_delta":
+    if (partialMessage) {
+      partialMessage = event.partial;
+      context.messages[context.messages.length - 1] = partialMessage;
 
-    await emit({
-      type: "message_update",
-      assistantMessageEvent: event,
-      message: { ...partialMessage },
-    });
-  }
-  break;
+      await emit({
+        type: "message_update",
+        assistantMessageEvent: event,
+        message: { ...partialMessage },
+      });
+    }
+    break;
+}
 ```
 
 流结束后，再用完整消息替换最后一个 partial message：
 
 ```typescript
-case "done":
-case "error": {
-  const finalMessage = await response.result();
+switch (event.type) {
+  case "done":
+  case "error": {
+    const finalMessage = await response.result();
 
-  if (addedPartial) {
-    context.messages[context.messages.length - 1] = finalMessage;
-  } else {
-    context.messages.push(finalMessage);
+    if (addedPartial) {
+      context.messages[context.messages.length - 1] = finalMessage;
+    } else {
+      context.messages.push(finalMessage);
+    }
+
+    await emit({ type: "message_end", message: finalMessage });
+    return finalMessage;
   }
-
-  await emit({ type: "message_end", message: finalMessage });
-  return finalMessage;
 }
 ```
 
@@ -293,10 +299,12 @@ case "error": {
 低层循环更新的是自己的 `currentContext`。上层 `Agent` 则消费 `AgentEvent`，在 `message_end` 时把完整消息写进公开状态：
 
 ```typescript
-case "message_end":
-  this._state.streamingMessage = undefined;
-  this._state.messages.push(event.message);
-  break;
+switch (event.type) {
+  case "message_end":
+    this._state.streamingMessage = undefined;
+    this._state.messages.push(event.message);
+    break;
+}
 ```
 
 在流式生成期间，界面读取的是 `streamingMessage`；消息完成后，稳定版本才进入 `state.messages`。这使运行中的显示状态和已经完成的对话记录保持分离。
@@ -740,4 +748,4 @@ Pi 会等当前 turn 的工具批次完成，再注入 steering。需要取消�
 - [Pi `types.ts`：`AgentContext`、`AgentLoopConfig` 与 `AgentEvent`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/types.ts)
 - [Pi `agent.ts`：公开状态、消息队列与事件归约](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent.ts)
 - [Pi `agent-loop.test.ts`：事件顺序、队列与停止条件测试](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/test/agent-loop.test.ts)
-- [David Harel, Statecharts: A Visual Formalism for Complex Systems](https://doi.org/10.1016/0167-6423(87)90035-9)
+- [David Harel, Statecharts: A Visual Formalism for Complex Systems](https://doi.org/10.1016/0167-6423%2887%2990035-9)

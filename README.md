@@ -2,7 +2,7 @@
 
 从基础概念、主流模型 API 与经典论文出发，逐步读懂 Pi Agent 的设计思想与源码实现。
 
-> 中文内容 · 持续建设中 · 非官方 Pi 项目
+> 中文内容 · 18 章主线已完成 · 非官方 Pi 项目
 
 ## 这是什么
 
@@ -24,30 +24,9 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 
 ## 从哪里开始
 
-完整章节结构记录在[课程章节结构](docs/00-course-structure.md)中；下面只保留当前学习入口：
+从[第 1 章：从一次模型调用到 Agent](docs/01-from-llm-to-agent.md)开始，然后按照文件编号从 `02` 一直读到 `18`。
 
-从第一章开始，按章节编号继续阅读：
-
-1. [第 1 章：从 LLM 到 Agent，再到 Harness](docs/01-from-llm-to-agent.md)
-2. [第 2 章：模型 API 与消息协议](docs/02-model-api-and-message-protocols.md)
-3. [第 3 章：Pi Agent Loop——状态、事件与停止条件](docs/03-agent-loop-state-machine-and-stopping.md)
-4. [第 4 章：Tools 与 Function Calling——从结构化请求到可控执行](docs/04-tools-and-function-calling.md)
-5. [第 5 章：Context Engineering 与 Structured Output——模型每轮究竟看见什么](docs/05-context-engineering-and-structured-output.md)
-6. [第 6 章：Session、Memory、Retrieval 与 Compaction——信息怎样跨越多轮任务](docs/06-session-memory-retrieval-and-compaction.md)
-7. [第 7 章：MCP——Agent 怎样用统一协议连接外部能力](docs/07-mcp-protocol-and-pi-integration.md)
-8. [第 8 章：Skills 与 Prompt Templates——怎样把工作方法交给 Agent](docs/08-skills-and-prompt-templates.md)
-9. [第 9 章：Extensions、Plugins 与 Packages——怎样扩展并分发 Agent Harness](docs/09-extensions-plugins-and-packages.md)
-10. [第 10 章：Workflow 与 Agent——下一步由谁决定](docs/10-workflow-vs-agent.md)
-11. [第 11 章：Workflow Patterns——怎样连接多个模型与 Agent 节点](docs/11-workflow-patterns.md)
-12. [第 12 章：Planning 与 Reasoning Patterns——模型怎样形成、执行和修正行动方案](docs/12-planning-and-reasoning-patterns.md)
-13. [第 13 章：Agent SDK 与应用集成——把 Agent 能力装进真实产品](docs/13-agent-sdk-and-app-integration.md)
-14. [第 14 章：Multi-Agent 与 A2A——多个 Agent 怎样分工与协作](docs/14-multi-agent-and-a2a.md)
-15. [第 15 章：Sandbox、Code Agent 与 Computer Use——动作在哪里执行，由谁允许](docs/15-sandbox-code-agent-and-computer-use.md)
-16. [第 16 章：Durable Execution 与 Human-in-the-loop——任务中断后，系统怎样安全继续](docs/16-durable-execution-and-human-in-the-loop.md)
-17. [第 17 章：Security、Guardrails 与 Governance——Agent 为什么不能把模型当权限系统](docs/17-security-guardrails-and-governance.md)
-18. [第 18 章：Observability、Evaluation 与 Harness Engineering——怎样知道 Agent 真的变好了](docs/18-observability-evaluation-and-harness-engineering.md)
-
-前四章从模型协议进入 Agent Loop 与工具执行；第五、六章继续追踪 Context 怎样组成、信息怎样跨越多轮；第七章解释 Host 如何通过 MCP 发现并调用外部能力；第八、九章说明工作方法、扩展代码与分发单元怎样进入 Harness；第十至十二章进入多步骤任务，依次划清 Workflow 与 Agent 的控制权、讲解常见组合结构，并区分 Reasoning、Execution Plan 与 Plan Mode；第十三章把这些能力通过 Agent SDK 装进应用，第十四章进入多 Agent 编排与 A2A，第十五章把动作放回真实文件、进程、网络、浏览器与 Sandbox 中；第十六章处理长任务中断、重试、外部副作用与人工批准后的安全恢复，第十七章建立身份、授权、Guardrail、供应链和治理边界；第十八章最终用 Event、Telemetry、Trace、Eval 与 Harness Engineering 判断系统是否真的可靠并持续改进。
+各章解决的问题和概念顺序记录在[课程章节结构](docs/00-course-structure.md)中。
 
 ## 适合谁
 

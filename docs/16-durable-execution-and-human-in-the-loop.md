@@ -491,20 +491,22 @@ No result provided
 但实际运行方法尚未完成：
 
 ```ts
-static async create(options: AgentHarnessOptions) {
-  const [record] = await options.session.findRecords({ limit: 1 });
-  if (record !== undefined) {
-    throw new HarnessNotImplemented("create.restore");
+class AgentHarness {
+  static async create(options: AgentHarnessOptions) {
+    const [record] = await options.session.findRecords({ limit: 1 });
+    if (record !== undefined) {
+      throw new HarnessNotImplemented("create.restore");
+    }
+    return { harness: new AgentHarness(options), suspended: [] };
   }
-  return { harness: new AgentHarness(options), suspended: [] };
-}
 
-async prompt(/* ... */): Promise<RunResult> {
-  return this.unavailable("prompt");
-}
+  async prompt(/* ... */): Promise<RunResult> {
+    return this.unavailable("prompt");
+  }
 
-async resume(): Promise<ResumeResult> {
-  return this.unavailable("resume");
+  async resume(): Promise<ResumeResult> {
+    return this.unavailable("resume");
+  }
 }
 ```
 

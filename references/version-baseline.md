@@ -66,7 +66,7 @@
 | MCP Authorization Security | [Security Considerations](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/security-considerations) · [Security Best Practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices) | 2026-08-24 |
 | OWASP Agentic Top 10 | [Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) | 2026-08-24 |
 | NIST AI RMF | [Govern、Map、Measure、Manage](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/) | 2026-08-24 |
-| NIST Generative AI Profile | [NIST AI 600-1](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf) | 2026-08-24 |
+| NIST Generative AI Profile | [NIST AI 600-1](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence) | 2026-08-24 |
 | NIST Agent Security RFI Summary | [Summary and Analysis of Responses](https://www.nist.gov/publications/summary-analysis-responses-request-information-regarding-security-considerations-ai) | 2026-08-24 |
 | OpenTelemetry signals | [Traces、Metrics、Logs 与 Baggage](https://opentelemetry.io/docs/concepts/signals/) | 2026-08-24 |
 | OpenTelemetry observability | [Observability Primer](https://opentelemetry.io/docs/concepts/observability-primer/) | 2026-08-24 |

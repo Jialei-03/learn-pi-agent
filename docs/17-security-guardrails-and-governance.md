@@ -1017,7 +1017,7 @@ NIST AI RMF 与 Generative AI Profile 提供风险治理的组织框架；NIST 2
 - [MCP Security Best Practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices)
 - [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/)
 - [NIST AI RMF Core：Govern、Map、Measure、Manage](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/)
-- [NIST AI 600-1：Generative AI Profile](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf)
+- [NIST AI 600-1：Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)
 - [NIST：2026 Agent Security RFI Responses Summary](https://www.nist.gov/publications/summary-analysis-responses-request-information-regarding-security-considerations-ai)
 - [Anthropic：Prompt Injection Defenses](https://www.anthropic.com/research/prompt-injection-defenses)
 - [Greshake et al., Not what you've signed up for: Compromising Real-World LLM-Integrated Applications with Indirect Prompt Injection](https://arxiv.org/abs/2302.12173)

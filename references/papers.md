@@ -60,7 +60,7 @@ Gorilla 关注大规模 API 选择与调用准确性，对理解工具描述、�
 
 ## 四、运行控制：复杂循环怎样保持可解释的状态边界
 
-### [Statecharts: A Visual Formalism for Complex Systems](https://doi.org/10.1016/0167-6423(87)90035-9)
+### [Statecharts: A Visual Formalism for Complex Systems](https://doi.org/10.1016/0167-6423%2887%2990035-9)
 
 Statecharts 在有限状态机之上组织层级、并发和事件，是理解复杂运行控制的经典工作。Pi 并没有直接声明一张 Statechart，但 agent、turn、message 与 tool 的层级事件，以及循环中的条件转移，可以借助状态机视角检查合法顺序和停止边界。
 

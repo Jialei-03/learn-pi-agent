@@ -45,3 +45,10 @@ temp/
 out/
 output/
 generated_images/
+
+# Agent evaluation, session, and local media artifacts
+.eval/
+*.session.jsonl
+videos/
+playwright-report/
+test-results/

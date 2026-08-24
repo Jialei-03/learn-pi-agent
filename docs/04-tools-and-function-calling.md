@@ -418,12 +418,14 @@ async function prepareToolCall(context, assistantMessage, toolCall, config, sign
 有些 Provider、旧会话或第三方扩展可能使用旧字段名。工具可以先做形状迁移：
 
 ```ts
-prepareArguments(raw) {
-  const args = raw as { city?: string; location?: string };
-  return {
-    location: args.location ?? args.city,
-  };
-}
+const tool = {
+  prepareArguments(raw: unknown) {
+    const args = raw as { city?: string; location?: string };
+    return {
+      location: args.location ?? args.city,
+    };
+  },
+};
 ```
 
 返回值随后仍会进入 `validateToolArguments(...)`。这允许工具兼容旧参数，同时保持统一的执行参数。
@@ -556,11 +558,11 @@ return {
 `AgentTool.execute` 的契约要求失败时抛出异常。Pi 会捕获异常并生成：
 
 ```ts
-{
+const failedResult = {
   content: [{ type: "text", text: errorMessage }],
   details: {},
   isError: true,
-}
+};
 ```
 
 如果工具只是返回 `content: "执行失败"` 而不抛出，Runtime 会把它当作成功结果，除非 `afterToolCall` 再修改 `isError`。统一抛错能让事件、UI 与模型都得到一致的失败语义。
@@ -654,11 +656,11 @@ OpenAI 当前文档把 Tool Search 分为托管搜索和客户端执行搜索；
 Pi 的 `AgentToolResult` 可以返回：
 
 ```ts
-{
+const searchResult = {
   content: [{ type: "text", text: "已找到两个相关工具" }],
   details: { query: "calendar" },
   addedToolNames: ["list_calendar_events", "create_calendar_event"],
-}
+};
 ```
 
 `createToolResultMessage(...)` 会把这些名称复制到 `ToolResultMessage`。`pi-ai` 的 Provider 适配器再根据供应商能力，把这些工具从这条对话位置开始作为延迟工具加载；不支持原生延迟加载的 Provider 继续按普通 `Context.tools` 处理。

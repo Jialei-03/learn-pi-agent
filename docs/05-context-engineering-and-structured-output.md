@@ -513,10 +513,10 @@ interface Context {
 Pi 对工具参数提供了另一条结构化约束：
 
 ```ts
-constrainedSampling: {
-  type: "json_schema",
-  strict: "prefer" | "require",
-}
+type ConstrainedSampling = {
+  type: "json_schema";
+  strict: "prefer" | "require";
+};
 ```
 
 - `prefer`：Provider 支持时启用严格 Schema，不支持时回退到普通 Tool Calling；
