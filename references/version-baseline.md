@@ -44,6 +44,16 @@
 | Temporal Event History | [Event History](https://docs.temporal.io/encyclopedia/event-history) | 2026-08-24 |
 | Temporal Workflow replay | [Workflow Definition](https://docs.temporal.io/workflow-definition) | 2026-08-24 |
 | Temporal Activity idempotency | [Activity Definition](https://docs.temporal.io/activity-definition) | 2026-08-24 |
+| Pi containerization | [Containerization：Gondolin、Docker 与 OpenShell](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/containerization.md) | 2026-08-24 |
+| OpenAI Codex sandbox | [Sandboxing](https://learn.chatgpt.com/docs/sandboxing) | 2026-08-24 |
+| OpenAI Codex approvals and security | [Agent Approvals & Security](https://learn.chatgpt.com/docs/agent-approvals-security) | 2026-08-24 |
+| OpenAI Codex cloud network | [Internet Access](https://learn.chatgpt.com/docs/cloud/internet-access) | 2026-08-24 |
+| OpenAI Shell tool | [Shell](https://developers.openai.com/api/docs/guides/tools-shell) | 2026-08-24 |
+| OpenAI Computer Use | [Computer Use](https://developers.openai.com/api/docs/guides/tools-computer-use) | 2026-08-24 |
+| Anthropic Computer Use | [Computer Use Tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool) | 2026-08-24 |
+| Anthropic Sandbox Runtime | [anthropic-experimental/sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime) | 2026-08-24 |
+| Docker seccomp | [Seccomp security profiles](https://docs.docker.com/engine/security/seccomp/) | 2026-08-24 |
+| gVisor | [Architecture Guide](https://gvisor.dev/docs/architecture_guide/intro/) | 2026-08-24 |
 
 > API 文档是“在核对日期打开的最新官方文档”，不是本仓库保存的协议快照。打开链接时看到更新版本是正常现象；若字段或语义发生变化，应在正文中留下变更说明。
 

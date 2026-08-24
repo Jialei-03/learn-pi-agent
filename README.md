@@ -42,8 +42,9 @@ Agent 领域不缺术语，也不缺“十分钟做一个 Agent”的示例。�
 12. [第 12 章：Planning 与 Reasoning Patterns——模型怎样形成、执行和修正行动方案](docs/12-planning-and-reasoning-patterns.md)
 13. [第 13 章：Agent SDK 与应用集成——把 Agent 能力装进真实产品](docs/13-agent-sdk-and-app-integration.md)
 14. [第 14 章：Multi-Agent 与 A2A——多个 Agent 怎样分工与协作](docs/14-multi-agent-and-a2a.md)
+15. [第 15 章：Sandbox、Code Agent 与 Computer Use——动作在哪里执行，由谁允许](docs/15-sandbox-code-agent-and-computer-use.md)
 
-前四章从模型协议进入 Agent Loop 与工具执行；第五、六章继续追踪 Context 怎样组成、信息怎样跨越多轮；第七章解释 Host 如何通过 MCP 发现并调用外部能力；第八、九章说明工作方法、扩展代码与分发单元怎样进入 Harness；第十至十二章进入多步骤任务，依次划清 Workflow 与 Agent 的控制权、讲解常见组合结构，并区分 Reasoning、Execution Plan 与 Plan Mode；第十三章把这些能力通过 Agent SDK 装进应用，第十四章再进入多 Agent 编排、Pi subagent Extension 与 A2A 1.0 的跨系统协作边界。
+前四章从模型协议进入 Agent Loop 与工具执行；第五、六章继续追踪 Context 怎样组成、信息怎样跨越多轮；第七章解释 Host 如何通过 MCP 发现并调用外部能力；第八、九章说明工作方法、扩展代码与分发单元怎样进入 Harness；第十至十二章进入多步骤任务，依次划清 Workflow 与 Agent 的控制权、讲解常见组合结构，并区分 Reasoning、Execution Plan 与 Plan Mode；第十三章把这些能力通过 Agent SDK 装进应用，第十四章进入多 Agent 编排与 A2A，第十五章再把所有动作放回真实文件、进程、网络、浏览器与 Sandbox 中。
 
 ## 适合谁
 

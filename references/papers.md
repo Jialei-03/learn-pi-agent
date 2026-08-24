@@ -114,6 +114,20 @@ AgentBench 在多种交互环境中评测作为 Agent 的模型，适合认识�
 
 SWE-bench 使用真实 GitHub issue 与代码仓库评估软件工程能力，与 coding agent 直接相关。阅读成绩时要同时检查数据版本、运行环境、工具、通过标准与是否存在数据污染风险。
 
+## 八、Agent 与计算机接口：模型怎样在真实环境里完成动作
+
+### [SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering](https://arxiv.org/abs/2405.15793)
+
+SWE-agent 把文件导航、编辑、命令执行和反馈组织成专为模型设计的 Agent-Computer Interface，并研究接口设计怎样影响真实软件工程任务表现。它帮助理解 Code Agent 的能力来自模型、接口、执行环境和反馈循环的共同作用，而不是单靠一段更长的提示。
+
+### [WebArena: A Realistic Web Environment for Building Autonomous Agents](https://arxiv.org/abs/2307.13854)
+
+WebArena 提供可复现的真实功能网站与长链路任务，并按最终功能状态评估 Web Agent。它说明网页 Agent 的正确性应由环境结果验证，页面内容同时也是可能影响模型判断的不可信输入。
+
+### [OSWorld: Benchmarking Multimodal Agents for Open-Ended Tasks in Real Computer Environments](https://arxiv.org/abs/2404.07972)
+
+OSWorld 在真实操作系统和跨应用任务中评测多模态 Agent，覆盖截图观察、鼠标键盘操作、文件 I/O 与多应用流程。它为 Computer Use 的视觉定位、环境稳定性、长程控制和执行式评测提供研究背景。
+
 ## 这些论文分别解释什么
 
 - ReAct 为“推理—行动—观察”的 Agent Loop 提供研究背景；
@@ -123,7 +137,9 @@ SWE-bench 使用真实 GitHub issue 与代码仓库评估软件工程能力，�
 - RAG 解释外部证据怎样通过检索重新进入生成过程；
 - CoALA 与 MemGPT 提供区分工作上下文、长期记忆和分层存储的研究视角；
 - Lost in the Middle 解释为什么长上下文装得下信息，却不代表模型能同等利用每个位置；
-- SWE-bench 展示 coding agent 的完成结果如何放进真实软件工程任务中评测。
+- SWE-bench 展示 coding agent 的完成结果如何放进真实软件工程任务中评测；
+- SWE-agent 说明 Agent-Computer Interface 的设计会改变模型能否有效阅读、修改和验证代码；
+- WebArena 与 OSWorld 分别把 Web Agent 和 Computer-Using Agent 放进可执行环境中评测。
 
 这些论文只提供问题背景和实验依据。论文方法是否出现在 Pi 中，仍然要由固定版本的源码证明。
 

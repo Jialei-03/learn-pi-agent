@@ -105,6 +105,14 @@ Pi Coding Agent README 的 [Philosophy](https://github.com/earendil-works/pi/blo
 
 A2A 不属于 Pi 固定源码。第 14 章使用 [A2A 1.0.0 Specification](https://a2a-protocol.org/v1.0.0/specification/) 与固定仓库 commit [`16ba52690519bf55b9388e34d4db356efa88aa51`](https://github.com/a2aproject/A2A/tree/16ba52690519bf55b9388e34d4db356efa88aa51) 定义跨系统边界；将 Pi 暴露为 A2A Server 时，需要在 `AgentSession` 外另写 Agent Card、Task Store、协议操作、认证和事件映射 Adapter。
 
+### 第 15 章的 Sandbox、Code Agent 与 Computer Use 源码锚点
+
+Pi 根目录 [README 的 Security 段落](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/README.md) 是本章的权限起点：固定版本没有限制文件、进程、网络和凭据访问的内置权限系统，默认继承启动 Pi 的用户与进程权限。[`createCodingTools()`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/tools/index.ts) 组合默认 `read`、`bash`、`edit` 与 `write`；[`path-utils.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/tools/path-utils.ts) 说明 `cwd` 是相对路径的解析起点，绝对路径不会被自动收回工作区。
+
+[`bash.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/tools/bash.ts) 展示本地命令怎样以 `cwd`、进程环境与 `AbortSignal` 启动，并提供可替换的 `BashOperations`；[Environment Variables 文档](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/environment-variables.md) 列出 Provider Key 和默认传给 Bash 的 `PI_*` 会话变量。`permission-gate.ts` 与 `protected-paths.ts` 展示 Extension Policy Gate，但字符串或路径规则仍依赖已知 Tool 路径，不能替代操作系统隔离。
+
+[Containerization 文档](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/containerization.md) 区分“整个 Pi 在隔离环境中运行”和“宿主 Pi 把 Tool 执行路由进隔离环境”。[`sandbox` 示例](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/sandbox) 包装 Bash，适合观察局部覆盖；[`gondolin` 示例](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/gondolin) 则替换 read、write、edit、bash、grep、find 与 ls Operations，把执行发送到挂载工作区的本地 microVM。比较二者时，应逐一检查内置 Tool、用户 Shell、Extension 和自定义 Tool 究竟在哪个进程与权限边界中运行。
+
 ## 三条核心观察主线
 
 ### 消息主线

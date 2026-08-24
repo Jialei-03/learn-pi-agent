@@ -103,7 +103,7 @@ flowchart TB
 
 ### 第 15 章：Sandbox、Code Agent 与 Computer Use
 
-解释文件系统、Shell、代码执行、浏览器、Computer Use、工作目录、Sandbox、环境变量和 Secret 管理，明确“模型能请求”与“环境允许执行”的区别。
+先把 Code Agent 拆成模型、Agent Loop、仓库 Context、执行器、策略、Sandbox 与验证反馈，再比较文件 Tool、Shell、Browser Automation 和 Computer Use 四类接口。沿 Pi 固定源码核对 `createCodingTools()`、路径解析、Bash 子进程、环境继承、超时与取消，说明 Working Directory、Tool Allowlist、Approval、Worktree 与 Sandbox 各自解决什么。随后比较把整个 Pi 放入隔离环境和只把 Tool Operations 路由到隔离环境两种方式，理解 Gondolin、Docker、OpenShell、容器、系统调用 Sandbox、VM / microVM 与远程执行器的边界；最后设计 Secret、网络、资源预算、人工确认、产物回传和 Computer Use 截图—动作循环。
 
 ### 第 16 章：Durable Execution 与 Human-in-the-loop
 
