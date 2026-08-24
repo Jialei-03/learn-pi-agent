@@ -95,7 +95,7 @@ flowchart TB
 
 ### 第 14 章：Multi-Agent 与 A2A
 
-解释 Manager、Worker、Agents-as-Tools、Handoff、Delegation、上下文隔离和成本控制，再介绍 A2A 如何让不同框架或供应商的 Agent 发现能力、交换任务和协作。
+先判断一个组件何时具有独立 Agent Loop、Context、状态和生命周期，再区分 Manager–Worker、Agents-as-Tools、Handoff 与 Delegation 各自描述的控制关系。随后设计跨 Context 的任务与结果契约，分析 fan-out/fan-in、依赖关系、关键路径、Token 成本、并发和取消边界；结合 CAMEL、AutoGen、MetaGPT 与 Anthropic Research 系统理解多 Agent 的收益和代价。沿 Pi 固定源码说明核心为何不内置 Subagent，以及官方 Extension 示例怎样用 `subagent` Tool、Agent Markdown、独立 Pi 子进程、single/parallel/chain 和项目级信任边界实现协作。最后以 A2A 1.0 解释 Agent Card、Message、Task、Part、Artifact、Task State、Streaming、MCP/A2A 分工，并给出把 Pi `AgentSession` 适配为 A2A Server 所需的 Task Store、ID 映射、幂等、认证和事件转换边界。
 
 ## 第四部分：真实工程环境
 

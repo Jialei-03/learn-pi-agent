@@ -286,6 +286,50 @@ fan-out 把一次运行分发到多个并行分支，fan-in 在分支结束后�
 
 由 Orchestrator 在运行时根据任务动态产生 Work Item，再交给一个或多个 Worker 执行并汇总的模式。动态计划仍需检查任务数量、唯一标识、依赖环、权限、并发、预算和输出契约。
 
+### Multi-Agent System / 多 Agent 系统
+
+多个具有独立 Context、状态和运行生命周期的 Agent 通过某种编排关系共同完成目标的系统。它额外引入任务分解、通信、所有权、汇聚、预算、取消和错误传播问题；多个模型调用或同一 Context 中的多个角色并不自动构成多 Agent 系统。
+
+### Manager / 管理 Agent
+
+接收全局目标、选择 Worker、分配任务并汇总结果的 Agent。在 Manager–Worker 或 Agents-as-Tools 模式中，Manager 通常继续拥有用户对话和最终回答，但具体权限仍由 Harness 决定。
+
+### Worker / 工作者 Agent
+
+接受范围较窄的委派任务并返回结果的 Agent。Worker 可以有独立模型、Instructions、Tool、Context 与预算；它的结果仍需由调用方校验。
+
+### Subagent / 子 Agent
+
+相对于某个父 Agent 或编排器被创建、调用或管理的 Agent。这个名称描述协作关系，不是模型类别或统一协议类型；本地进程、SDK 对象和远程服务都可能充当 Subagent。
+
+### Agent-as-Tool / Agent 即工具
+
+把 Specialist Agent 包装成 Manager 可调用 Tool 的模式。Specialist 在内部运行自己的 Agent Loop，并把压缩结果作为 Tool Result 返回；Manager 不转移用户会话的控制权。
+
+### Handoff / 对话移交
+
+把当前运行或对话的活跃处理者从一个 Agent 转交给另一个 Agent 的编排动作。它不同于 Agents-as-Tools：后者返回一个子任务结果，前者让接收 Agent 继续面向用户处理。
+
+### Delegation / 委派
+
+一个 Agent 或编排器把一项有边界的工作交给另一个 Agent 的动作。它可以通过 Agent-as-Tool、Handoff、本地队列或 A2A 等机制实现。
+
+### A2A / Agent2Agent Protocol
+
+面向不透明 Agent Service 的开放互操作协议。A2A 1.0 通过 Agent Card 发现能力，通过 Message 发起或继续交互，通过 Task 跟踪有状态工作，并用 Artifact 表达正式产物；它不是 Agent SDK、内部 Subagent 编排器或 MCP 的替代品。
+
+### Agent Card / Agent 能力卡
+
+A2A Server 对外提供的 JSON 元数据，描述身份、Agent 版本、支持的接口与协议版本、能力、认证要求、输入输出 Media Type 和 Skill。A2A 1.0 的接口位于 `supportedInterfaces`，而不是旧版常见的顶层 `url` 与 `protocolVersion`。
+
+### A2A Task / A2A 任务
+
+A2A Server 创建并管理的有状态工作单元，具有 `taskId`、`contextId`、状态、历史和 Artifact。终止状态的 Task 不可重启；后续完善通常在同一 `contextId` 中建立新 Task。
+
+### Artifact / 任务产物
+
+A2A Task 产生的正式交付物，例如报告、图片、文件或结构化数据。Artifact 由一个或多个 Part 构成，可在 Streaming 中分块更新；它与用于交流、提问或状态说明的 Message 不同。
+
 ### Evaluator-Optimizer / 评价—优化模式
 
 生成节点给出候选，评价节点按明确标准返回可执行反馈，优化节点据此继续修改的有界循环。达到最大次数只表示预算用完，不等于通过；工程实现通常还要保存最佳候选，并优先使用测试、Schema 与业务规则等外部证据。

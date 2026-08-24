@@ -99,6 +99,12 @@ Pi Coding Agent README 明确说明核心不内置 Plan Mode，但仓库的 [`ex
 
 模型与认证目录由 [`model-runtime.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/model-runtime.ts) 集中管理；新建、切换、分叉和导入 Session 时，活跃对象替换逻辑位于 [`agent-session-runtime.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/agent-session-runtime.ts)。配合 [`examples/sdk`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/sdk) 阅读，可以验证内存/持久化 Session、工具选择、完整控制与运行时替换的公开用法。
 
+### 第 14 章的 Multi-Agent 与 A2A 源码锚点
+
+Pi Coding Agent README 的 [Philosophy](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/README.md) 明确说明核心不内置 Subagent；同一仓库的 [`examples/extensions/subagent`](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/subagent) 则展示一种可选实现。[`agents.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/subagent/agents.ts) 从用户级或项目级 Markdown 发现 Agent 定义；[`index.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/subagent/index.ts) 注册 `subagent` Tool，为任务启动独立 `pi --mode json -p --no-session` 进程，并实现 single、parallel、chain、流式更新、并发限制、结果截断和取消传播。
+
+A2A 不属于 Pi 固定源码。第 14 章使用 [A2A 1.0.0 Specification](https://a2a-protocol.org/v1.0.0/specification/) 与固定仓库 commit [`16ba52690519bf55b9388e34d4db356efa88aa51`](https://github.com/a2aproject/A2A/tree/16ba52690519bf55b9388e34d4db356efa88aa51) 定义跨系统边界；将 Pi 暴露为 A2A Server 时，需要在 `AgentSession` 外另写 Agent Card、Task Store、协议操作、认证和事件映射 Adapter。
+
 ## 三条核心观察主线
 
 ### 消息主线
