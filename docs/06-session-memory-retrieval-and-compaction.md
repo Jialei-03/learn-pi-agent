@@ -489,30 +489,31 @@ Checkpoint 保存恢复计算所需的控制状态，例如：
 
 Compaction Summary 有时也被称为“context checkpoint summary”，因为它为另一轮模型生成保留继续工作所需的信息。但它是**语义摘要**；运行 Checkpoint 则要精确表达程序控制位置。两者用途不同。
 
-### 9.2 Pi 固定版本中存在两条 Session 源码路径
+### 9.2 Pi 固定版本中有三层容易混淆的内容
 
-本章前半部分阅读的是 `pi-coding-agent` 的 `SessionManager`。它支撑本地会话的消息树、恢复、分支和 Compaction。
+第一层是本章前半部分实际使用的 `pi-coding-agent` `SessionManager`。它支撑本地 coding-agent 的 JSONL 消息树、恢复、分支和 Compaction；`AgentSession` 在 `message_end` 时把消息追加进去，重新打开时再从当前叶子投影 Context。这条路径可以运行，但它保存的是会话轨迹，不是工具执行到一半时的程序计数器。
 
-同一固定版本的 `packages/agent/src/harness` 还实现了 `AgentHarness` 使用的持久化 Session。coding-agent 的 server 路径通过 `createCodingAgentHarness(...)` 接入它。这套 Session 把持久化内容分成：
+第二层是 `packages/agent/src/harness/session` 中已经存在的 Session 存储类型，以及 `agent-harness.ts` 暴露的 `AgentHarness` API 骨架。固定 commit 的 `AgentHarness.create()` 遇到已有记录会抛出 `HarnessNotImplemented("create.restore")`，`prompt()`、`resume()`、`abort()` 等运行方法也都会返回 `HarnessNotImplemented`。`packages/coding-agent/src/server/create-harness.ts` 能够组装 Tool、System Prompt 与 Harness 选项，但最终仍调用这个尚未完成的骨架；存在装配入口不等于 durable run 已经可用。
 
-| 组成 | 作用 |
-| --- | --- |
-| Entry tree | 不可变消息、摘要与自定义 Entry |
-| Facts | 最新值生效的命名空间键值状态 |
-| Lanes | 指向共享树不同位置的命名游标与运行配置 |
-| Usage ledger | 追加写入的 token 与成本记录 |
+第三层是标题明确写着 **implementation specification** 的 `packages/agent/docs/harness.md`。它规定了未来 Durable Harness 的目标模型：Entry tree、Facts、Lanes、Usage ledger、完整 operation state、原子事务和恢复策略。文档中的行为是实现规范，不能当成当前源码已经交付的行为。
 
-AgentHarness 还为一次 run、compaction 或 navigation 保存 operation metadata 和完整 operation state。每次持久化转移都写入当前完整状态，使重启后可以读取明确阶段，而不是从“缺了哪条消息”猜测运行位置。
+把三层放在一起，结论是：
 
-### 9.3 副作用重放必须有策略
+| 层 | 固定版本中的状态 | 能说明什么 |
+| --- | --- | --- |
+| coding-agent `SessionManager` / `AgentSession` | 可运行 | 消息与会话分支怎样持久化 |
+| `AgentHarness` 与 Harness Session API | 类型和存储基础存在，运行路径仍是 scaffold | 计划提供哪些公开能力 |
+| `docs/harness.md` | 目标实现规范 | Durable Execution 应怎样记录控制位置和恢复副作用 |
 
-AgentHarness 在工具真正执行前持久化 intent，并为工具声明 replay policy。恢复到“副作用已经开始、结果尚未确认”的状态时：
+### 9.3 目标规范中的副作用重放策略
+
+`docs/harness.md` 要求未来实现先持久化动作 intent，再执行真实 Tool，并为 Tool 声明 replay policy。若实现完成，恢复到“副作用可能已经开始、结果尚未确认”的状态时：
 
 - 持久化时与恢复时的工具声明都为 `safe`，才可以使用已保存参数重新执行；
 - 不可安全重放的工具，不会直接重复执行，而是写入 interrupted error 再继续控制流；
 - Provider 生成也有单独的 retry policy，因为崩溃前的请求可能已经计费或产生过输出。
 
-这比“保存消息”多了运行协议：系统记录动作意图、确认结果和恢复策略。
+这比“保存消息”多了一套运行协议：系统还要记录动作意图、确认结果和恢复策略。固定 commit 已经把这套语义写入规范和部分公开类型，但不能据此声称 `AgentHarness` 已经能够完成崩溃恢复。
 
 ![普通 Session 恢复与 Durable Execution 的保证边界](../assets/session-memory-illustrations/06-session-vs-durable-execution.png)
 
@@ -614,7 +615,7 @@ Checkpoint 让系统知道恢复位置。外部副作用仍需要重放策略、
 - Compaction 摘要是有损表示；完整旧 Entry 仍可留在 Session 树中，但模型不会自动读取它们。
 - Memory 不等同于 Session。它还包含信息选择、写入、更新、检索、冲突处理与遗忘。
 - Retrieval 把窗口外的相关信息带回 Context；RAG 是先检索证据再生成，不能自动保证事实正确。
-- Pi 固定版本还提供 AgentHarness 的 durable Session 与 Session Search；AgentHarness 持久化 operation state，并为未确认副作用设置恢复策略。
+- Pi 固定版本的 coding-agent Session 可以恢复消息树；`AgentHarness` 运行 API 仍是 scaffold，`docs/harness.md` 描述的是尚待落地的 operation state 与副作用恢复规范。
 - Durable Execution 需要控制状态、重试协议和副作用幂等性；“可恢复”不等于底层动作绝不重复。
 
 ## 下一章：MCP——Agent 与外部世界的协议
@@ -628,8 +629,8 @@ Session、Memory 与 Retrieval 解决信息怎样保存和取回。下一章进�
 - [Pi Sessions 文档：存储、tree、fork 与 clone](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/sessions.md)
 - [Pi Compaction 源码：阈值、切点、split turn 与迭代摘要](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/compaction/compaction.ts)
 - [Pi `AgentSession`：自动压缩、overflow 恢复与 State 重建](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/agent-session.ts)
-- [Pi Agent Harness：Durable Session 与 operation state 设计](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/docs/harness.md)
-- [Pi `AgentHarness` 实现](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/harness/agent-harness.ts)
+- [Pi Agent Harness：Durable Session 与 operation state 实现规范](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/docs/harness.md)
+- [Pi `AgentHarness` API 骨架与 `HarnessNotImplemented`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/harness/agent-harness.ts)
 - [Pi Session Search：扫描、SQLite FTS 与可扩展索引](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/docs/search.md)
 - [Lewis et al., Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks](https://arxiv.org/abs/2005.11401)
 - [Sumers et al., Cognitive Architectures for Language Agents](https://arxiv.org/abs/2309.02427)

@@ -128,6 +128,24 @@ WebArena 提供可复现的真实功能网站与长链路任务，并按最终�
 
 OSWorld 在真实操作系统和跨应用任务中评测多模态 Agent，覆盖截图观察、鼠标键盘操作、文件 I/O 与多应用流程。它为 Computer Use 的视觉定位、环境稳定性、长程控制和执行式评测提供研究背景。
 
+## 九、持久化与人工控制：长任务中断后怎样继续
+
+### [Sagas](https://sigmodrecord.org/1987/12/09/sagas/)
+
+Sagas 把长事务拆成一系列可独立提交的子事务，并为已经完成的步骤定义补偿。它为跨模型、文件、消息和业务系统的 Agent Workflow 提供一个经典边界：无法原子回滚的外部动作，需要明确补偿、审计与人工升级路径。
+
+### [Durable Functions: Semantics for Stateful Serverless](https://www.microsoft.com/en-us/research/wp-content/uploads/2021/10/DF-Semantics-Final.pdf)
+
+这项工作形式化说明 record-and-replay 运行时怎样保存 Workflow 进度，以及确定性编排为什么能从历史中恢复。它帮助区分可重放的控制逻辑与必须隔离成 Effect / Activity 的模型调用、网络请求和其他外部动作。
+
+### [Netherite: Efficient Execution of Serverless Workflows](https://www.microsoft.com/en-us/research/publication/netherite-efficient-execution-of-serverless-workflows/)
+
+Netherite 研究持久化 Workflow 的分区、流水线和 group commit，展示可靠恢复背后的 I/O、历史大小、吞吐与延迟成本。Checkpoint 越细并不总是越好，粒度需要同时满足恢复语义和性能目标。
+
+### [Guidelines for Human-AI Interaction](https://www.microsoft.com/en-us/research/publication/guidelines-for-human-ai-interaction/)
+
+这项 CHI 2019 工作提出并验证 18 条 Human-AI Interaction 指南，包括说明能力边界、支持纠正、提供适当控制和帮助用户从失败中恢复。把 HITL 落到 Agent 工程时，批准界面之外还要保存具体动作、决定者、版本、超时、重新校验与恢复路径。
+
 ## 这些论文分别解释什么
 
 - ReAct 为“推理—行动—观察”的 Agent Loop 提供研究背景；
@@ -140,6 +158,8 @@ OSWorld 在真实操作系统和跨应用任务中评测多模态 Agent，覆盖
 - SWE-bench 展示 coding agent 的完成结果如何放进真实软件工程任务中评测；
 - SWE-agent 说明 Agent-Computer Interface 的设计会改变模型能否有效阅读、修改和验证代码；
 - WebArena 与 OSWorld 分别把 Web Agent 和 Computer-Using Agent 放进可执行环境中评测。
+- Sagas、Durable Functions 与 Netherite 分别解释补偿、确定性重放和持久化运行成本；
+- Human-AI Interaction 指南帮助把人工控制从一个弹窗扩展成可理解、可纠正、可恢复的运行过程。
 
 这些论文只提供问题背景和实验依据。论文方法是否出现在 Pi 中，仍然要由固定版本的源码证明。
 

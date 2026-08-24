@@ -65,11 +65,11 @@ pi-telemetry 从关键边界观察运行，但不是主控制链。
 
 这条路径说明本地 coding-agent 怎样把 JSONL Entry 组织成追加写入的消息树，再从当前叶子投影出恢复后的活动消息。完整文件历史、活动分支与本轮 Context 是三个不同集合。
 
-### 5. 持久化 Harness：`harness/agent-harness.ts`
+### 5. Durable Harness 的 API 骨架与目标规范
 
-打开 [`packages/agent/src/harness/agent-harness.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/harness/agent-harness.ts)，并配合 [`packages/agent/docs/harness.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/docs/harness.md) 阅读 Session、Lane、Operation State 与恢复策略。
+打开 [`packages/agent/src/harness/agent-harness.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/harness/agent-harness.ts)，先确认固定 commit 的实现状态：`AgentHarness.create()` 尚不能恢复已有记录，`prompt()`、`resume()`、`abort()` 等路径会抛出 `HarnessNotImplemented`。[`packages/coding-agent/src/server/create-harness.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/server/create-harness.ts) 负责装配 Tool 与 System Prompt，但调用的仍是这套 scaffold。
 
-这里的重点不再只是“怎样保存消息”，而是崩溃后怎样识别已确认状态、未确认副作用与安全重放边界。coding-agent 的 server 装配入口位于 `packages/coding-agent/src/server/create-harness.ts`。
+再阅读标题标明 **implementation specification** 的 [`packages/agent/docs/harness.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/docs/harness.md)。这里的 Session、Lane、完整 Operation State、effect sandwich 与 replay policy 是目标设计：它说明 Durable Harness 应怎样识别已确认状态、未确认副作用与安全重放边界，不能当成当前固定源码已经具备的运行行为。
 
 ### 6. MCP 适配入口：`extensions.md` 与 Tool 类型
 
@@ -112,6 +112,14 @@ Pi 根目录 [README 的 Security 段落](https://github.com/earendil-works/pi/b
 [`bash.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/tools/bash.ts) 展示本地命令怎样以 `cwd`、进程环境与 `AbortSignal` 启动，并提供可替换的 `BashOperations`；[Environment Variables 文档](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/environment-variables.md) 列出 Provider Key 和默认传给 Bash 的 `PI_*` 会话变量。`permission-gate.ts` 与 `protected-paths.ts` 展示 Extension Policy Gate，但字符串或路径规则仍依赖已知 Tool 路径，不能替代操作系统隔离。
 
 [Containerization 文档](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/containerization.md) 区分“整个 Pi 在隔离环境中运行”和“宿主 Pi 把 Tool 执行路由进隔离环境”。[`sandbox` 示例](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/sandbox) 包装 Bash，适合观察局部覆盖；[`gondolin` 示例](https://github.com/earendil-works/pi/tree/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/gondolin) 则替换 read、write、edit、bash、grep、find 与 ls Operations，把执行发送到挂载工作区的本地 microVM。比较二者时，应逐一检查内置 Tool、用户 Shell、Extension 和自定义 Tool 究竟在哪个进程与权限边界中运行。
+
+### 第 16 章的 Durable Execution 与 Human-in-the-loop 源码锚点
+
+固定版本中，当前可运行的持久化路径首先位于 coding-agent [`AgentSession`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/agent-session.ts) 与 [`SessionManager`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/session-manager.ts)：`message_end` 把用户、assistant 与 Tool Result 写入追加式 JSONL 会话树，恢复时再从活动分支投影模型消息。这能恢复对话事实，但不等于保存每个外部副作用的精确程序位置。
+
+第二层是 [`AgentHarness`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/harness/agent-harness.ts) 的公开 API scaffold。固定 commit 中，已有记录的 `create()` 与 `prompt()`、`resume()`、`abort()` 等运行方法仍会抛出 `HarnessNotImplemented`；[`create-harness.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/server/create-harness.ts) 只负责装配 Tool 与 System Prompt，不能据此推断 Durable 路径已经完成。
+
+第三层是标题明确写作 **implementation specification** 的 [`docs/harness.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/docs/harness.md)。其中 Operation State、事务提交、effect sandwich、`safe` / `never` replay policy 与 Lane 是目标 Durable Harness 的设计语义。源码阅读必须把可运行 Session、API 骨架和目标规范分开。
 
 ## 三条核心观察主线
 

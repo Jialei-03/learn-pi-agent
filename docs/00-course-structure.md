@@ -107,7 +107,7 @@ flowchart TB
 
 ### 第 16 章：Durable Execution 与 Human-in-the-loop
 
-解释 Background Agent、长时间任务、Checkpoint、Retry、Pause、Approval、Reject 和 Resume；把人工批准作为 Workflow 的控制流，而不只是安全弹窗。
+先区分 Background Execution 与 Durable Execution，再比较消息历史、状态快照、操作状态和事件历史分别保存了什么。用持久化状态机解释 Checkpoint、Retry、Resume、Replay、Restart、Worker Lease、取消与预算恢复；重点分析外部副作用的不确定窗口，以及幂等键、去重、查询和补偿为什么比“exactly once”口号更可靠。随后把 Human-in-the-loop 写成 `waiting_approval → decision → revalidate → execute` 的可恢复控制流，并比较 OpenAI Background mode、OpenAI Agents SDK HITL、LangGraph 与 Temporal 的语义。最后把 Pi 固定源码分成三层核对：可运行的 `AgentSession` 消息恢复、尚未完成的 `AgentHarness` API scaffold，以及 `docs/harness.md` 描述的目标 Durable Harness 规范。
 
 ### 第 17 章：Security、Guardrails 与 Governance
 

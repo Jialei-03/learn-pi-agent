@@ -44,6 +44,11 @@
 | Temporal Event History | [Event History](https://docs.temporal.io/encyclopedia/event-history) | 2026-08-24 |
 | Temporal Workflow replay | [Workflow Definition](https://docs.temporal.io/workflow-definition) | 2026-08-24 |
 | Temporal Activity idempotency | [Activity Definition](https://docs.temporal.io/activity-definition) | 2026-08-24 |
+| Temporal Retry Policy | [Failure detection](https://docs.temporal.io/encyclopedia/detecting-workflow-failures) | 2026-08-24 |
+| OpenAI Responses Background mode | [Background mode](https://developers.openai.com/api/docs/guides/background) | 2026-08-24 |
+| OpenAI Agents SDK HITL | [Human-in-the-loop](https://openai.github.io/openai-agents-js/guides/human-in-the-loop/) | 2026-08-24 |
+| LangGraph Interrupts | [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) | 2026-08-24 |
+| LangGraph Persistence | [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) | 2026-08-24 |
 | Pi containerization | [Containerization：Gondolin、Docker 与 OpenShell](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/containerization.md) | 2026-08-24 |
 | OpenAI Codex sandbox | [Sandboxing](https://learn.chatgpt.com/docs/sandboxing) | 2026-08-24 |
 | OpenAI Codex approvals and security | [Agent Approvals & Security](https://learn.chatgpt.com/docs/agent-approvals-security) | 2026-08-24 |
