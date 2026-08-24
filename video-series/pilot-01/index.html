@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Learn Pi Agent 01｜大模型如何一步步变成 Agent</title>
+    <script src="public/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "Microsoft YaHei"; src: local("Microsoft YaHei"); font-weight: 400 900; }
+      @font-face { font-family: "Noto Sans SC"; src: local("Noto Sans SC"); font-weight: 400 900; }
+      @font-face { font-family: "STSong"; src: local("STSong"); font-weight: 400 900; }
+      @font-face { font-family: "Noto Serif SC"; src: local("Noto Serif SC"); font-weight: 400 900; }
+
+      :root {
+        --paper: #f7f5f0;
+        --paper-2: #efeae2;
+        --ink: #171717;
+        --muted: #706b65;
+        --line: rgba(23, 23, 23, 0.16);
+        --orange: #ff7a00;
+        --navy: #181615;
+        --cream: #f7f5f0;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--paper); }
+      body { color: var(--ink); font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+      #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; }
+      .scene { position: absolute; inset: 0; width: 1080px; height: 1920px; overflow: hidden; padding: 92px 72px 306px; }
+      .scene-ground { position: absolute; inset: 0; z-index: -4; background-color: var(--paper); background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 72px 72px; opacity: 0.25; }
+      .paper-mask { position: absolute; inset: 0; z-index: -3; background: var(--paper); opacity: 0.82; }
+      .chrome { display: flex; align-items: center; justify-content: space-between; margin-bottom: 54px; color: var(--muted); font-family: Consolas, "JetBrains Mono", monospace; font-size: 24px; font-weight: 700; letter-spacing: 0.08em; }
+      .series::before { color: var(--orange); content: "✱ "; }
+      .page { border-bottom: 3px solid var(--orange); padding-bottom: 6px; }
+      h1, h2, .display { font-family: "STSong", "Noto Serif SC", "Microsoft YaHei", serif; font-weight: 700; letter-spacing: -0.045em; }
+      h1 { max-width: 920px; font-size: 100px; line-height: 1.14; }
+      h2 { font-size: 72px; line-height: 1.18; }
+      .lead { color: var(--muted); font-size: 34px; line-height: 1.65; }
+      .orange { color: var(--orange); }
+      .marker { position: relative; display: inline-block; }
+      .marker::after { position: absolute; right: -20px; bottom: -10px; left: -20px; height: 16px; border-radius: 50%; background: var(--orange); content: ""; opacity: 0.72; transform: rotate(-2deg); }
+      .card, .node, .tag { border: 2px solid var(--line); border-radius: 18px; background: rgba(247, 245, 240, 0.96); box-shadow: 0 3px 14px rgba(23, 23, 23, 0.06); }
+      .card { padding: 34px 38px; }
+      .tag { display: inline-flex; align-items: center; justify-content: center; min-height: 52px; padding: 10px 22px; font-size: 25px; font-weight: 700; }
+      .tag.orange-fill { border-color: var(--orange); background: var(--orange); color: var(--ink); }
+      .caption { position: absolute; right: 56px; bottom: 66px; left: 56px; z-index: 20; min-height: 174px; padding: 30px 36px; border: 2px solid rgba(23, 23, 23, 0.14); border-radius: 26px; background: rgba(247, 245, 240, 0.98); box-shadow: 0 8px 32px rgba(23, 23, 23, 0.09); font-size: 31px; font-weight: 600; line-height: 1.55; text-align: center; }
+      .caption::before { position: absolute; top: -9px; left: 50%; width: 88px; height: 9px; border-radius: 999px; background: var(--orange); content: ""; transform: translateX(-50%); }
+      .mox { width: 300px; height: 300px; overflow: hidden; border: 2px solid rgba(23, 23, 23, 0.08); border-radius: 28px; background-image: url("public/mox-reference-sheet.png"); background-position: 0 0; background-repeat: no-repeat; background-size: 300% 300%; box-shadow: 0 3px 14px rgba(23, 23, 23, 0.06); }
+      .mox.s1 { background-position: 50% 0; } .mox.s2 { background-position: 100% 0; } .mox.s3 { background-position: 0 50%; } .mox.s4 { background-position: 50% 50%; } .mox.s5 { background-position: 100% 50%; } .mox.s6 { background-position: 0 100%; } .mox.s7 { background-position: 50% 100%; } .mox.s8 { background-position: 100% 100%; }
+      .section-label { margin-bottom: 20px; color: var(--muted); font-family: Consolas, "JetBrains Mono", monospace; font-size: 24px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+
+      #f1-title { margin-top: 32px; }
+      #f1-contrast { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 86px; }
+      .verb-card { display: grid; min-height: 230px; place-items: center; font-family: "STSong", "Noto Serif SC", serif; font-size: 74px; font-weight: 700; }
+      #f1-complete { border: 3px solid var(--orange); }
+      #f1-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 32px; }
+      .action-card { display: grid; min-height: 180px; place-items: center; padding: 26px 12px; text-align: center; }
+      .action-icon { display: grid; width: 62px; height: 62px; margin-bottom: 12px; place-items: center; border: 3px solid var(--ink); border-radius: 50%; color: var(--ink); font-family: Consolas, monospace; font-size: 24px; font-weight: 900; line-height: 1; }
+      .action-name { font-size: 26px; font-weight: 800; }
+      #f1-mox { position: absolute; right: 36px; bottom: 330px; z-index: 8; width: 340px; height: 340px; }
+
+      .call-chain { position: relative; display: grid; gap: 84px; margin-top: 74px; padding: 0 90px; }
+      .call-node { position: relative; z-index: 2; display: grid; grid-template-columns: 86px 1fr auto; align-items: center; min-height: 172px; padding: 28px 34px; }
+      .step-no { color: var(--ink); font-family: "STSong", serif; font-size: 70px; font-weight: 700; }
+      .call-node strong { display: block; margin-bottom: 10px; font-size: 36px; }
+      .call-node small { color: var(--muted); font-size: 25px; }
+      .call-symbol { font-family: Consolas, monospace; font-size: 42px; font-weight: 800; }
+      .chain-line { position: absolute; top: 125px; bottom: 125px; left: 130px; z-index: 1; width: 5px; background: rgba(23, 23, 23, 0.14); }
+      .chain-line-active { position: absolute; top: 125px; left: 130px; z-index: 2; width: 5px; height: 738px; background: var(--orange); transform-origin: top center; }
+      #f2-end { margin: 64px 90px 0; padding: 24px; border-radius: 16px; background: var(--orange); color: var(--ink); font-size: 32px; font-weight: 800; text-align: center; }
+
+      #f3-stage { display: grid; grid-template-rows: auto 76px auto; gap: 34px; margin-top: 50px; }
+      .code-card { overflow: hidden; border: 2px solid rgba(247, 245, 240, 0.2); border-radius: 18px; background: var(--navy); color: var(--cream); box-shadow: 0 12px 28px rgba(23, 23, 23, 0.16); }
+      .code-title { padding: 18px 26px; border-bottom: 1px solid rgba(247, 245, 240, 0.16); color: rgba(247, 245, 240, 0.68); font-family: Consolas, monospace; font-size: 22px; }
+      .code-line { padding: 44px 36px 52px; font-family: Consolas, monospace; font-size: 34px; line-height: 1.7; }
+      .host-boundary { position: relative; display: flex; align-items: center; justify-content: center; }
+      .host-boundary::before { position: absolute; right: 0; left: 0; height: 2px; background: var(--line); content: ""; }
+      .host-boundary span { z-index: 2; padding: 10px 24px; border: 2px solid var(--orange); border-radius: 999px; background: var(--paper); font-size: 24px; font-weight: 800; }
+      .host-zone { display: grid; grid-template-columns: 320px 1fr; align-items: center; gap: 34px; min-height: 470px; }
+      .host-copy { display: grid; gap: 18px; }
+      .host-copy .tag { justify-content: flex-start; font-size: 28px; }
+      #f3-tool { margin-top: 14px; padding: 26px 30px; border: 3px solid var(--ink); border-radius: 18px; font-size: 31px; font-weight: 800; }
+
+      #f4-loop { position: relative; width: 870px; height: 900px; margin: 36px auto 0; }
+      #f4-loop svg { position: absolute; inset: 0; width: 870px; height: 900px; }
+      #f4-loop-path { fill: none; stroke: var(--orange); stroke-linecap: round; stroke-width: 8; }
+      .loop-node { position: absolute; z-index: 3; display: grid; width: 230px; min-height: 112px; place-items: center; padding: 18px; border: 3px solid var(--ink); border-radius: 20px; background: var(--paper); font-size: 28px; font-weight: 800; text-align: center; }
+      #f4-context { top: 10px; left: 320px; } #f4-model { top: 205px; right: 10px; } #f4-call { top: 520px; right: 38px; } #f4-tool { bottom: 8px; left: 320px; } #f4-result { top: 520px; left: 38px; }
+      #f4-runtime { position: absolute; top: 334px; left: 310px; z-index: 4; display: grid; width: 250px; height: 250px; place-items: center; border: 4px solid var(--orange); border-radius: 50%; background: var(--paper); font-size: 34px; font-weight: 900; text-align: center; }
+      #f4-answer { display: grid; width: 560px; min-height: 118px; margin: 30px auto 0; place-items: center; border: 3px solid var(--orange); border-radius: 18px; background: var(--orange); color: var(--ink); font-size: 34px; font-weight: 900; }
+
+      #f5-stack { position: relative; height: 1050px; margin-top: 42px; }
+      .scope-box { position: absolute; border: 3px solid var(--ink); border-radius: 24px; background: rgba(247, 245, 240, 0.9); }
+      .scope-label { position: absolute; top: -25px; left: 28px; padding: 8px 18px; border-radius: 999px; background: var(--ink); color: var(--cream); font-family: Consolas, monospace; font-size: 23px; font-weight: 800; }
+      #f5-session { inset: 0; border-color: var(--orange); } #f5-state { inset: 115px 64px 90px; } #f5-context { inset: 265px 126px 190px; border-color: rgba(23, 23, 23, 0.55); }
+      #f5-message { inset: 430px 194px 315px; display: grid; place-items: center; padding: 30px; text-align: left; }
+      #f5-message code { font-family: Consolas, monospace; font-size: 29px; line-height: 1.7; }
+      .scope-note { position: absolute; right: 28px; bottom: 24px; color: var(--muted); font-size: 24px; font-weight: 700; }
+
+      #f6-signal { display: flex; align-items: center; justify-content: center; gap: 24px; margin: 38px auto 46px; }
+      #f6-signal .model-dot { display: grid; width: 118px; height: 118px; place-items: center; border: 3px solid var(--ink); border-radius: 50%; font-size: 46px; }
+      #f6-conditions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+      .condition { display: flex; align-items: center; min-height: 102px; gap: 16px; padding: 22px 26px; font-size: 28px; font-weight: 800; }
+      .condition::before { display: block; width: 14px; height: 14px; flex: 0 0 auto; border-radius: 50%; background: var(--orange); content: ""; }
+      #f6-runtime { margin: 42px 92px 0; padding: 30px; border: 4px solid var(--ink); border-radius: 22px; text-align: center; }
+      #f6-runtime strong { display: block; margin-bottom: 10px; font-size: 38px; }
+      #f6-branches { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin: 28px 38px 0; }
+      .branch { min-height: 112px; padding: 30px 20px; font-size: 29px; font-weight: 900; text-align: center; }
+      #f6-stop { border-color: var(--orange); background: var(--orange); color: var(--ink); }
+
+      #f7-system { position: relative; width: 900px; height: 1040px; margin: 26px auto 0; border: 5px solid var(--orange); border-radius: 36px; }
+      #f7-system-label { position: absolute; top: -29px; left: 50%; z-index: 4; padding: 10px 28px; border-radius: 999px; background: var(--orange); color: var(--ink); font-size: 28px; font-weight: 900; transform: translateX(-50%); }
+      #f7-connectors { position: absolute; inset: 0; z-index: 0; width: 900px; height: 1040px; }
+      #f7-connectors path { fill: none; stroke: rgba(23, 23, 23, 0.28); stroke-linecap: round; stroke-width: 4; }
+      #f7-core { position: absolute; top: 370px; left: 305px; z-index: 3; display: grid; width: 290px; height: 290px; place-items: center; border: 4px solid var(--ink); border-radius: 50%; background: var(--paper); font-size: 38px; font-weight: 900; text-align: center; }
+      .module { position: absolute; z-index: 2; display: grid; width: 260px; min-height: 108px; place-items: center; padding: 22px; border: 2px solid var(--line); border-radius: 18px; background: var(--paper); font-size: 28px; font-weight: 800; text-align: center; }
+      #f7-model { top: 92px; left: 320px; } #f7-tools { top: 300px; right: 42px; } #f7-session { bottom: 114px; right: 70px; } #f7-env { bottom: 114px; left: 70px; } #f7-ui { top: 300px; left: 42px; }
+      #f7-mox { position: absolute; bottom: -70px; left: 340px; z-index: 6; width: 220px; height: 220px; }
+
+      #f8-path { display: grid; gap: 26px; margin: 48px 90px 0; }
+      .mainline { position: relative; min-height: 138px; padding: 36px 34px 32px 118px; font-size: 34px; font-weight: 900; }
+      .mainline::before { position: absolute; top: 31px; left: 34px; display: grid; width: 56px; height: 56px; place-items: center; border-radius: 50%; background: var(--orange); color: var(--ink); content: attr(data-step); font-family: Consolas, monospace; font-size: 26px; }
+      #f8-thesis { margin: 70px 16px 0; padding-top: 44px; border-top: 2px solid var(--line); font-family: "STSong", "Noto Serif SC", serif; font-size: 63px; font-weight: 700; line-height: 1.28; text-align: center; }
+      #f8-next { position: absolute; right: 68px; bottom: 318px; z-index: 6; width: 500px; padding: 24px 28px; border: 3px solid var(--ink); border-radius: 18px; background: var(--paper); font-size: 28px; font-weight: 800; }
+      #f8-next span { display: block; margin-bottom: 8px; color: var(--ink); font-family: Consolas, monospace; }
+      #f8-mox { position: absolute; bottom: 260px; left: 20px; z-index: 5; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="80" data-fps="30" data-width="1080" data-height="1920">
+      <section id="frame-01" class="scene clip" data-start="0" data-duration="8" data-track-index="0">
+        <div class="scene-ground"></div><div class="paper-mask"></div>
+        <div class="chrome"><span class="series">LEARN PI AGENT 01</span><span class="page">01 / 08</span></div>
+        <p class="section-label f1-reveal">从大模型开始</p>
+        <h1 id="f1-title" class="f1-reveal">回答问题，不等于完成任务</h1>
+        <div id="f1-contrast"><div id="f1-answer" class="verb-card card f1-reveal">回答</div><div id="f1-complete" class="verb-card card f1-reveal"><span class="marker">完成</span></div></div>
+        <div id="f1-actions"><div class="action-card card f1-action"><span class="action-icon">⌕</span><span class="action-name">查资料</span></div><div class="action-card card f1-action"><span class="action-icon">{ }</span><span class="action-name">用工具</span></div><div class="action-card card f1-action"><span class="action-icon">↻</span><span class="action-name">存进度</span></div></div>
+        <div id="f1-mox" class="mox f1-reveal" aria-label="Mox"></div>
+        <div class="caption">大模型很会回答问题。但查资料、用工具、保存进度，再继续判断——一次回答还不够。</div>
+      </section>
+
+      <section id="frame-02" class="scene clip" data-start="8" data-duration="9" data-track-index="1">
+        <div class="scene-ground"></div><div class="paper-mask"></div>
+        <div class="chrome"><span class="series">一次模型调用</span><span class="page">02 / 08</span></div>
+        <h2 class="f2-reveal">一次请求，一次响应</h2><p class="lead f2-reveal" style="margin-top:18px">宿主程序站在调用边界的两侧。</p>
+        <div class="call-chain"><div class="chain-line"></div><div id="f2-active-line" class="chain-line-active"></div><div id="f2-input" class="call-node card f2-reveal"><span class="step-no">1</span><span><strong>准备输入</strong><small>Host → Context</small></span><span class="call-symbol">{ }</span></div><div id="f2-model" class="call-node card f2-reveal"><span class="step-no">2</span><span><strong>模型生成</strong><small>Model → Response</small></span><span class="call-symbol">●</span></div><div id="f2-response" class="call-node card f2-reveal"><span class="step-no">3</span><span><strong>接收结果</strong><small>Host ← Response</small></span><span class="call-symbol">✓</span></div></div>
+        <div id="f2-end" class="f2-reveal">本次模型调用结束</div>
+        <div class="caption">一次模型调用很简单：宿主准备输入，模型生成响应，宿主接收结果。响应回来，这次调用就结束了。</div>
+      </section>
+
+      <section id="frame-03" class="scene clip" data-start="17" data-duration="9" data-track-index="2">
+        <div class="scene-ground"></div><div class="paper-mask"></div>
+        <div class="chrome"><span class="series">TOOL CALL 边界</span><span class="page">03 / 08</span></div>
+        <h2 class="f3-reveal">模型提出请求，宿主执行动作</h2>
+        <div id="f3-stage"><div class="code-card f3-reveal"><div class="code-title">assistant.message</div><div class="code-line"><span class="orange">toolCall</span>: { name: "get_weather" }</div></div><div class="host-boundary f3-reveal"><span>HOST BOUNDARY</span></div><div class="host-zone"><div id="f3-mox" class="mox s2 f3-reveal"></div><div class="host-copy"><div class="tag f3-step">① 校验参数</div><div class="tag f3-step">② 检查策略</div><div id="f3-tool" class="f3-step">③ 执行 get_weather</div></div></div></div>
+        <div class="caption">模型写出 Tool Call，动作还没有发生。它只是在提出结构化请求；真正执行工具的，是模型外面的宿主程序。</div>
+      </section>
+
+      <section id="frame-04" class="scene clip" data-start="26" data-duration="14" data-track-index="3">
+        <div class="scene-ground"></div><div class="paper-mask"></div>
+        <div class="chrome"><span class="series">AGENT LOOP</span><span class="page">04 / 08</span></div>
+        <h2 class="f4-reveal">把一次调用，变成持续运行</h2>
+        <div id="f4-loop"><svg viewBox="0 0 870 900" aria-hidden="true"><path id="f4-loop-path" d="M435 70 C700 70 815 265 780 480 C752 650 625 805 435 835 C240 805 112 650 88 480 C54 265 170 70 435 70" /></svg><div id="f4-context" class="loop-node f4-node">Context</div><div id="f4-model" class="loop-node f4-node">Model</div><div id="f4-call" class="loop-node f4-node">Tool Call</div><div id="f4-tool" class="loop-node f4-node">Tool</div><div id="f4-result" class="loop-node f4-node">Tool Result</div><div id="f4-runtime" class="f4-reveal">Runtime<span style="display:block;font-size:24px">校验 · 推进</span></div></div>
+        <div id="f4-answer" class="f4-reveal">最终回答</div>
+        <div class="caption">Agent 的关键，是把单次调用变成循环：模型提出 Tool Call，Runtime 校验并执行工具，把 Tool Result 写回 Context，再让模型继续判断，直到得到最终回答。</div>
+      </section>
+
+      <section id="frame-05" class="scene clip" data-start="40" data-duration="13" data-track-index="4">
+        <div class="scene-ground"></div><div class="paper-mask"></div>
+        <div class="chrome"><span class="series">运行中的数据</span><span class="page">05 / 08</span></div>
+        <h2 class="f5-reveal">四个对象，四种范围</h2>
+        <div id="f5-stack"><div id="f5-session" class="scope-box f5-layer"><span class="scope-label" style="background:var(--orange);color:var(--ink)">Session</span><span class="scope-note">跨越多轮的历史</span></div><div id="f5-state" class="scope-box f5-layer"><span class="scope-label">State</span><span class="scope-note">运行中的完整数据</span></div><div id="f5-context" class="scope-box f5-layer"><span class="scope-label">Context</span><span class="scope-note">本轮输入快照</span></div><div id="f5-message" class="scope-box f5-layer"><span class="scope-label">Message</span><code>{ role, content }</code><span class="scope-note">一条记录</span></div></div>
+        <div class="caption">这里有四个不同对象：Message 是一条记录；Context 是本轮给模型的输入快照；State 是运行中的完整数据；Session 保存跨越多轮的历史。</div>
+      </section>
+
+      <section id="frame-06" class="scene clip" data-start="53" data-duration="10" data-track-index="5">
+        <div class="scene-ground"></div><div class="paper-mask"></div>
+        <div class="chrome"><span class="series">停止边界</span><span class="page">06 / 08</span></div>
+        <h2 class="f6-reveal">模型给信号，Runtime 作决定</h2>
+        <div id="f6-signal" class="f6-reveal"><div class="model-dot">●</div><span style="font-size:42px">→</span><span class="tag orange-fill" style="font-family:Consolas;font-size:30px">stopReason</span></div>
+        <div id="f6-conditions"><div class="condition card f6-condition">响应内容</div><div class="condition card f6-condition">错误</div><div class="condition card f6-condition">取消</div><div class="condition card f6-condition">超时</div><div class="condition card f6-condition" style="grid-column:1 / -1">最大轮次</div></div>
+        <div id="f6-runtime" class="f6-reveal"><strong>Runtime</strong><span>组合信号与运行策略</span></div>
+        <div id="f6-branches"><div class="branch card f6-branch">继续下一轮</div><div id="f6-stop" class="branch card f6-branch">停止本次运行</div></div>
+        <div class="caption">模型只能返回 stop reason。整段运行是否继续，由 Runtime 结合响应内容、错误、取消、超时和轮次上限来决定。</div>
+      </section>
+
+      <section id="frame-07" class="scene clip" data-start="63" data-duration="10" data-track-index="6">
+        <div class="scene-ground"></div><div class="paper-mask"></div>
+        <div class="chrome"><span class="series">HARNESS</span><span class="page">07 / 08</span></div>
+        <h2 class="f7-reveal">把运行核心装配成完整系统</h2>
+        <div id="f7-system" class="f7-reveal"><div id="f7-system-label">Harness</div><svg id="f7-connectors" viewBox="0 0 900 1040" aria-hidden="true"><path class="f7-line" d="M450 515 L450 200"/><path class="f7-line" d="M545 450 L710 355"/><path class="f7-line" d="M555 590 L700 820"/><path class="f7-line" d="M345 590 L200 820"/><path class="f7-line" d="M355 450 L190 355"/></svg><div id="f7-core" class="f7-module">Runtime<span style="display:block;font-size:24px">Agent Loop</span></div><div id="f7-model" class="module f7-module">模型连接</div><div id="f7-tools" class="module f7-module">Tools</div><div id="f7-session" class="module f7-module">Session</div><div id="f7-env" class="module f7-module">执行环境</div><div id="f7-ui" class="module f7-module">界面</div><div id="f7-mox" class="mox s7 f7-module"></div></div>
+        <div class="caption">Harness 再把模型连接、Runtime、工具、Session、执行环境和界面装配到一起。我们看到的 Agent 产品，通常是这套完整系统。</div>
+      </section>
+
+      <section id="frame-08" class="scene clip" data-start="73" data-duration="7" data-track-index="7">
+        <div class="scene-ground"></div><div class="paper-mask"></div>
+        <div class="chrome"><span class="series">第一章小结</span><span class="page">08 / 08</span></div>
+        <h2 class="f8-reveal">记住这一条主线</h2>
+        <div id="f8-path"><div class="mainline card f8-step" data-step="1">一次模型调用</div><div class="mainline card f8-step" data-step="2">Agent Loop</div><div class="mainline card f8-step" data-step="3">Harness 完整系统</div></div>
+        <div id="f8-thesis" class="f8-reveal">Agent 是一段被程序持续推动的运行</div><div id="f8-mox" class="mox s8 f8-reveal"></div><div id="f8-next" class="f8-reveal"><span>NEXT · 02</span>模型 API 与消息协议</div>
+        <div class="caption">所以，Agent 不是更聪明的一次回答，而是一段被程序持续推动的运行。下一章，我们看不同模型 API 怎样表达同一条消息链。</div>
+      </section>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      function hideAt(selector, time) { tl.set(selector, { opacity: 0 }, time); }
+      function reveal(selector, time, from = { opacity: 0, y: 34 }, duration = 0.62) { tl.fromTo(selector, from, { opacity: 1, x: 0, y: 0, scale: 1, duration, ease: "power3.out", immediateRender: false }, time); }
+      function revealGroup(selector, sceneStart, time, stagger = 0.16) { hideAt(selector, sceneStart); tl.fromTo(selector, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.58, stagger, ease: "power3.out", immediateRender: false }, time); }
+      function drawPath(selector, sceneStart, time, duration) { const path = document.querySelector(selector); const length = path.getTotalLength(); tl.set(path, { strokeDasharray: length, strokeDashoffset: length }, sceneStart); tl.to(path, { strokeDashoffset: 0, duration, ease: "power2.inOut" }, time); }
+      function drawPaths(selector, sceneStart, time, stagger = 0.28) { document.querySelectorAll(selector).forEach((path, index) => { const length = path.getTotalLength(); tl.set(path, { strokeDasharray: length, strokeDashoffset: length }, sceneStart); tl.to(path, { strokeDashoffset: 0, duration: 0.72, ease: "power2.inOut" }, time + index * stagger); }); }
+
+      hideAt(".f1-reveal", 0); hideAt(".f1-action", 0);
+      reveal("#frame-01 .section-label", 0.35, { opacity: 0, x: -24 }, 0.48); reveal("#f1-title", 0.85, { opacity: 0, y: 40 }, 0.8); reveal("#f1-answer", 2.05, { opacity: 0, x: -54 }, 0.64); reveal("#f1-complete", 2.55, { opacity: 0, x: 54 }, 0.64); revealGroup(".f1-action", 0, 4.55, 0.22); reveal("#f1-mox", 5.35, { opacity: 0, x: 44, y: 34 }, 0.72);
+
+      hideAt(".f2-reveal", 8); tl.set("#f2-active-line", { scaleY: 0 }, 8);
+      reveal("#frame-02 h2", 8.35, { opacity: 0, y: 32 }, 0.62); reveal("#frame-02 .lead", 8.9, { opacity: 0, y: 24 }, 0.52); reveal("#f2-input", 10.15, { opacity: 0, y: -32 }, 0.62); tl.to("#f2-active-line", { scaleY: 0.49, duration: 2.2, ease: "power2.inOut" }, 10.55); reveal("#f2-model", 12.15, { opacity: 0, y: -28 }, 0.62); tl.to("#f2-active-line", { scaleY: 1, duration: 2.15, ease: "power2.inOut" }, 12.75); reveal("#f2-response", 14.25, { opacity: 0, y: -28 }, 0.62); reveal("#f2-end", 15.65, { opacity: 0, scale: 0.94 }, 0.52);
+
+      hideAt(".f3-reveal", 17); hideAt(".f3-step", 17);
+      reveal("#frame-03 h2", 17.35, { opacity: 0, y: 32 }, 0.6); reveal("#frame-03 .code-card", 18.15, { opacity: 0, y: 38 }, 0.7); reveal("#frame-03 .host-boundary", 19.9, { opacity: 0, scale: 0.92 }, 0.52); reveal("#f3-mox", 21.0, { opacity: 0, x: -64 }, 0.64); revealGroup(".f3-step", 17, 21.75, 0.5); tl.fromTo("#f3-tool", { borderColor: "#171717", backgroundColor: "#F7F5F0" }, { borderColor: "#FF7A00", backgroundColor: "#FFE5CE", duration: 0.55, ease: "power2.out", immediateRender: false }, 24.3);
+
+      hideAt(".f4-reveal", 26); hideAt(".f4-node", 26);
+      reveal("#frame-04 h2", 26.35, { opacity: 0, y: 32 }, 0.62); drawPath("#f4-loop-path", 26, 27.65, 8.2); reveal("#f4-context", 27.1, { opacity: 0, y: -28 }, 0.58); reveal("#f4-model", 29.05, { opacity: 0, x: 36 }, 0.58); reveal("#f4-runtime", 30.2, { opacity: 0, scale: 0.86 }, 0.62); reveal("#f4-call", 31.7, { opacity: 0, x: 36 }, 0.58); reveal("#f4-tool", 34.0, { opacity: 0, y: 34 }, 0.58); reveal("#f4-result", 35.9, { opacity: 0, x: -36 }, 0.58); reveal("#f4-answer", 38.0, { opacity: 0, y: 32, scale: 0.94 }, 0.65);
+
+      hideAt(".f5-reveal", 40); hideAt(".f5-layer", 40);
+      reveal("#frame-05 h2", 40.35, { opacity: 0, y: 32 }, 0.62); reveal("#f5-message", 41.8, { opacity: 0, scale: 0.82 }, 0.7); reveal("#f5-context", 44.3, { opacity: 0, scale: 0.88 }, 0.72); reveal("#f5-state", 47.0, { opacity: 0, scale: 0.9 }, 0.72); reveal("#f5-session", 49.75, { opacity: 0, scale: 0.92 }, 0.72);
+
+      hideAt(".f6-reveal", 53); hideAt(".f6-condition", 53); hideAt(".f6-branch", 53);
+      reveal("#frame-06 h2", 53.35, { opacity: 0, y: 32 }, 0.62); reveal("#f6-signal", 54.2, { opacity: 0, y: 26 }, 0.58); revealGroup(".f6-condition", 53, 55.3, 0.38); reveal("#f6-runtime", 58.2, { opacity: 0, scale: 0.94 }, 0.58); revealGroup(".f6-branch", 53, 59.4, 0.32);
+
+      hideAt(".f7-reveal", 63); hideAt(".f7-module", 63);
+      reveal("#frame-07 h2", 63.35, { opacity: 0, y: 32 }, 0.62); reveal("#f7-system", 64.1, { opacity: 0, scale: 0.96 }, 0.62); reveal("#f7-core", 64.8, { opacity: 0, scale: 0.86 }, 0.58); drawPaths(".f7-line", 63, 65.35, 0.32); revealGroup("#f7-model, #f7-tools, #f7-session, #f7-env, #f7-ui", 63, 65.8, 0.48); reveal("#f7-mox", 69.3, { opacity: 0, x: 54, y: 28 }, 0.62); tl.fromTo("#f7-system", { borderColor: "rgba(255,122,0,0.3)" }, { borderColor: "#FF7A00", duration: 1.1, ease: "power2.out", immediateRender: false }, 70.3);
+
+      hideAt(".f8-reveal", 73); hideAt(".f8-step", 73);
+      reveal("#frame-08 h2", 73.25, { opacity: 0, y: 30 }, 0.58); revealGroup(".f8-step", 73, 73.85, 0.38); reveal("#f8-thesis", 75.45, { opacity: 0, y: 28 }, 0.65); reveal("#f8-mox", 77.0, { opacity: 0, x: -50, y: 30 }, 0.58); reveal("#f8-next", 77.45, { opacity: 0, x: 46 }, 0.58);
+
+      window.__timelines.main = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

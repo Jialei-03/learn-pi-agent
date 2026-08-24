@@ -1,0 +1,19 @@
+{
+  "duration": 80,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#f1-title", "bySec": 1.8 },
+    { "kind": "before", "a": "#f1-answer", "b": "#f1-actions .action-card:nth-child(1)" },
+    { "kind": "before", "a": "#f2-input", "b": "#f2-response" },
+    { "kind": "before", "a": "#f3-mox", "b": "#f3-tool" },
+    { "kind": "before", "a": "#f4-context", "b": "#f4-answer" },
+    { "kind": "before", "a": "#f5-message", "b": "#f5-session" },
+    { "kind": "before", "a": "#f6-signal", "b": "#f6-stop" },
+    { "kind": "before", "a": "#f7-core", "b": "#f7-mox" },
+    { "kind": "before", "a": "#f8-path .mainline:nth-child(1)", "b": "#f8-next" },
+    { "kind": "staysInFrame", "selector": "#f1-mox" },
+    { "kind": "staysInFrame", "selector": "#f7-mox" },
+    { "kind": "staysInFrame", "selector": "#f8-mox" },
+    { "kind": "staysInFrame", "selector": "#f1-title" },
+    { "kind": "staysInFrame", "selector": "#frame-04 h2" }
+  ]
+}
