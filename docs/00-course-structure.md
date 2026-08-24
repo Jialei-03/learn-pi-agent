@@ -115,7 +115,7 @@ flowchart TB
 
 ### 第 18 章：Observability、Evaluation 与 Harness Engineering
 
-介绍 Agent Event、Lifecycle Hook、Trace、Token、延迟、成本、Task Success、Trajectory Evaluation、LLM-as-a-Judge 和回归测试，并用 Harness Engineering 总结如何通过工具、约束、测试和反馈提升可靠性。
+先用“发生了什么、资源花在哪里、任务是否成功、下一步改什么”区分 Event、Log、Metric、Trace、Session、Audit 与 Eval，再解释 Instrumentation、Telemetry、Observability、Span Tree、Correlation ID、Trajectory，以及质量、可靠性、延迟、Token、成本和安全为什么不能压成一个总分。沿 Pi 固定源码分层核对低层 `AgentEvent`、产品级 `AgentSessionEvent`、可改变行为的 Extension Hook、`pi-telemetry` 的显式 Context 与类型化 Schema，并明确当前主运行链尚未自动生成完整 Span Tree。随后建立 Task、Trial、Outcome、Grader、Evaluation Harness 与 Suite，比较确定性 Grader、Human Eval、LLM-as-a-Judge、Outcome / Trajectory Evaluation、`pass@k` / `pass^k`、Offline / Online、Shadow、Canary 与 A/B；最后进入 Pi Evals 的隔离 `AgentSession`、原生 Session Artifact、Baseline / Candidate 成对比较和回归链路，并用仍在形成中的 Harness Engineering 把十八章收束成可观测、可评测、可持续改进的系统。
 
 ## Pi 源码如何进入这条主线
 

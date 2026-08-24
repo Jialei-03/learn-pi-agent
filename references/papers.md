@@ -114,6 +114,22 @@ AgentBench 在多种交互环境中评测作为 Agent 的模型，适合认识�
 
 SWE-bench 使用真实 GitHub issue 与代码仓库评估软件工程能力，与 coding agent 直接相关。阅读成绩时要同时检查数据版本、运行环境、工具、通过标准与是否存在数据污染风险。
 
+### [Holistic Evaluation of Language Models](https://arxiv.org/abs/2211.09110)
+
+HELM 在统一场景中同时考察准确性、校准、鲁棒性、公平性、偏差、毒性与效率，说明模型与 Agent 质量不能只剩一个总分。多指标公开报告能让能力、风险与成本之间的权衡保持可见。
+
+### [τ-bench: A Benchmark for Tool-Agent-User Interaction in Real-World Domains](https://arxiv.org/abs/2406.12045)
+
+τ-bench 让 Agent 在领域政策约束下与模拟用户和 API Tool 多轮交互，并用最终数据库状态判定 Outcome。它提出 `pass^k` 观察多次 Trial 全部成功的可靠性，帮助区分“偶尔成功”和“连续使用仍稳定”。
+
+### [Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena](https://arxiv.org/abs/2306.05685)
+
+这项工作研究用强模型扩展开放式回答评测，并系统分析 Position、Verbosity、Self-enhancement 和推理能力偏差。LLM-as-a-Judge 可以降低大规模语义评分成本，但需要清晰 Rubric、顺序控制和人工标签校准。
+
+### [AI Harness Engineering: A Runtime Substrate for Foundation-Model Software Agents](https://arxiv.org/abs/2605.13357)
+
+这项 2026 年工作把软件 Agent 视为 Model、Harness 与 Environment 的共同系统，并整理任务规范、Context、Tool、Memory、State、Observability、失败归因、验证、权限与干预记录等 Harness 职责。Harness Engineering 仍是新近形成的研究与工程术语，应用它时需要明确具体系统边界，而不是把名称当成统一标准。
+
 ## 八、Agent 与计算机接口：模型怎样在真实环境里完成动作
 
 ### [SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering](https://arxiv.org/abs/2405.15793)
@@ -170,6 +186,10 @@ ToolEmu 用语言模型模拟 Tool 与风险场景，检查 Agent 的中间动�
 - CoALA 与 MemGPT 提供区分工作上下文、长期记忆和分层存储的研究视角；
 - Lost in the Middle 解释为什么长上下文装得下信息，却不代表模型能同等利用每个位置；
 - SWE-bench 展示 coding agent 的完成结果如何放进真实软件工程任务中评测；
+- HELM 说明评测应保留质量、风险与效率的多维结果，而不是只看一个总分；
+- τ-bench 通过环境 Outcome 与 `pass^k` 强调 Tool Agent 的连续可靠性；
+- LLM-as-a-Judge 研究说明模型评分可扩展，但必须处理位置、长度和自增强偏差；
+- AI Harness Engineering 把 Context、Tool、State、验证与可观测性整理为模型之外的系统改进对象；
 - SWE-agent 说明 Agent-Computer Interface 的设计会改变模型能否有效阅读、修改和验证代码；
 - WebArena 与 OSWorld 分别把 Web Agent 和 Computer-Using Agent 放进可执行环境中评测。
 - Sagas、Durable Functions 与 Netherite 分别解释补偿、确定性重放和持久化运行成本；

@@ -702,6 +702,88 @@ API Key、访问 Token、密码、私钥等不应公开的数据。Agent 系统�
 
 安全事件发生后用于检测、遏制、撤销凭证、停止运行、保存证据、确认副作用、通知相关方、修复并恢复服务的过程。Agent 系统还要处理结果未知的外部动作，不能把缺少 Tool Result 当成没有影响。
 
+## 可观测性与评测
+
+### Instrumentation / 仪表化
+
+在模型请求、Tool 执行、重试、状态写入等代码边界产生结构化信号的过程。Instrumentation 是产生数据的手段，不等于系统已经具备关联、查询和解释未知问题的能力。
+
+### Telemetry / 遥测
+
+系统运行时发出的诊断数据，常见形式包括 Trace、Metric 和 Log。Telemetry 应保持被动，采集失败不能改变业务结果；它也不能代替 Durable State 与 Audit Trail。
+
+### Observability / 可观测性
+
+利用系统外部发出的信号理解内部状态、定位已知和未知问题的能力。高质量 Observability 需要稳定字段、关联 ID、时间边界、采集与查询机制，而不只是更多日志。
+
+### Event / 事件
+
+某个时刻发生的一件事，例如模型响应开始、Tool 执行结束或重试排队。Pi `AgentEvent` 首先是运行通知协议，只有被记录或转换后才会成为 Log、Trace Event 或 Metric 测量。
+
+### Log / 日志
+
+带时间与上下文字段的一条运行记录。结构化 Log 使用稳定 Schema 便于筛选与关联；写成 JSON 但字段含义不断变化，并不自动成为可靠的结构化日志。
+
+### Metric / 指标
+
+对多次运行测量并按时间或维度聚合的数值，例如任务成功率、P95 延迟、错误率和每成功任务成本。高基数 ID 不应随意成为 Metric 标签，否则会增加存储与聚合成本。
+
+### Trace / 追踪
+
+一次端到端操作中各段工作的父子和时间关系。Trace 适合定位模型、Tool、等待与重试的关键路径，但通常可采样、可脱敏，不等于完整 Session 或可恢复状态。
+
+### Span / 追踪片段
+
+Trace 中一段有开始和结束的操作。Span 通常包含名称、父 Span、时间、Attribute、Event 与 Status；子 Span 让一次 Agent Run 可以展开为 Turn、Model Request 和 Tool Execution。
+
+### Correlation ID / 关联标识
+
+把 Session、Run、Turn、Provider Request、Tool Call 和业务 Operation 的不同记录连接起来的稳定 ID。关联标识帮助还原证据，不会自动提供身份认证或授权。
+
+### Trajectory / 行动轨迹
+
+一次 Agent Trial 中按语义展开的消息、模型输出、Tool Call、Tool Result 和环境变化序列。Trajectory 适合评估动作路径；Trace 更强调时间与嵌套，两者可以共享数据但不能默认等同。
+
+### Evaluation / Eval / 评测
+
+向 AI 系统提供定义清楚的任务，并用预先规定的成功条件衡量结果与行为的过程。Eval 应保存任务、环境、模型、Harness、数据和 Grader 版本，避免用“感觉更好”代替比较。
+
+### Task / Eval Case / 评测任务
+
+带有输入、环境和成功条件的一道评测题。一个 Task 可以运行多次；任务本身与每次实际尝试不能混为一谈。
+
+### Trial / 评测尝试
+
+Agent 在指定配置和环境中执行某个 Task 的一次运行。模型输出具有变化时，同一 Task 的多个 Trial 用于观察成功概率与稳定性。
+
+### Outcome / 最终环境结果
+
+一次 Trial 结束后业务或执行环境中的真实状态，例如数据库是否存在预订、测试是否通过、目标文件是否正确。Assistant 声称完成不等于 Outcome 已达到。
+
+### Grader / 评分器
+
+依据成功标准对 Output、Trajectory 或 Outcome 给出分数、标签和理由的程序、人或模型。能用测试、Schema 和环境状态确定时，应优先使用确定性 Grader；模型 Grader 需要人工校准。
+
+### LLM-as-a-Judge / 模型评分
+
+让一个语言模型依据 Rubric 比较或评分其他模型输出的评测方式。它便于扩展语义评测，但可能存在位置、冗长、自增强、Rubric 漂移和提示注入偏差。
+
+### Evaluation Harness / 评测运行框架
+
+创建测试环境、运行 Agent、收集 Transcript 与 Artifact、执行 Grader 并汇总结果的基础设施。它与包围模型、实际承载 Agent 运行的 Agent Harness 解决不同问题。
+
+### Eval Suite / 评测集
+
+围绕某项能力、行为或风险组织的一组 Task。一个可靠 Suite 应包含常见、边界、历史失败和对抗场景，并保留未参与日常调试的测试数据。
+
+### Baseline / Candidate / 基线与候选
+
+比较实验中的现有配置与待验证配置。两者应运行在相同任务、重复次数和环境上，并尽量只改变一个主要因素，才能解释差异来自哪里。
+
+### Harness Engineering
+
+用观察、评测和反馈系统化改进模型之外的 Context、Tool、Loop、State、Policy、执行环境和验证机制的工程实践。它是仍在形成中的术语，不等同于 Pi `AgentHarness` 这个具体 API，也不只是 Prompt Engineering。
+
 ## 两个必须始终记住的边界
 
 ```text

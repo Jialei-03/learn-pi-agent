@@ -68,6 +68,11 @@
 | NIST AI RMF | [Govern、Map、Measure、Manage](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/) | 2026-08-24 |
 | NIST Generative AI Profile | [NIST AI 600-1](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf) | 2026-08-24 |
 | NIST Agent Security RFI Summary | [Summary and Analysis of Responses](https://www.nist.gov/publications/summary-analysis-responses-request-information-regarding-security-considerations-ai) | 2026-08-24 |
+| OpenTelemetry signals | [Traces、Metrics、Logs 与 Baggage](https://opentelemetry.io/docs/concepts/signals/) | 2026-08-24 |
+| OpenTelemetry observability | [Observability Primer](https://opentelemetry.io/docs/concepts/observability-primer/) | 2026-08-24 |
+| OpenAI Agents SDK tracing | [Tracing](https://openai.github.io/openai-agents-js/guides/tracing/) | 2026-08-24 |
+| OpenAI evaluation | [Evaluation Best Practices](https://developers.openai.com/api/docs/guides/evaluation-best-practices) · [Trace Grading](https://developers.openai.com/api/docs/guides/trace-grading) | 2026-08-24 |
+| Anthropic agent evals | [Demystifying Evals for AI Agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents) | 2026-08-24 |
 
 > API 文档是“在核对日期打开的最新官方文档”，不是本仓库保存的协议快照。打开链接时看到更新版本是正常现象；若字段或语义发生变化，应在正文中留下变更说明。
 
