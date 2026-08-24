@@ -612,6 +612,96 @@ API Key、访问 Token、密码、私钥等不应公开的数据。Agent 系统�
 
 让每个任务、进程和凭据只获得完成当前工作所需的最少能力，并限制作用域与持续时间的原则。Tool Allowlist、只读挂载、短期 Token、网络 Allowlist 和一次性 Sandbox 都可以共同实现它。
 
+## 安全与治理
+
+### Threat Model / 威胁模型
+
+系统化描述要保护的资产、可能的攻击者、入口、信任边界、攻击路径和影响的安全模型。Threat Model 让控制措施对应真实威胁，而不是只堆叠过滤器。
+
+### Trust Boundary / 信任边界
+
+数据、身份或控制权从一个信任等级进入另一个等级的位置。用户输入进入模型、模型输出进入 Tool、MCP Client 连接第三方 Server、Extension 进入 Harness 都会跨越信任边界，并需要明确校验与权限规则。
+
+### Provenance / 来源信息
+
+记录一段输入、证据、指令或结果来自哪里、经过哪些转换以及具有什么信任等级的信息。保留 Provenance 可以帮助 Context Builder、Tool Policy 和 Audit 区分系统策略、用户任务与外部不可信内容。
+
+### Jailbreak / 越狱提示
+
+用户直接试图让模型绕过其既有行为或安全约束的输入方式。Jailbreak 关注模型规则的规避；它与外部网页、邮件或文档中隐藏指令的间接 Prompt Injection 入口不同。
+
+### Indirect Prompt Injection / 间接提示注入
+
+攻击者把恶意指令藏在 Agent 为正常任务读取的网页、邮件、代码、文档或 Tool Result 中，使模型把不可信数据误当成行动指令。开放内容 Agent 应假设这种输入可能进入 Context，并用来源标记、权限与隔离限制影响。
+
+### Guardrail / 护栏
+
+在 Agent 的输入、输出或 Tool 边界执行检查、变换、阻止或触发升级的机制。Guardrail 可以使用确定性规则或语义分类器，但它不是身份系统，也不能自动替代 Sandbox 与业务授权。
+
+### Input Guardrail / 输入护栏
+
+在初始用户输入进入 Agent 运行时检查范围、格式或风险的 Guardrail。它是否在模型调用开始前阻塞完成，取决于具体 SDK 的执行时序；它也不自动覆盖后续 Tool Result 中的间接注入。
+
+### Output Guardrail / 输出护栏
+
+在最终 Agent 输出交给用户或下游系统前执行的检查。它能过滤展示内容，却不能撤销此前已经发生的邮件发送、文件修改或其他 Tool 副作用。
+
+### Tool Guardrail / 工具护栏
+
+围绕单次 Tool 输入或输出执行的检查。Tool Input Guardrail 适合在副作用前校验参数、授权与批准；Tool Output Guardrail 适合裁剪或脱敏结果，但发生在执行之后。
+
+### Authentication / 认证
+
+验证请求者、用户或服务身份的过程，回答“你是谁”。认证成功只建立身份，不自动证明该主体能够操作任意资源。
+
+### Authorization / 授权
+
+根据已验证主体、资源、动作和条件判断请求是否允许的过程，回答“你可以对什么做什么”。授权应由宿主或业务服务执行，不能信任模型参数中的自报身份。
+
+### Principal / 安全主体
+
+权限系统中发起动作的已识别用户、服务、进程或 Agent 实例。Agent Tool 使用的 Principal 应从受信登录会话或运行身份绑定，而不是让模型在 Tool 参数中自由选择。
+
+### Scope / 权限范围
+
+凭证或授权允许执行的动作集合，例如只读日历或发送邮件。最小权限系统会为当前任务申请窄 Scope，并在更高风险动作前进行 Step-up。
+
+### Audience / Resource / 令牌受众
+
+访问 Token 被签发给哪个服务或资源使用的约束。Resource Server 应验证 Token 的受众；把给服务 A 的 Token 直接转交服务 B 会破坏边界。
+
+### Consent / 用户同意
+
+用户对一个具体主体、资源、动作、参数和时间范围作出的明确决定。Consent 不是永久权限，参数或目标改变后应重新执行策略，必要时重新批准。
+
+### Confused Deputy / 混淆代理
+
+高权限服务被较低权限请求者诱导，使用自己的权限完成请求者本不允许执行的动作。受众校验、资源级授权、最小 Scope 与不转交 Token 是常见防线。
+
+### Tool Poisoning / 工具投毒
+
+通过恶意 Tool Description、Schema、实现或结果影响模型选择和后续动作的供应链攻击。工具声明描述行为，却不能证明实现与权限安全；第三方 Tool 与 MCP Server 仍需来源、版本、权限和隔离审查。
+
+### Data Exfiltration / 数据外传
+
+敏感数据未经授权离开其允许边界的过程，例如被发送到外部收件人、网络目标、日志、Provider 或下游 Agent。控制点包括数据最小化、Tool 前置策略、凭证隔离、Egress 限制与结果脱敏。
+
+### Audit Trail / 审计轨迹
+
+能够重建一次动作由谁、在何时、依据哪版策略、对哪个资源、使用哪些规范化参数作出何种决定的结构化记录。审计应保存充分证据，同时避免把 Secret 和完整敏感内容复制进日志。
+
+### Governance / 治理
+
+规定风险由谁负责、策略怎样制定和评审、例外如何批准和过期、数据怎样留存删除、事故如何响应、系统怎样持续评估的组织与工程机制。Governance 让单个 Guardrail 进入可维护的生命周期。
+
+### Policy Version / 策略版本
+
+标识一次权限或风险决定所依据规则集合的稳定版本。Durable Run、Approval 与 Audit 记录 Policy Version，可以在规则更新后判断是否需要重新评估未完成动作。
+
+### Incident Response / 事件响应
+
+安全事件发生后用于检测、遏制、撤销凭证、停止运行、保存证据、确认副作用、通知相关方、修复并恢复服务的过程。Agent 系统还要处理结果未知的外部动作，不能把缺少 Tool Result 当成没有影响。
+
 ## 两个必须始终记住的边界
 
 ```text

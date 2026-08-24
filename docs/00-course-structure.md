@@ -111,7 +111,7 @@ flowchart TB
 
 ### 第 17 章：Security、Guardrails 与 Governance
 
-介绍 Input、Output 和 Tool Guardrail，权限、策略、最小权限、Prompt Injection、Tool Poisoning、数据泄漏、审计和用户同意。
+先从资产、主体、入口和信任边界建立 Agent Threat Model，说明模型输出为什么只能是候选动作，不能成为身份、授权或批准的来源。随后区分 Jailbreak、直接 Prompt Injection 与经网页、邮件、仓库和 Tool Result 进入 Context 的间接注入，并把 Provenance、分层防御与最小权限放进同一条攻击链。再逐层区分 Authentication、Authorization、Policy、Input / Output / Tool Guardrail、Approval、Sandbox、Audit 与 Governance，核对 OpenAI Agents SDK 当前 Guardrail 的时序和覆盖边界，以及 MCP 中 Scope、Audience、Token Passthrough 与 Confused Deputy。沿 Pi 固定源码验证 Project Trust 的准确加载范围、Context 文件例外、无内置 Sandbox、`tool_call` / `tool_result` 的执行前后位置、参数修改后不再校验和并行 Tool 预检顺序；最后用可编译 Extension 教学改编、真实动作批准界面、数据治理、NIST AI RMF、OWASP Agentic Top 10、AgentDojo、InjecAgent 与 ToolEmu 组成一套可测试、可审计、可响应的安全蓝图。
 
 ### 第 18 章：Observability、Evaluation 与 Harness Engineering
 

@@ -121,6 +121,14 @@ Pi 根目录 [README 的 Security 段落](https://github.com/earendil-works/pi/b
 
 第三层是标题明确写作 **implementation specification** 的 [`docs/harness.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/docs/harness.md)。其中 Operation State、事务提交、effect sandwich、`safe` / `never` replay policy 与 Lane 是目标 Durable Harness 的设计语义。源码阅读必须把可运行 Session、API 骨架和目标规范分开。
 
+### 第 17 章的 Security、Guardrails 与 Governance 源码锚点
+
+固定版本 [`security.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/security.md) 给出 Pi 的安全边界：Project Trust 控制项目级设置、Extension、Skill、Prompt、Theme、System Prompt 文件与项目 Package 的加载，不是 Sandbox；`AGENTS.override.md`、`AGENTS.md` 与 `CLAUDE.md` 等 Context 文件仍会加载，除非关闭 Context 加载。相同文档明确说明 Pi 没有内置 Sandbox，Tool、Extension、Package、Shell、测试与语言服务器继承 Pi 进程的本地用户权限。
+
+工具执行顺序由 [`agent-loop.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent-loop.ts) 证明：参数先准备并校验，再进入 `beforeToolCall`，通过后执行 Tool，最后进入 `afterToolCall`。coding-agent 的 [`AgentSession`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/agent-session.ts) 把 Extension `tool_call` / `tool_result` 事件接到这两个位置；[`extensions/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/src/core/extensions/types.ts) 进一步明确 `event.input` 可被原地修改、后续 Handler 能看到变化，但修改后不会再次执行 Schema 校验。
+
+[`permission-gate.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/permission-gate.ts)、[`protected-paths.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/protected-paths.ts) 与 [`project-trust.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/examples/extensions/project-trust.ts) 是理解 Hook 与 UI 的教学入口，不应被当成完整 Shell Policy、路径 Sandbox 或企业授权系统。[`telemetry/README.md`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/telemetry/README.md) 则说明诊断信号的数据最小化边界：Prompt、Tool 参数与结果、文件内容、Header 和凭证不应默认进入 Telemetry。
+
 ## 三条核心观察主线
 
 ### 消息主线

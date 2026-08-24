@@ -59,6 +59,15 @@
 | Anthropic Sandbox Runtime | [anthropic-experimental/sandbox-runtime](https://github.com/anthropic-experimental/sandbox-runtime) | 2026-08-24 |
 | Docker seccomp | [Seccomp security profiles](https://docs.docker.com/engine/security/seccomp/) | 2026-08-24 |
 | gVisor | [Architecture Guide](https://gvisor.dev/docs/architecture_guide/intro/) | 2026-08-24 |
+| Pi Security | [Project Trust、无内置 Sandbox 与不可信工作负载](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/coding-agent/docs/security.md) | 2026-08-24 |
+| OpenAI Agents SDK Guardrails | [Input、Output 与 Tool Guardrails](https://openai.github.io/openai-agents-js/guides/guardrails/) | 2026-08-24 |
+| Anthropic Prompt Injection Defenses | [Prompt injection defenses](https://www.anthropic.com/research/prompt-injection-defenses) | 2026-08-24 |
+| MCP Authorization | [`2026-07-28` Authorization](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) | 2026-08-24 |
+| MCP Authorization Security | [Security Considerations](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/security-considerations) · [Security Best Practices](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices) | 2026-08-24 |
+| OWASP Agentic Top 10 | [Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/) | 2026-08-24 |
+| NIST AI RMF | [Govern、Map、Measure、Manage](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/) | 2026-08-24 |
+| NIST Generative AI Profile | [NIST AI 600-1](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf) | 2026-08-24 |
+| NIST Agent Security RFI Summary | [Summary and Analysis of Responses](https://www.nist.gov/publications/summary-analysis-responses-request-information-regarding-security-considerations-ai) | 2026-08-24 |
 
 > API 文档是“在核对日期打开的最新官方文档”，不是本仓库保存的协议快照。打开链接时看到更新版本是正常现象；若字段或语义发生变化，应在正文中留下变更说明。
 

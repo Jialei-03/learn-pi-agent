@@ -146,6 +146,20 @@ Netherite 研究持久化 Workflow 的分区、流水线和 group commit，展�
 
 这项 CHI 2019 工作提出并验证 18 条 Human-AI Interaction 指南，包括说明能力边界、支持纠正、提供适当控制和帮助用户从失败中恢复。把 HITL 落到 Agent 工程时，批准界面之外还要保存具体动作、决定者、版本、超时、重新校验与恢复路径。
 
+## 十、安全：开放内容和高权限工具怎样形成攻击链
+
+### [InjecAgent: Benchmarking Indirect Prompt Injections in Tool-Integrated Large Language Model Agents](https://arxiv.org/abs/2403.02691)
+
+InjecAgent 把正常用户任务、攻击目标、工具和恶意外部内容组合成间接 Prompt Injection 基准。它把评测重点从“模型能否识别恶意句子”推进到“恶意内容能否改变真实 Tool 轨迹”。
+
+### [AgentDojo: A Dynamic Environment to Evaluate Prompt Injection Attacks and Defenses for LLM Agents](https://arxiv.org/abs/2406.13352)
+
+AgentDojo 在动态工具环境中同时评估正常任务效用与注入攻击成功率。它提醒安全评测不能靠拒绝所有动作取得漂亮数字，而要显式观察 Utility、攻击成功、误拒绝与防御代价。
+
+### [ToolEmu: Identifying the Risks of LM Agents with an LM-Emulated Sandbox](https://arxiv.org/abs/2309.15817)
+
+ToolEmu 用语言模型模拟 Tool 与风险场景，检查 Agent 的中间动作和潜在副作用。模拟能扩充难以安全执行的测试覆盖，但仍需与真实授权、Sandbox 集成测试和生产监测结合。
+
 ## 这些论文分别解释什么
 
 - ReAct 为“推理—行动—观察”的 Agent Loop 提供研究背景；
@@ -159,7 +173,8 @@ Netherite 研究持久化 Workflow 的分区、流水线和 group commit，展�
 - SWE-agent 说明 Agent-Computer Interface 的设计会改变模型能否有效阅读、修改和验证代码；
 - WebArena 与 OSWorld 分别把 Web Agent 和 Computer-Using Agent 放进可执行环境中评测。
 - Sagas、Durable Functions 与 Netherite 分别解释补偿、确定性重放和持久化运行成本；
-- Human-AI Interaction 指南帮助把人工控制从一个弹窗扩展成可理解、可纠正、可恢复的运行过程。
+- Human-AI Interaction 指南帮助把人工控制从一个弹窗扩展成可理解、可纠正、可恢复的运行过程；
+- Indirect Prompt Injection、InjecAgent、AgentDojo 与 ToolEmu 分别建立外部内容攻击、工具型基准、效用—安全联合评估与模拟风险测试的研究背景。
 
 这些论文只提供问题背景和实验依据。论文方法是否出现在 Pi 中，仍然要由固定版本的源码证明。
 
