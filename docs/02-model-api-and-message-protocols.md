@@ -376,6 +376,8 @@ Anthropic 请求的 `tools` 数组中，天气工具这一项可以这样声明�
 
 这里的 `role: "user"` 是 Anthropic Messages 协议承载工具结果的方式，并不表示结果由用户亲自编写。`tool_use_id` 把结果与原来的 `tool_use.id` 关联起来。
 
+Anthropic 对消息顺序还有明确要求：包含 `tool_result` 的 user message 必须紧跟对应的 assistant `tool_use` message；如果同一条 user message 还包含普通文本，所有 `tool_result` block 必须排在普通文本之前。一轮出现多个 `tool_use` 时，下一条 user message 应为每个调用返回对应结果。
+
 对应关系是：
 
 ```text
@@ -531,7 +533,7 @@ if (api === "openai-completions") {
 
 工具执行、会话记录和界面随后也会被同样的条件分支影响。Pi 把这些差异留在 `pi-ai` 的模型边界，把 Agent Runtime 需要的共同事实转换成统一类型。
 
-![不同模型协议经过 Pi 的适配层转换为统一语义](../assets/model-api-illustrations/01-provider-adapter.png)
+![不同模型协议与 Pi 统一语义之间的双向适配](../assets/model-api-illustrations/01-provider-adapter.png)
 
 ### 6.1 Provider 与 API 不是同一个概念
 
@@ -596,7 +598,7 @@ type StopReason =
   "content": [
     {
       "type": "toolCall",
-      "id": "call_1",
+      "id": "pi-tool-call-id",
       "name": "get_weather",
       "arguments": {
         "city": "北京"
@@ -613,7 +615,9 @@ type StopReason =
 - Responses 的 `function_call`；
 - Anthropic Messages 的 `tool_use`。
 
-工具执行完成后，三种供应商格式也都会转换成 Pi 的 `ToolResultMessage`，并通过 `toolCallId` 与调用关联。
+示例中的 `pi-tool-call-id` 只是教学占位符。Runtime 应把 `ToolCall.id` 视为一个不可拆解的关联标识：原样交给工具执行，并原样写入 `ToolResultMessage.toolCallId`，不要自行解析或重新生成。Pi 的 Responses Adapter 会在这个字段中同时保留上游 `call_id` 与 output item `id`，回传结果时再恢复 Responses 需要的 `call_id`；这是适配层的实现细节，Agent Loop 不需要感知。
+
+工具执行完成后，Agent Runtime 会创建 Pi 的 `ToolResultMessage`，并通过 `toolCallId` 与原调用关联。下一次调用模型时，`pi-ai` 的适配器再把这条统一消息编码成 Chat Completions 的 `role: "tool"`、Responses 的 `function_call_output`，或者 Anthropic Messages 的 `tool_result`。
 
 ### 6.3 `complete` 把不同 API 收敛成同一种调用方式
 
@@ -632,7 +636,7 @@ const response = await models.complete(model, context);
 
 调用过程中，Pi 根据 `model.api` 选择对应实现，完成请求转换、发送、响应解析和停止原因映射。
 
-具体转换可以在固定源码中的 [`openai-completions.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/api/openai-completions.ts)、[`openai-responses-shared.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/api/openai-responses-shared.ts) 和 [`anthropic-messages.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/api/anthropic-messages.ts) 中找到。
+具体转换可以在 [`openai-completions.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/api/openai-completions.ts)、[`openai-responses-shared.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/api/openai-responses-shared.ts) 和 [`anthropic-messages.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/api/anthropic-messages.ts) 中找到。
 
 ## 7. Streaming：先收到事件，再得到完整消息
 
@@ -661,7 +665,7 @@ const response = await models.complete(model, context);
 第二个增量：ty":"北京"}
 ```
 
-第一段不是完整 JSON，不能立刻解析，更不能据此执行工具。宿主需要等待工具调用完成事件，再解析、校验和执行。
+第一段还不是完整 JSON，不能把它当作最终参数，更不能据此执行工具。Pi 的适配器会在增量到达时进行尽力解析，把当前结果放进 `partial` 供界面预览；收到 `toolcall_end` 后，`ToolCall.arguments` 才完整，但仍未经过工具 schema 校验。Runtime 随后校验参数，只有校验通过后才执行工具。
 
 ![流式增量先组成完整工具调用，再通过调用 ID 关联结果](../assets/model-api-illustrations/02-stream-and-id.png)
 
@@ -760,7 +764,7 @@ Runtime 运行状态：整段 Agent 运行接下来怎样变化
 
 ### 9.3 流式事件不是完整 Message
 
-delta 可能只是半句话或半段 JSON。界面可以立即展示文本增量，Runtime 必须等待完整的工具调用和最终消息再推进状态。
+delta 可能只是半句话或半段 JSON。界面可以立即展示文本增量，也可以防御性地预览部分工具参数；Runtime 必须等待 `toolcall_end` 并完成参数校验，才能执行工具，再使用最终消息推进状态。
 
 ### 9.4 OpenAI-compatible 不等于完全相同
 
@@ -788,7 +792,7 @@ delta 可能只是半句话或半段 JSON。界面可以立即展示文本增量
 
 ## 下一章：进入 Pi 的 Agent Loop
 
-现在我们已经知道，`pi-ai` 怎样把不同模型服务转换成统一的消息和事件。下一章将沿固定版本的 `AgentContext`、`runAgentLoop`、`runLoop` 与 `AgentEvent` 阅读真实控制链：统一的 Assistant Message 怎样写入状态，Tool Call 怎样进入执行阶段，循环又怎样继续或停止。
+现在我们已经知道，`pi-ai` 怎样把不同模型服务转换成统一的消息和事件。下一章将沿 Pi 的 `AgentContext`、`runAgentLoop`、`runLoop` 与 `AgentEvent` 阅读真实控制链：统一的 Assistant Message 怎样写入状态，Tool Call 怎样进入执行阶段，循环又怎样继续或停止。
 
 ## 参考资料
 
@@ -798,5 +802,5 @@ delta 可能只是半句话或半段 JSON。界面可以立即展示文本增量
 - [Anthropic Messages API Reference](https://platform.claude.com/docs/en/api/messages/create)
 - [Anthropic：Handle tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)
 - [Anthropic：Streaming messages](https://platform.claude.com/docs/en/build-with-claude/streaming)
-- [Pi `pi-ai` types：固定版本源码](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts)
-- [Pi `pi-ai` README：固定版本说明](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/README.md)
+- [Pi `pi-ai` types](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts)
+- [Pi `pi-ai` README](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/README.md)
