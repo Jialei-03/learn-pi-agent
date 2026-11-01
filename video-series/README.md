@@ -1,43 +1,22 @@
-# Learn Pi Agent 短视频制作包
+# 配套讲述索引
 
-这套制作包用于把课程长文改写成竖屏知识短视频。视频沿用小红书图文的白底、黑色手写线条、橙色强调和 Mox 形象，但不会直接把卡片做成静态轮播：每个画面都要通过进场、局部聚焦、关系连线或状态变化解释一个概念。
+讲述提纲与十八章课程一一对应，正文是实现说明的唯一来源。每集从具体任务开始，沿代码解释机制，并使用正文中的 Mox 配图。
 
-## 已完成的内容
-
-- 第 2～18 章逐章口播稿与分镜；
-- 统一的画面、动画、字幕和录音规范；
-- 每个分镜与现有小红书卡片一一对应，便于复用已经审核过的视觉内容。
-
-## 系列目录
-
-| 集数 | 主题 | 无声分镜基准 |
-| --- | --- | ---: |
-| 02 | 模型 API 与消息协议 | 82 秒 |
-| 03 | Agent Loop、状态机与停止条件 | 82 秒 |
-| 04 | Tools 与 Function Calling | 82 秒 |
-| 05 | Context Engineering 与 Structured Output | 82 秒 |
-| 06 | Session、Memory、Retrieval 与 Compaction | 82 秒 |
-| 07 | MCP：Agent 与外部世界的协议 | 87 秒 |
-| 08 | Skills 与 Prompt Templates | 87 秒 |
-| 09 | Extensions、Plugins 与 Packages | 87 秒 |
-| 10 | Workflow 与 Agent 的区别 | 87 秒 |
-| 11 | Workflow Patterns | 87 秒 |
-| 12 | Planning 与 Reasoning Patterns | 87 秒 |
-| 13 | Agent SDK 与应用集成 | 87 秒 |
-| 14 | Multi-Agent 与 A2A | 87 秒 |
-| 15 | Sandbox、Code Agent 与 Computer Use | 87 秒 |
-| 16 | Durable Execution 与 Human-in-the-loop | 87 秒 |
-| 17 | Security、Guardrails 与 Governance | 87 秒 |
-| 18 | Observability、Evaluation 与 Harness Engineering | 87 秒 |
-
-表中秒数用于确定动画密度，不要求真人口播硬卡时长。按自然教学语速，成片预计约 90～125 秒；收到录音后再用真实停顿统一拉伸镜头、字幕和转场。
-
-## 使用方式
-
-1. 先读对应集数的分镜和连续口播稿；
-2. 按完整口播稿录制一条音频，开头和结尾各保留约 0.5 秒静音；
-3. 用真实音频重新取得逐字时间，再调整镜头切点和字幕；
-4. 检查技术名词、字幕、安全区和手机端可读性；
-5. 分别导出抖音版和小红书版，两者可以共用 1080 × 1920 主成片。
-
-具体制作规则见 `PRODUCTION-GUIDE.md`。每一集的“事实锚点”用于防止短视频改写时丢失技术边界；详细论证和参考资料仍以对应课程章节为准。
+- [从一次模型调用到 Agent：沿源码读懂一个工具循环](episodes/01-from-llm-to-agent.md)
+- [模型 API 与消息协议：一条消息怎样穿过 Provider](episodes/02-model-api-and-message-protocols.md)
+- [Agent Loop：状态、事件、队列与停止条件](episodes/03-agent-loop-state-machine-and-stopping.md)
+- [Tools：从工具声明到真实副作用](episodes/04-tools-and-function-calling.md)
+- [Context Engineering：每次请求到底给模型什么](episodes/05-context-engineering-and-structured-output.md)
+- [Session 与 Compaction：会话树怎样变成模型输入](episodes/06-session-memory-retrieval-and-compaction.md)
+- [MCP：外部服务怎样进入 Pi 的工具链](episodes/07-mcp-protocol-and-pi-integration.md)
+- [Skills 与 Prompt Templates：工作方法怎样进入请求](episodes/08-skills-and-prompt-templates.md)
+- [Extensions 与 Packages：能力怎样注册并参与运行](episodes/09-extensions-plugins-and-packages.md)
+- [Workflow 与 Agent：下一步由谁决定](episodes/10-workflow-vs-agent.md)
+- [Workflow Patterns：把多个 Agent 节点连接起来](episodes/11-workflow-patterns.md)
+- [Planning 与 Reasoning：从推理配置到可执行计划](episodes/12-planning-and-reasoning-patterns.md)
+- [SDK 与应用集成：从启动装配到资源释放](episodes/13-agent-sdk-and-app-integration.md)
+- [Multi-Agent：多个独立循环怎样协作](episodes/14-multi-agent-and-a2a.md)
+- [执行环境：工具的动作到底在哪里发生](episodes/15-sandbox-code-agent-and-computer-use.md)
+- [Durable：提交、任务状态与崩溃后的继续执行](episodes/16-durable-execution-and-human-in-the-loop.md)
+- [Security：信任边界怎样在代码中落实](episodes/17-security-guardrails-and-governance.md)
+- [Observability 与 Evaluation：怎样用证据改进 Pi](episodes/18-observability-evaluation-and-harness-engineering.md)

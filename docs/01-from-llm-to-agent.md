@@ -1,665 +1,242 @@
-# 从一次模型调用到 Agent：理解 Runtime 与 Harness
+# 从一次模型调用到 Agent：沿源码读懂一个工具循环
 
-这是 **learn-pi-agent** 的第一章。这个项目以 Pi Agent 为主线，从最基础的模型调用开始，逐步解释现代 Agent 如何运行，又是如何实现的。
+这一章围绕一个具体任务，追踪 Pi 怎样让模型和工具一起工作：
 
-第一章先回答一个基础问题：
+> 读取当前项目的 `README.md`，解释这个项目是做什么的。
 
-> 一个会回答问题的大模型，怎样一步步变成一个能够完成任务的 Agent？
+读完这一章，你会看到用户输入如何变成消息，模型如何提出工具调用，Pi 怎样执行真正的文件读取，以及工具结果如何进入下一次模型请求。文中的代码片段直接来自 Pi 源码，部分片段为了聚焦只截取相关行；示例消息则是为了说明过程而写的，不是一次真实运行的日志。
 
-大模型最常见的工作方式，是接收输入并生成响应。向它问“法国的首都是什么？”，通常一次生成就能给出答案。
+![Mox 在模型与文件工具之间传递调用和结果](../assets/mox-mechanisms/loop.png)
 
-但如果任务变成“检查一个项目、修改出错的文件，并验证修改结果”，一次响应就不够了。模型需要查看项目，根据看到的内容决定下一步，调用工具执行动作，再根据新的结果继续判断。
+## 1. 一次模型调用和一次 Agent 运行
 
-从大模型到 Agent，增加的不是一个新的模型，而是一套围绕模型持续运行的程序。它保存任务进度，执行被允许的动作，再把结果交给模型，让模型继续决定下一步。
+一次普通模型调用可以概括为：程序准备输入，模型生成响应，程序接收响应。如果问题是“法国的首都是什么”，一次响应可能就够了。
 
-接下来，我们从一次最小的模型调用开始，一步步看清这套程序怎样把模型、工具和整个运行过程连接起来。
+但模型并不会因为你提到 `README.md`，就自动获得你电脑里的文件。程序需要给模型提供 `read` 这样的工具；模型提出工具调用后，程序再执行具体操作，并把结果交回模型。
 
-## 1. 先看一次模型调用
+```text
+用户提出问题
+    ↓
+程序准备消息并请求模型
+    ↓
+模型返回：请求调用 read
+    ↓
+程序执行 read，得到文件内容
+    ↓
+程序把工具结果加入消息
+    ↓
+再次请求模型，生成回答
+```
 
-### 1.1 输入、生成与响应
+这里有三种不同的职责：
 
-模型调用从一份输入开始。负责准备输入和接收响应的程序，称为**宿主程序**。
+| 部分 | 实际负责什么 |
+| --- | --- |
+| 模型 | 根据当前输入生成文本或工具调用请求 |
+| 工具 | 以代码实现读文件、运行命令等能力 |
+| Agent 运行时 | 组织模型调用、工具执行、状态和事件，决定怎样推进运行 |
 
-下面的 `context` 表示宿主本次发送给模型的内容：
+这一章会用 Pi 的具体代码验证这条路径。它不是说所有任务都一定需要调用工具：模型也可以直接返回文本。
+
+## 2. 用户输入从哪里进入 Pi？
+
+在交互模式中，用户提交文字后，[`interactive-mode.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/modes/interactive/interactive-mode.ts) 会调用 `this.session.prompt(text)`。`session` 是 Coding Agent 层的 `AgentSession`，它还负责会话、资源、扩展以及其他产品层工作。
+
+随后，在 [`agent-session.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/agent-session.ts) 中，普通的运行路径最终会调用 `this.agent.prompt(messages)`。这里的 `agent` 来自更底层的 `pi-agent-core`。
+
+可以先把它们的关系写成：
+
+```text
+交互界面
+  → AgentSession.prompt(...)
+  → Agent.prompt(...)
+  → Agent Loop
+```
+
+这条图省略了输入预处理、命令、扩展和队列等分支，展示的是普通交互输入的主线。两个 `prompt` 属于不同对象：前者是应用层会话入口，后者是底层 Agent 运行入口。
+
+## 3. `Agent.prompt()` 怎样处理输入？
+
+在 [`packages/agent/src/agent.ts`](https://github.com/earendil-works/pi/blob/main/packages/agent/src/agent.ts) 中，`Agent.prompt()` 有接收字符串、消息或消息数组的接口。它首先检查是否已经有运行正在进行；随后调用 `normalizePromptInput()` 整理输入，再交给 `runPromptMessages()`。
+
+当输入是字符串时，`normalizePromptInput()` 会把它包装成一条用户消息。其关键形状如下：
 
 ```ts
-const context = {
-  messages: [
-    { role: "user", content: "法国的首都是什么？" },
-  ],
+const content = [{ type: "text", text: input }];
+return [{ role: "user", content, timestamp: Date.now() }];
+```
+
+这段摘录省略了图片处理和类型声明。包装后，程序不再只拿着一段裸字符串，而是有了一条带角色、内容和时间的消息。
+
+接着 `runPromptMessages()` 调用 `runAgentLoop()`，传入新消息、当前上下文快照、循环配置、事件处理函数、取消信号和模型流函数。也就是说，`prompt()` 是入口，真正推进循环的是后面的运行时函数。
+
+## 4. 消息、上下文和系统指令放在哪里？
+
+在 [`packages/agent/src/types.ts`](https://github.com/earendil-works/pi/blob/main/packages/agent/src/types.ts) 中，Agent Loop 接收的 `AgentContext` 主要包含：
+
+```ts
+export interface AgentContext {
+  messages: AgentMessage[];
+  tools?: AgentTool<any>[];
+}
+```
+
+`messages` 是运行记录；`tools` 是本次运行中可以执行的工具对象。`Agent` 创建上下文快照时，会从自己的状态复制这两个数组。
+
+系统指令仍然存在，但不能把它想成这里另有一个 `AgentContext.systemPrompt` 字段。[`agent.ts`](https://github.com/earendil-works/pi/blob/main/packages/agent/src/agent.ts) 的 `createMutableAgentState()` 会根据初始系统提示和工具声明创建系统消息；当消息列表尚未以系统消息开头时，它会把这条消息放在前面。[`pi-ai/types.ts`](https://github.com/earendil-works/pi/blob/main/packages/ai/src/types.ts) 进一步定义了 `SystemMessage`。
+
+要区分两种东西：
+
+- **发给模型的工具声明**：告诉模型工具叫什么、接收什么参数。
+- **运行时的工具对象**：包含实际的 `execute()`，由 Pi 程序执行。
+
+两者相关，但模型看到一份声明并不意味着它能直接执行你的电脑操作。
+
+## 5. `runAgentLoop()` 怎样开始一次运行？
+
+[`agent-loop.ts`](https://github.com/earendil-works/pi/blob/main/packages/agent/src/agent-loop.ts) 中的 `runAgentLoop()` 会处理本次输入，并构造当前上下文。核心代码是：
+
+```ts
+const initialMessages = declareToolChanges(context, prompts);
+const newMessages: AgentMessage[] = [...initialMessages];
+const currentContext: AgentContext = {
+  ...context,
+  messages: [...context.messages, ...initialMessages],
 };
-
-const response = await model.generate(context);
 ```
 
-这段代码只发生了三件事：
+这几行有两个容易混淆的数组：
 
-1. 宿主准备输入；
-2. 模型根据输入生成响应；
-3. 宿主接收响应。
+- `currentContext.messages`：已有消息加上本次输入，作为本次运行推进时的上下文。
+- `newMessages`：记录本次运行中新加入或产生的消息，最后由 `runAgentLoop()` 返回。
 
-为了让后面的示例使用同一套写法，可以把这次响应简化为：
+之后 Pi 发出 `agent_start`、`turn_start` 等事件，并调用 `runLoop()`。事件是运行时向外报告发生了什么的方式；真正如何展示，由订阅事件的上层决定。
+
+## 6. 第一轮：模型怎样请求工具？
+
+在 `runLoop()` 中，Pi 调用 `streamAssistantResponse()` 获取模型的响应：
+
+```ts
+const message = await streamAssistantResponse(
+  currentContext, config, signal, emit, streamFunction,
+);
+```
+
+在这个函数内部，Pi 可以先调用 `transformContext()`，再用 `convertToLlm()` 将 Agent 消息转换为模型层消息；之后通过 `normalizeContext()` 准备请求上下文，并调用 `streamFunction`。模型输出以流式事件的形式到达，Pi 根据事件更新消息并对外发送变化。
+
+假设模型决定读取文件，它可能返回这样的内容块：
 
 ```json
 {
-  "role": "assistant",
-  "content": [
-    { "type": "text", "text": "法国的首都是巴黎。" }
-  ],
-  "stopReason": "stop"
+  "type": "toolCall",
+  "id": "call_1",
+  "name": "read",
+  "arguments": { "path": "README.md" }
 }
 ```
 
-`content` 保存模型生成的内容，`stopReason` 说明这一次生成为什么结束。此时完成的是**一次模型调用**。
+这是教学示例，省略了外层 assistant 消息和其他字段。`id` 用于关联对应的工具结果；`name` 和 `arguments` 指明模型想调用哪个工具、传入什么参数。
 
-![一次模型调用中的宿主、模型与权限边界](../assets/from-llm-to-agent-illustrations/01-model-call-boundary.png)
+Pi 随后在 `runLoop()` 中提取工具请求：
 
-图中 Mox 表示宿主程序中的运行部分，模型是与它分开的黑盒。请求由宿主发送，响应也先回到宿主。
-
-### 1.2 模型响应不会自动变成动作
-
-模型可以在响应中写“我已经读取了 `README.md`”，也可以生成一段看起来像命令的文本。只有宿主真正调用了相应工具，读取文件或执行命令才会发生。
-
-```text
-模型生成请求 → 宿主检查请求 → 工具执行动作
+```ts
+const toolCalls = message.content.filter((c) => c.type === "toolCall");
 ```
 
-因此，模型与宿主承担的职责不同：
+一条 assistant 消息可以含有多个内容块，因此程序检查的是内容中的工具调用，而不是假设整条消息只有一个文本字段。[`pi-ai/types.ts`](https://github.com/earendil-works/pi/blob/main/packages/ai/src/types.ts) 中的 `ToolCall` 和 `AssistantMessage` 给出了它们的数据结构。
 
-| 事情 | 模型 | 宿主程序 |
-| --- | --- | --- |
-| 根据输入生成文本或结构化请求 | 负责 | 提供输入并接收响应 |
-| 建议使用哪个工具及其参数 | 可以 | 校验后接受或拒绝 |
-| 读取文件、访问网络、执行命令 | 不能直接完成 | 通过工具实际执行 |
-| 保存运行记录、处理取消和超时 | 不负责 | 负责 |
+## 7. Pi 怎样真正执行 `read`？
 
-模型提供判断，宿主负责让被允许的动作真正发生。这条边界贯穿整个 Agent 系统。
+当响应包含工具调用时，`runLoop()` 通常会调用 `executeToolCalls()`。如果模型输出因为长度限制而截断，参数可能不完整，Pi 会生成失败结果，而不是执行这批可能不完整的调用。
 
-## 2. 从一次调用到一段 Agent 运行
+在工具执行路径中，`prepareToolCall()` 先根据名称查找工具，准备并校验参数，并在配置了 `beforeToolCall` 时运行该钩子。工具不存在、参数不合格或调用被阻止，都不会正常进入工具的执行函数。
 
-一次模型调用很适合回答“法国的首都是什么”这类问题。用户如果问“北京现在天气怎么样”，模型还需要取得此刻的天气数据；用户如果要求修改项目，模型还需要查看文件、提出修改并检查结果。
+接下来，[`executePreparedToolCall()`](https://github.com/earendil-works/pi/blob/main/packages/agent/src/agent-loop.ts) 真正调用工具对象的 `execute()`：
 
-这类任务不能只靠一次生成完成。系统需要反复经历下面的过程：
-
-```text
-准备本轮输入
-    ↓
-调用模型
-    ↓
-模型直接回答，或请求工具
-    ↓
-宿主执行工具并保存结果
-    ↓
-带着新结果进入下一轮
+```ts
+const result = await prepared.tool.execute(
+  prepared.toolCall.id,
+  prepared.args as never,
+  signal,
+  /* 进度更新回调 */
+);
 ```
 
-负责推动这个过程的程序部分叫作 **Runtime**。它位于宿主程序中，连接模型、工具和运行记录。重复执行的这一段过程叫作 **Agent Loop**。
+这里为了阅读省略了回调的具体实现。参数分别让工具知道调用标识、经过准备的参数、取消信号和进度更新方式。`executeToolCalls()` 会根据配置及工具要求选择顺序或并行路径；后续章节再展开这些调度细节。
 
-模型返回的结构化工具请求称为 **Tool Call**，宿主执行后写回的结果称为 **Tool Result**。
+以 [`read.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/tools/read.ts) 为例：
 
-![一次模型调用与 Agent 运行过程的差别](../assets/from-llm-to-agent-illustrations/01-model-vs-agent.png)
+1. `readSchema` 声明 `path` 以及可选的 `offset`、`limit`。
+2. `createReadToolDefinition()` 创建名为 `read` 的工具定义。
+3. 它的 `execute()` 解析路径、检查可读性，然后通过 `ops.readFile()` 读取内容。
+4. 默认 `ops` 中的 `readFile` 调用 Node.js 的 `fsReadFile()`；也可以由宿主替换操作实现。
 
-因此，可以先得到一个实用的定义：
+这就是“模型请求读取”和“程序读取文件”之间的代码边界。实际读取不仅支持文本，也包含图片、取消和输出截断等处理。
 
-> Agent 是一个由 Runtime 组织的运行系统：模型根据当前输入提出下一步，Runtime 执行被允许的动作，并把结果带入下一轮，直到任务完成或运行被终止。
+## 8. 工具结果怎样回到模型？
 
-接下来用一条完整的天气查询，把这段定义落到具体数据上。
-
-## 3. 一次天气查询怎样完成
-
-用户提出问题：
-
-```text
-北京现在天气怎么样？
-```
-
-模型训练时学到的知识不能保证反映当前天气。宿主因此提供一个可以查询实时数据的工具：
-
-```text
-工具名：get_weather
-用途：查询某个城市的当前天气
-输入：{ city: string }
-```
-
-工具说明让模型知道“可以请求什么”；真正的天气服务仍由宿主调用。
-
-### 3.1 Runtime 准备第一轮 Context
-
-Runtime 把用户问题、必要的规则和工具说明组合成这次模型调用的输入。这份只供本轮调用使用的输入，称为 **Context**。
-
-模型能依据的是当前 Context，而不是宿主拥有的全部数据。
-
-### 3.2 模型返回 Tool Call
-
-模型判断需要查询天气，于是在响应中返回一个 **Tool Call**：
-
-```json
-{
-  "role": "assistant",
-  "content": [
-    {
-      "type": "toolCall",
-      "id": "call_1",
-      "name": "get_weather",
-      "arguments": { "city": "北京" }
-    }
-  ],
-  "stopReason": "toolUse"
-}
-```
-
-这里有三个关键信息：
-
-- `name` 指明模型请求 `get_weather`；
-- `arguments` 提供工具参数；
-- `id` 标识这一次调用，后面的结果要用它完成关联。
-
-`stopReason: "toolUse"` 表示这次模型生成停在了工具请求处。它不表示天气已经查到，也不表示整段 Agent 运行已经结束。
-
-### 3.3 Runtime 校验并执行工具
-
-Runtime 收到 Tool Call 后，依次确认：
-
-1. `get_weather` 是否是宿主提供的工具；
-2. `city` 是否符合工具声明的输入格式；
-3. 当前运行是否允许这次调用；
-4. 执行是否已经被取消或超过限制。
-
-检查通过后，宿主才会访问天气服务。假设服务返回：
-
-```json
-{
-  "temperature": "28°C",
-  "condition": "多云",
-  "observed_at": "2026-08-16T10:00:00+08:00"
-}
-```
-
-### 3.4 Runtime 写入 Tool Result
-
-Runtime 把天气数据包装成 **Tool Result**，并使用同一个调用标识 `call_1`：
+Pi 把执行结果包装为 `ToolResultMessage`。下方是一个简化示意：
 
 ```json
 {
   "role": "toolResult",
   "toolCallId": "call_1",
-  "toolName": "get_weather",
-  "content": {
-    "temperature": "28°C",
-    "condition": "多云",
-    "observed_at": "2026-08-16T10:00:00+08:00"
-  },
+  "toolName": "read",
+  "content": [{ "type": "text", "text": "# 项目介绍\n..." }],
   "isError": false
 }
 ```
 
-一轮中可能出现多个 Tool Call。`toolCallId` 让每个 Tool Result 都能找到原来的请求，系统不必依赖数组顺序猜测对应关系。
+`toolCallId` 对应前面的 `call_1`，使结果能够与请求匹配。真实类型还包含时间戳等字段；具体定义见 [`pi-ai/types.ts`](https://github.com/earendil-works/pi/blob/main/packages/ai/src/types.ts) 的 `ToolResultMessage`。
 
-### 3.5 模型根据结果生成最终回答
-
-Runtime 为第二次模型调用准备新的 Context，其中包含用户问题、Tool Call 和对应的 Tool Result。模型现在可以生成：
-
-```json
-{
-  "role": "assistant",
-  "content": [
-    {
-      "type": "text",
-      "text": "北京当前 28°C，多云；观测时间为上午 10 点。"
-    }
-  ],
-  "stopReason": "stop"
-}
-```
-
-这次响应没有新的 Tool Call。Runtime 可以把文本作为运行结果返回，天气查询到此完成。
-
-完整链路是：
-
-```text
-用户问题
-  → 第一轮 Context
-  → 模型返回 Tool Call
-  → Runtime 校验并执行工具
-  → Tool Result
-  → 第二轮 Context
-  → 模型返回文本
-  → Runtime 返回结果
-```
-
-![北京天气查询从 Tool Call 到 Tool Result 的完整闭环](../assets/from-llm-to-agent-illustrations/02-tool-call-loop.png)
-
-## 4. 给运行中的数据命名
-
-天气示例中已经出现了用户问题、模型响应、工具结果、本轮输入和保存下来的会话记录。它们分别对应四个容易混淆的概念：**Message、Context、State 和 Session**。
-
-![Message、Context、State 与 Session 的关系](../assets/from-llm-to-agent-illustrations/05-message-context-state-session.png)
-
-图中的关系是：Session 保存可恢复的会话记录；加载会话后，Runtime 在 State 上推进当前运行；每次调用模型前，Runtime 再从 State 准备本轮 Context。新的模型响应和工具结果会更新 State，必要时也会保存回 Session。
-
-### 4.1 Message：一条有来源的内容记录
-
-**Message** 是一条交互记录。它需要说明内容由谁产生，以及内容是什么。
-
-在天气示例中，下面这些都可以作为 Message 保存：
-
-- 用户提出的天气问题；
-- 模型返回的 Tool Call；
-- 宿主写入的 Tool Result；
-- 模型生成的最终回答。
-
-Message 的内容不一定是纯文本，也可以是图片或结构化内容块。Message 只代表一条记录，不代表完整会话。
-
-### 4.2 Context：模型这一次实际收到的输入
-
-**Context** 是一次模型调用的输入快照。它通常由以下内容组成：
-
-- 行为规则；
-- 当前用户请求和选中的历史 Message；
-- 本轮可用的工具说明；
-- 完成当前任务需要的其他资料。
-
-Context 每一轮都会重新准备。Tool Result 只有进入下一轮 Context，模型才能依据它继续生成。
-
-宿主保存了某条记录，不等于模型本轮一定能看到它。Runtime 会根据当前任务和模型一次能够接收的输入长度，选择、转换或补充要发送的内容。
-
-### 4.3 State：Runtime 推进任务所需的当前状态
-
-**State** 保存当前运行正在发生什么。它的范围比 Context 更大，例如：
-
-- 已产生的 Message；
-- 当前使用的模型和可用工具；
-- 正在执行的 Tool Call；
-- 取消信号、错误和停止原因；
-- 本轮是否仍在运行。
-
-State 中既有模型需要看到的内容，也有只供 Runtime 使用的控制信息。可以把两者的关系写成：
-
-```text
-Context_t = prepare(State_t)
-```
-
-下标 `t` 表示第几轮。`prepare` 表示 Runtime 根据当时的 State，准备第 `t` 次模型调用的 Context。
-
-### 4.4 Session：可以保存和恢复的会话
-
-**Session** 保存跨回合延续的会话记录。程序关闭后再次打开或恢复以前的对话，都需要依靠 Session 中持久化的数据。
-
-Session 不等于模型的永久记忆。Session 可以保存许多历史，但模型只能看到 Runtime 选入本轮 Context 的部分。
-
-| 对象 | 它回答的问题 | 典型生命周期 | 是否直接发给模型 |
-| --- | --- | --- | --- |
-| Message | 这一条内容是谁产生的、内容是什么 | 一条记录 | 被选入 Context 时会 |
-| Context | 这一次调用让模型看到什么 | 一次模型调用 | 会 |
-| State | 当前运行进行到哪里 | Agent 运行期间 | 不会整体发送 |
-| Session | 一段会话怎样保存和恢复 | 跨多次运行 | 不会整体发送 |
-
-## 5. Agent Loop 怎样推进
-
-天气示例只经过两次模型调用。任务更复杂时，同一套步骤会继续重复。Agent Loop 每轮都处理三个问题：本轮给模型什么、模型要求做什么、下一轮是否还要开始。
-
-### 5.1 先看清循环的两个分支
-
-每一轮都从最新的 State 开始。Runtime 准备 Context，调用模型，再把完整的 `AssistantMessage` 写回 State。接下来出现两个主要分支：
-
-- 响应中没有 Tool Call，Runtime 返回模型生成的文本；
-- 响应中存在 Tool Call，Runtime 处理工具请求，把对应的 Tool Result 写回 State，然后开始下一轮。
-
-![Agent Loop 从模型响应分成返回文本和执行工具两条路径](../assets/from-llm-to-agent-illustrations/06-agent-loop-branches.png)
-
-图中的 Mox 代表 Runtime，黑色方框代表模型。箭头回到 State，表示 Tool Result 已经成为新的运行记录；下一轮会从更新后的 State 再准备 Context。
-
-一次响应可以同时包含文本和 Tool Call，也可以包含多个 Tool Call。因此，Runtime 要检查全部内容块，不能只读取一段文本，也不能只根据 `stopReason` 判断整段运行是否结束。
-
-### 5.2 用 Pi 的真实命名写出循环
-
-下面的代码沿用 Pi 的核心类型名、函数名和控制顺序，但压缩了字段与分支。它是一段可以编译的教学实现，不是从仓库中复制出来的源码。关键的压缩之处，代码里都标出了“教学简化”。
-
-先看这段代码里的数据形状。`AgentContext` 保存当前运行所需的信息，`AgentMessage` 表示会进入消息记录的内容，`AgentLoopConfig` 保存循环配置。
+`runLoop()` 将工具结果加入当前上下文：
 
 ```ts
-type TextContent = {
-  type: "text";
-  text: string;
-};
-
-type ToolCall = {
-  type: "toolCall";
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
-};
-
-// 教学简化：Pi 还定义了 pending 和 deferred 等状态。
-type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
-
-// 教学简化：只保留循环判断会读取的字段。
-type AssistantMessage = {
-  role: "assistant";
-  content: Array<TextContent | ToolCall>;
-  stopReason: StopReason;
-};
-
-// 教学简化：真实 content 还可以包含图片，并带有 details 等字段。
-type ToolResultMessage = {
-  role: "toolResult";
-  toolCallId: string;
-  toolName: string;
-  content: TextContent[];
-  isError: boolean;
-};
-
-// 教学简化：这里只保留本章会遇到的三种消息。
-type AgentMessage =
-  | { role: "user"; content: string }
-  | AssistantMessage
-  | ToolResultMessage;
-
-type AgentTool = {
-  name: string;
-  // 教学简化：真实 AgentTool 还接收取消信号和进度回调，
-  // 并返回带有 details 的 AgentToolResult。
-  execute(
-    toolCallId: string,
-    arguments_: Record<string, unknown>,
-  ): Promise<TextContent[]>;
-};
-
-type AgentContext = {
-  systemPrompt: string;
-  messages: AgentMessage[];
-  tools?: AgentTool[];
-};
-
-type ToolExecutionMode = "sequential" | "parallel";
-
-// 教学简化：完整配置还包含模型、上下文转换和各种回调。
-type AgentLoopConfig = {
-  // 这是 Pi 中真实存在的配置项；本例仍统一按顺序执行工具。
-  toolExecution?: ToolExecutionMode;
-};
-
-// 教学简化：真实 StreamFn 返回一个事件流，而不是一次性返回消息。
-type StreamFn = (context: AgentContext) => Promise<AssistantMessage>;
-
-type ExecutedToolCallBatch = {
-  messages: ToolResultMessage[];
-  terminate: boolean;
-};
-
-// 教学辅助函数：把失败原因组装成一条 Tool Result。
-function makeToolError(call: ToolCall, text: string): ToolResultMessage {
-  return {
-    role: "toolResult",
-    toolCallId: call.id,
-    toolName: call.name,
-    content: [{ type: "text", text }],
-    isError: true,
-  };
-}
-
-async function streamAssistantResponse(
-  currentContext: AgentContext,
-  streamFn: StreamFn,
-): Promise<AssistantMessage> {
-  // 教学简化：真实 Pi 会边接收事件，边更新 messages 中的消息。
-  const message = await streamFn(currentContext);
-  currentContext.messages.push(message);
-  return message;
-}
-
-async function failToolCallsFromTruncatedMessage(
-  toolCalls: ToolCall[],
-): Promise<ExecutedToolCallBatch> {
-  return {
-    messages: toolCalls.map((call) =>
-      makeToolError(call, "工具参数可能因输出截断而不完整，未执行。"),
-    ),
-    terminate: false,
-  };
-}
-
-async function executeToolCalls(
-  currentContext: AgentContext,
-  assistantMessage: AssistantMessage,
-  config: AgentLoopConfig,
-): Promise<ExecutedToolCallBatch> {
-  // 教学简化：真实 Pi 会根据 config.toolExecution 选择顺序或并行执行，
-  // 还会校验参数、发送事件，并运行工具执行前后的检查函数。
-  void config;
-
-  const toolCalls = assistantMessage.content.filter(
-    (item): item is ToolCall => item.type === "toolCall",
-  );
-  const messages: ToolResultMessage[] = [];
-
-  for (const call of toolCalls) {
-    const tool = currentContext.tools?.find((item) => item.name === call.name);
-
-    if (!tool) {
-      messages.push(makeToolError(call, `找不到工具：${call.name}`));
-      continue;
-    }
-
-    try {
-      const content = await tool.execute(call.id, call.arguments);
-      messages.push({
-        role: "toolResult",
-        toolCallId: call.id,
-        toolName: call.name,
-        content,
-        isError: false,
-      });
-    } catch {
-      messages.push(makeToolError(call, `工具执行失败：${call.name}`));
-    }
-  }
-
-  return { messages, terminate: false };
-}
-
-async function runAgentLoop(
-  prompts: AgentMessage[],
-  context: AgentContext,
-  config: AgentLoopConfig,
-  streamFn: StreamFn,
-): Promise<AgentMessage[]> {
-  // newMessages 只记录本次运行新产生或新传入的消息。
-  const newMessages: AgentMessage[] = [...prompts];
-
-  // currentContext 在旧消息之后接上本次输入，供循环持续使用。
-  const currentContext: AgentContext = {
-    ...context,
-    messages: [...context.messages, ...prompts],
-  };
-
-  // 教学简化：真实签名还接收发送事件的 emit 和取消运行的 signal。
-  await runLoop(currentContext, newMessages, config, streamFn);
-  return newMessages;
-}
-
-async function runLoop(
-  initialContext: AgentContext,
-  newMessages: AgentMessage[],
-  config: AgentLoopConfig,
-  streamFn: StreamFn,
-): Promise<void> {
-  let currentContext = initialContext;
-
-  // 教学简化：真实 Pi 外层还会处理运行中追加的消息与后续消息。
-  let hasMoreToolCalls = true;
-
-  while (hasMoreToolCalls) {
-    // ① 调用模型。streamAssistantResponse 会把完整响应写入 currentContext。
-    const message = await streamAssistantResponse(currentContext, streamFn);
-
-    // ② 同一条响应也写入 newMessages，最后由 runAgentLoop 返回。
-    newMessages.push(message);
-
-    // ③ 模型调用失败或被取消，本次循环结束。
-    if (message.stopReason === "error" || message.stopReason === "aborted") {
-      return;
-    }
-
-    // ④ 是否执行工具，由响应中有没有 Tool Call 决定。
-    const toolCalls = message.content.filter(
-      (item): item is ToolCall => item.type === "toolCall",
-    );
-
-    // ⑤ 没有 Tool Call，模型的这条消息就是本轮最终响应。
-    if (toolCalls.length === 0) {
-      return;
-    }
-
-    // ⑥ 参数可能被截断时生成失败结果；否则进入工具执行阶段。
-    const executedToolBatch =
-      message.stopReason === "length"
-        ? await failToolCallsFromTruncatedMessage(toolCalls)
-        : await executeToolCalls(currentContext, message, config);
-
-    // ⑦ 每个 Tool Result 同时进入当前上下文和本次新增消息。
-    for (const result of executedToolBatch.messages) {
-      currentContext.messages.push(result);
-      newMessages.push(result);
-    }
-
-    // ⑧ 工具阶段没有要求终止时，带着 Tool Result 进入下一轮模型调用。
-    hasMoreToolCalls = !executedToolBatch.terminate;
-  }
+for (const result of toolResults) {
+  currentContext.messages.push(result);
+  newMessages.push(result);
 }
 ```
 
-天气示例可以和代码逐步对应起来：
+当工具批次没有要求终止，且没有其他停止条件时，循环会继续，模型可以在下一轮收到工具结果并生成回答。错误或中止会结束当前运行；队列消息、`finishTurn` 和工具终止信号也会影响后续控制，所以“有工具就一定再次请求模型”并不是无条件的规则。
 
-1. `runAgentLoop` 把“北京现在天气怎么样？”加入 `currentContext`；
-2. 第一次 `streamAssistantResponse` 返回含有 `call_1` 的 `AssistantMessage`；
-3. `executeToolCalls` 找到 `get_weather`，生成与 `call_1` 对应的 `ToolResultMessage`；
-4. 这条结果进入 `currentContext.messages`，因此下一次模型调用能够看到它；
-5. 第二次模型响应不再包含 Tool Call，`runLoop` 结束；
-6. `runAgentLoop` 返回 `newMessages`，其中保留了用户输入、两次模型响应和工具结果。
+## 9. 运行事件与会话保存
 
-这里有一个容易混淆的地方：`stopReason: "toolUse"` 表示这一次模型生成停在了工具请求处，不表示整个 Agent Loop 已经结束。循环是否继续，要看响应中是否存在 Tool Call，以及工具执行阶段是否要求终止。
+Agent Loop 运行时会发出消息和工具执行事件。`Agent` 的 `processEvents()` 根据事件更新自己的运行状态，并将事件交给订阅者。
 
-与完整 Pi 实现相比，本章保留和压缩的内容如下：
+Coding Agent 的 [`agent-session.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/agent-session.ts) 订阅底层 Agent 事件；在相应的 `message_end` 路径中，它把可持久化消息交给 `SessionManager.appendMessage()`。会话树和恢复上下文的具体逻辑位于 [`session-manager.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/session-manager.ts)。
 
-| Pi 中的名称 | 本章保留的部分 | 完整实现还会处理 |
-| --- | --- | --- |
-| `AgentContext`、`AgentMessage` | 系统提示、消息、工具与三种消息类型 | 自定义消息转换及更完整的消息字段 |
-| `runAgentLoop`、`runLoop` | 建立上下文、推进模型与工具循环、返回新增消息 | 事件、取消信号、运行中追加的消息与后续消息 |
-| `streamAssistantResponse`、`StreamFn` | 获得并保存一条模型响应 | 流式事件、增量内容、模型与服务商参数 |
-| `executeToolCalls` | 查找工具、执行工具、生成对应结果 | 参数校验、钩子、取消以及顺序或并行调度 |
+因此，**当前运行中的消息**、**模型本轮收到的输入**和**持久保存的会话记录**彼此相关，却不是同一个对象。会话与恢复机制将在第 6 章继续展开。
 
-这些结构来自固定版本的 [`agent-loop.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent-loop.ts)、[`pi-ai/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/ai/src/types.ts) 和 [`pi-agent-core/types.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/types.ts) 中。第 2 章会先解释不同模型 API 怎样被转换成统一消息和流式事件；第 3 章再进入 Agent Loop 源码，观察这些消息与事件怎样参与循环和消息调度。第 4 章继续展开工具执行。
+## 10. 测试怎样验证这条路径？
 
-### 5.3 Tool Call 的执行边界
+Pi 的 [`agent-loop.test.ts`](https://github.com/earendil-works/pi/blob/main/packages/agent/test/agent-loop.test.ts) 包含一个 `should handle tool calls and results` 测试：测试注册 `echo` 工具，使用模拟的流函数先返回一次工具调用、再返回最终文本，并检查工具执行、工具事件和结果。
 
-教学版 `executeToolCalls` 已经写出了名称查找、工具执行和结果配对。完整的工具执行链还要保证：
+这个测试直接验证了运行时如何处理一条模拟的工具调用；它不证明某个真实模型服务一定会选择调用工具，也不等于在用户的文件系统上执行了 `read`。此外，测试文件里还有对截断参数、工具并行和终止条件的覆盖，可以与实现一起阅读。
 
-1. 从 `AssistantMessage` 中取出全部 Tool Call；
-2. 按名称找到已注册的工具；
-3. 按照工具声明准备并校验参数；
-4. 检查取消信号，并运行工具调用前的钩子，也就是可在执行前拦截调用的回调函数；
-5. 调用工具，把成功或失败转换成 Tool Result；
-6. 用 `toolCallId` 把结果与原始请求一一对应；
-7. 把结果写回消息记录，让下一次模型调用能够看到。
+## 11. 把路径放回整个项目
 
-查不到工具、参数不合格或工具调用被阻止时，外部动作都不应该发生。Pi 会生成 `isError: true` 的 Tool Result，把失败原因交给下一轮模型处理。
-
-当模型响应因为长度上限而中断时，Tool Call 的参数也可能被截断。Pi 的 Agent Loop 不会执行这类调用，而是为每个调用生成失败结果，再让模型有机会重新提出完整请求。这一行为可以在固定版本的 [`agent-loop.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent-loop.ts#L188-L205) 中看到。
-
-## 6. Runtime：谁推动循环，谁落实停止
-
-现在可以更准确地说明 Runtime 的职责。它是宿主程序中负责推进一次 Agent 运行的部分：
-
-- 根据 State 准备 Context；
-- 调用模型并保存响应；
-- 识别、校验和分发 Tool Call；
-- 把 Tool Result 写回 State；
-- 处理取消、错误和运行限制；
-- 决定开始下一轮，或把运行状态返回给上层程序。
-
-宿主程序是完整应用，可能还包含命令行界面、会话存储和工具实现；Runtime 是其中控制运行过程的核心部分。
-
-### 6.1 模型结束生成，不等于 Agent 一定结束
-
-`stopReason` 说明模型为什么停止**本次生成**。Runtime 还要结合响应内容和运行规则，判断整段 Agent 运行怎样变化：
-
-| 信号或情况 | Runtime 的处理 |
-| --- | --- |
-| 正常停止，且没有 Tool Call | 返回文本，运行完成 |
-| 响应中存在 Tool Call | 处理工具，通常进入下一轮 |
-| 生成达到长度上限 | 不把结果误报为完整完成；不执行可能被截断的工具参数 |
-| 模型调用出错或被中止 | 保存原因，结束当前运行 |
-| 用户取消、超时或达到资源上限 | 阻止新的调用，并结束运行 |
-| 工具被拒绝或执行失败 | 写入失败结果，再按运行规则继续或结束 |
-
-![最终文本、取消、超时和策略信号汇入 Runtime](../assets/from-llm-to-agent-illustrations/04-termination-signals.png)
-
-停止信号可以来自模型、用户、工具或运行限制；把信号转换成“继续、完成、失败或取消”等明确状态，是 Runtime 的职责。
-
-### 6.2 循环必须守住的五条边界
-
-一个可靠的 Agent Loop 至少要保证：
-
-1. **模型提出工具请求，宿主执行动作。** Tool Call 本身不会修改文件、访问网络或改变其他外部状态。
-2. **Tool Call 与 Tool Result 使用标识关联。** 多个调用不能靠位置猜测。
-3. **每轮重新准备 Context。** 新的工具结果和用户消息要有机会进入下一次调用。
-4. **不同结束原因不能混成一个“结束”。** 完成、失败、取消和未完整输出需要分开记录。
-5. **外部动作受宿主环境控制。** 文件、网络、命令和数据库操作不能由模型响应直接触发。
-
-## 7. Harness：把完整运行环境装配起来
-
-Runtime 解决“循环怎样推进”。一个真正可用的 Agent 还需要模型连接、工具、会话保存、界面和执行环境。把这些部分装配在一起的完整运行层，通常称为 **Agent Harness**。
-
-```text
-Harness
-  = 模型连接
-  + Runtime
-  + Context 准备
-  + 工具
-  + Session
-  + 运行规则
-  + 执行环境与界面
-```
-
-Harness 不是一种消息协议，而是工程上对完整运行层的称呼。Runtime 是它的控制核心，模型、工具和存储则是被它组织起来的组成部分。
-
-![Harness 中 Runtime、模型、工具、Session 与外部环境的关系](../assets/from-llm-to-agent-illustrations/03-harness-assembly.png)
-
-### 7.1 Pi 怎样拆分这些职责
-
-Pi 官方把项目称为 **Pi Agent Harness**。在本仓库固定的源码版本中，三部分构成了最清晰的学习主线：
-
-| Pi 包 | 主要职责 | 对应本章概念 |
-| --- | --- | --- |
-| `@earendil-works/pi-ai` | 连接不同模型服务，统一模型、消息和逐步返回的响应 | 模型调用层 |
-| `@earendil-works/pi-agent-core` | 维护 Agent Loop 和 State，执行工具并报告运行变化 | Runtime |
-| `@earendil-works/pi-coding-agent` | 装配会话、工具和命令行，形成可使用的编程 Agent | Harness 应用 |
-
-Pi 把核心循环保持得较小，同时提供扩展入口。新的工具、命令、界面行为和运行钩子可以接入 Harness，而不必把所有定制都写进 Agent Loop。
-
-这些职责可以在 Pi 固定版本的 [README](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/README.md#pi-agent-harness) 和 [`agent-loop.ts`](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent-loop.ts#L141-L256) 中对应起来。
+`coding-agent` 是 CLI 与会话装配层，`agent` 是状态和工具循环，`ai` 连接模型，`tui` 负责终端显示。MCP、Code Mode 与执行环境有各自的接入代码；`durable` 则提供以存储提交和恢复任务为中心的另一条运行路径。它们有关联，但不能假设所有目录都在一次本地 CLI 请求的必经链上。完整包地图见[源码地图](../references/source-map.md)。
 
 ## 本章小结
 
-- 一次模型调用只有“准备输入—模型生成—接收响应”；模型响应不会自动执行外部动作。
-- Agent 通过 Runtime 把模型调用、工具执行和新一轮输入连接成循环。
-- Tool Call 是模型提出的结构化请求，Tool Result 是宿主执行后写回的结果；两者通过调用标识关联。
-- Message 是一条内容记录，Context 是本轮模型输入，State 是当前运行状态，Session 是可保存和恢复的会话记录。
-- `stopReason` 结束的是一次模型生成；Runtime 根据响应内容和运行规则，落实整段 Agent 运行的继续或停止。
-- Harness 把 Runtime、模型连接、工具、Session、执行环境和界面装配成完整 Agent 系统；Pi 正是沿着这条思路组织代码。
+一次包含工具调用的运行由多层协作完成：
 
-## 下一章：模型 API 与消息协议
+```text
+InteractiveMode / AgentSession
+  → Agent.prompt()：整理输入并启动运行
+  → runAgentLoop()：建立当前上下文和新消息记录
+  → runLoop()：请求模型，识别工具调用
+  → executeToolCalls()：准备、校验并调度工具
+  → read.execute()：实际读取文件
+  → ToolResultMessage：回写上下文
+  → 模型生成后续响应
+```
 
-Agent Loop 已经需要反复调用模型。下一步要弄清楚：宿主怎样把 Context 发送给模型，模型又怎样返回文本、Tool Call 和 Tool Result？
+其中，模型生成的是请求；工具的执行属于 Pi 运行时。消息、工具参数、结果和事件都有具体的数据结构和代码位置，而不是抽象的“思考—行动”口号。
 
-下一章将比较 OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 三种常见格式，再回到 Pi，看看它怎样通过统一消息类型和 Provider Adapter 接入不同模型。
+下一章将进入模型 API 与消息协议，解释不同 Provider 如何表达消息、工具请求和流式响应。
 
 [继续阅读第 2 章：模型 API 与消息协议](02-model-api-and-message-protocols.md)
 
-## 参考资料
-
-- [Pi Agent Harness：固定版本 README](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/README.md)：Pi 的包结构、定位与运行权限说明。
-- [Pi Agent Loop：固定版本源码](https://github.com/earendil-works/pi/blob/086c32e74530564922d011ade23ff582c9d63116/packages/agent/src/agent-loop.ts)：模型响应、工具执行、结果写回和循环结束的实际实现。
-- [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629)：把推理与外部动作交替组织起来的经典研究。
-- [Toolformer: Language Models Can Teach Themselves to Use Tools](https://arxiv.org/abs/2302.04761)：研究语言模型如何学习何时调用外部工具。
+[返回课程路线](00-source-learning-path.md) · [查看源码地图](../references/source-map.md)

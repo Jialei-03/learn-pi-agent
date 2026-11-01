@@ -1,0 +1,390 @@
+{
+  "repository": "https://github.com/earendil-works/pi",
+  "inspected_commit": "2c8d1feb147f6b3d97e855da803bfe7b19f3c403",
+  "excerpts": [
+    {
+      "chapter": "02-model-api-and-message-protocols.md",
+      "path": "packages/ai/src/types.ts",
+      "start": 561,
+      "count": 17,
+      "anchor": "export interface SystemMessage {",
+      "sha256": "44a387307552e230e7d5f1f03fdf613c7a6bf81afacc7ab828ae5dda0cf2d674"
+    },
+    {
+      "chapter": "02-model-api-and-message-protocols.md",
+      "path": "packages/ai/src/types.ts",
+      "start": 786,
+      "count": 5,
+      "anchor": "export interface Context {",
+      "sha256": "ba717edf5c775275837631f0cd16e701ddc864abbff82b7e4d09fbce1533c744"
+    },
+    {
+      "chapter": "02-model-api-and-message-protocols.md",
+      "path": "packages/agent/src/agent-loop.ts",
+      "start": 404,
+      "count": 14,
+      "anchor": "const llmMessages = await config.convertToLlm(messages);",
+      "sha256": "8a8dd374a8b26707f5aaf7fbf049f9f07ae4b5e97f27dbf89738796d987a5cda"
+    },
+    {
+      "chapter": "02-model-api-and-message-protocols.md",
+      "path": "packages/ai/src/types.ts",
+      "start": 444,
+      "count": 13,
+      "anchor": "export interface ToolCall {",
+      "sha256": "d9c859f2030082b2cf6965e0499301f24d402faf618f788008609463cb54a6ed"
+    },
+    {
+      "chapter": "03-agent-loop-state-machine-and-stopping.md",
+      "path": "packages/agent/src/agent.ts",
+      "start": 381,
+      "count": 9,
+      "anchor": "async prompt(input: string",
+      "sha256": "f1a8e94c4a19f4a57b5963b58ec6d7f2a035b9197bef507895ea820b774788c4"
+    },
+    {
+      "chapter": "03-agent-loop-state-machine-and-stopping.md",
+      "path": "packages/agent/src/agent-loop.ts",
+      "start": 119,
+      "count": 7,
+      "anchor": "const initialMessages = declareToolChanges(context, prompts);",
+      "sha256": "282c9dd60ffb939cc4611dd5b5e473ff691edcab7951d6523a6923ee921050e3"
+    },
+    {
+      "chapter": "03-agent-loop-state-machine-and-stopping.md",
+      "path": "packages/agent/src/agent-loop.ts",
+      "start": 295,
+      "count": 14,
+      "anchor": "const decision = await config.finishTurn?.(lastCompletedTurn, signal);",
+      "sha256": "9f8bf2013de24a5b22b4f0595055c324e650f1bd9200a4021565e6045f1eba48"
+    },
+    {
+      "chapter": "03-agent-loop-state-machine-and-stopping.md",
+      "path": "packages/agent/src/agent.ts",
+      "start": 575,
+      "count": 18,
+      "anchor": "private async processEvents(event: AgentEvent): Promise<void> {",
+      "sha256": "93fe8b72ad56343c0e7aaafbf8743b97d0460bf0b96443c470bc97fb2171af24"
+    },
+    {
+      "chapter": "04-tools-and-function-calling.md",
+      "path": "packages/agent/src/types.ts",
+      "start": 466,
+      "count": 18,
+      "anchor": "export interface AgentTool<TParameters",
+      "sha256": "01970b96c8462ccb840ecd995d52afd50a4cf8d57e561e4e5836eaa959a53e70"
+    },
+    {
+      "chapter": "04-tools-and-function-calling.md",
+      "path": "packages/coding-agent/src/core/tools/read.ts",
+      "start": 14,
+      "count": 5,
+      "anchor": "const readSchema = Type.Object({",
+      "sha256": "fa550cebfeee55fba044263642590142f0282d82cea34d3923475a6ff854d5c0"
+    },
+    {
+      "chapter": "04-tools-and-function-calling.md",
+      "path": "packages/coding-agent/src/core/tools/read.ts",
+      "start": 57,
+      "count": 5,
+      "anchor": "const defaultReadOperations: ReadOperations = {",
+      "sha256": "70e0d463ac251033bbdf63485229a70fc25dda734606a22c48ae9b2164f5e075"
+    },
+    {
+      "chapter": "04-tools-and-function-calling.md",
+      "path": "packages/agent/src/agent-loop.ts",
+      "start": 736,
+      "count": 12,
+      "anchor": "const preparedToolCall = prepareToolCallArguments(tool, toolCall);",
+      "sha256": "0311bdf3640e71a637893ff77bdfb39cd70abcf97ddd61b1bb6fddc4ddcd328b"
+    },
+    {
+      "chapter": "04-tools-and-function-calling.md",
+      "path": "packages/agent/src/agent-loop.ts",
+      "start": 526,
+      "count": 9,
+      "anchor": "const hasSequentialToolCall = toolCalls.some(",
+      "sha256": "1ee385948ef958905c61a03d0549106cece27503d396fb6361bb0befa6670ef2"
+    },
+    {
+      "chapter": "05-context-engineering-and-structured-output.md",
+      "path": "packages/coding-agent/src/core/system-prompt.ts",
+      "start": 216,
+      "count": 16,
+      "anchor": "export function diffSystemPromptSections(",
+      "sha256": "89f7f312afcc3c0cd77072b36a0b2bc55a334c119facb1e851823b7df63ddad9"
+    },
+    {
+      "chapter": "05-context-engineering-and-structured-output.md",
+      "path": "packages/coding-agent/src/core/resource-loader.ts",
+      "start": 260,
+      "count": 17,
+      "anchor": "export function loadProjectContextFiles(options: {",
+      "sha256": "3bc8ff3abb284caa1b802eaf916295b87eb310b1b82e5f6031a80c006c70079f"
+    },
+    {
+      "chapter": "05-context-engineering-and-structured-output.md",
+      "path": "packages/coding-agent/src/core/sdk.ts",
+      "start": 428,
+      "count": 5,
+      "anchor": "transformContext: async (messages) => {",
+      "sha256": "45699787cf1930af36a92c30c67a38dbab27ab82a447397d0e9a414aa59e1de2"
+    },
+    {
+      "chapter": "06-session-memory-retrieval-and-compaction.md",
+      "path": "packages/coding-agent/src/core/session-manager.ts",
+      "start": 1214,
+      "count": 12,
+      "anchor": "appendMessage(message: Message",
+      "sha256": "d43bc2f52646dd4872fadddfdb073863333b1a216ea9fa90a3bc80970044fab5"
+    },
+    {
+      "chapter": "06-session-memory-retrieval-and-compaction.md",
+      "path": "packages/coding-agent/src/core/session-manager.ts",
+      "start": 576,
+      "count": 16,
+      "anchor": "export function buildSessionContext(",
+      "sha256": "c9293c8180f59f36a9648250a4bab7f58c6de3874721db2c5d79714d39d2bc53"
+    },
+    {
+      "chapter": "06-session-memory-retrieval-and-compaction.md",
+      "path": "packages/coding-agent/src/core/compaction/compaction.ts",
+      "start": 267,
+      "count": 8,
+      "anchor": "export function shouldCompact(",
+      "sha256": "89aeb8f4469f0abb0067f60b5dca6dc48ee75fa832e5971bd0039c143071e26a"
+    },
+    {
+      "chapter": "07-mcp-protocol-and-pi-integration.md",
+      "path": "packages/mcp/src/client.ts",
+      "start": 204,
+      "count": 14,
+      "anchor": "async connect(transport: McpTransport): Promise<InitializeResult> {",
+      "sha256": "3dd7d35790e4240e5acbb57d37498c8a7df9c476f0ccb059598ea74fc2c449d0"
+    },
+    {
+      "chapter": "07-mcp-protocol-and-pi-integration.md",
+      "path": "packages/coding-agent/src/extensions/mcp/index.ts",
+      "start": 419,
+      "count": 14,
+      "anchor": "const definition = createMcpToolDefinition({",
+      "sha256": "8b429083184562c0b51cfc7b24fe736d73c09ac887d85bdb7262b060abde6598"
+    },
+    {
+      "chapter": "07-mcp-protocol-and-pi-integration.md",
+      "path": "packages/coding-agent/src/extensions/mcp/tools.ts",
+      "start": 51,
+      "count": 5,
+      "anchor": "export const MCP_OUTPUT_MAX_BYTES",
+      "sha256": "4f172bb310c6492f5603a1d33533c331cdf7791a2beac3c44322aecfe28b26c6"
+    },
+    {
+      "chapter": "08-skills-and-prompt-templates.md",
+      "path": "packages/coding-agent/src/core/skills.ts",
+      "start": 358,
+      "count": 17,
+      "anchor": "export function formatSkillsForPrompt(",
+      "sha256": "9a80781ac73f72bc8062515b69e1c4def870b17496819bb0f6c3f32d917aafbb"
+    },
+    {
+      "chapter": "08-skills-and-prompt-templates.md",
+      "path": "packages/coding-agent/src/core/agent-session.ts",
+      "start": 2232,
+      "count": 18,
+      "anchor": "private _expandSkillCommand(text: string): string {",
+      "sha256": "6870f01a5ad39588a5c39abfc1695549f6862946ff24ef9e56dcebdbf7e778df"
+    },
+    {
+      "chapter": "08-skills-and-prompt-templates.md",
+      "path": "packages/coding-agent/src/core/prompt-templates.ts",
+      "start": 76,
+      "count": 16,
+      "anchor": "export function substituteArgs(",
+      "sha256": "0402282e187eabdaa323ab66f6efa1fa744370a982acf1d6071782010d1e8519"
+    },
+    {
+      "chapter": "09-extensions-plugins-and-packages.md",
+      "path": "packages/coding-agent/src/core/extensions/loader.ts",
+      "start": 292,
+      "count": 12,
+      "anchor": "registerTool(tool: ToolDefinition): void {",
+      "sha256": "1aa2f679bfa6f42e1821fb484e9ebf698f8fd78e12b8aebe66f69ec4353fdb47"
+    },
+    {
+      "chapter": "09-extensions-plugins-and-packages.md",
+      "path": "packages/coding-agent/src/core/extensions/wrapper.ts",
+      "start": 17,
+      "count": 16,
+      "anchor": "export function wrapRegisteredTool(",
+      "sha256": "9da7ecbd95663a5d0f09f439de0a38479219626c27362bcd3521187642f4124b"
+    },
+    {
+      "chapter": "09-extensions-plugins-and-packages.md",
+      "path": "packages/coding-agent/src/core/extensions/runner.ts",
+      "start": 1305,
+      "count": 16,
+      "anchor": "async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {",
+      "sha256": "7e97eaba57204194f28a81b8882b3ee4ea211767d3e8dfbd3f893abf6580cb2d"
+    },
+    {
+      "chapter": "10-workflow-vs-agent.md",
+      "path": "packages/coding-agent/examples/sdk/01-minimal.ts",
+      "start": 10,
+      "count": 18,
+      "anchor": "const { session } = await createAgentSession();",
+      "sha256": "aaed0eecc80986a34a61a9f7a0ecd59b269be3599eceed2625e88a19dcc6ca5d"
+    },
+    {
+      "chapter": "11-workflow-patterns.md",
+      "path": "packages/coding-agent/examples/extensions/subagent/index.ts",
+      "start": 270,
+      "count": 15,
+      "anchor": "function runSingleAgent(",
+      "sha256": "151ee833c551caa879df9af332538a9a1789630484b76c47499d922364d2a3f9"
+    },
+    {
+      "chapter": "12-planning-and-reasoning-patterns.md",
+      "path": "packages/agent/src/agent.ts",
+      "start": 476,
+      "count": 12,
+      "anchor": "private createLoopConfig(options: {",
+      "sha256": "3d1a528792a2f22b60ba645b4cd7f8046e440dcc574c0253f758de98c351ce94"
+    },
+    {
+      "chapter": "12-planning-and-reasoning-patterns.md",
+      "path": "packages/coding-agent/examples/extensions/plan-mode/index.ts",
+      "start": 108,
+      "count": 8,
+      "anchor": "pi.setActiveTools(getPlanModeTools(toolsBeforePlanMode));",
+      "sha256": "154a57418dd9328c9327ca4384f327b8b35b0661e9abc1173b37e7b807f2def3"
+    },
+    {
+      "chapter": "13-agent-sdk-and-app-integration.md",
+      "path": "packages/coding-agent/src/core/sdk.ts",
+      "start": 191,
+      "count": 17,
+      "anchor": "export async function createAgentSession(options:",
+      "sha256": "d2baefad7d16920e193abff3dcfdc83c71781489c3c39a3750541be123a2ce3e"
+    },
+    {
+      "chapter": "13-agent-sdk-and-app-integration.md",
+      "path": "packages/coding-agent/src/core/sdk.ts",
+      "start": 403,
+      "count": 14,
+      "anchor": "const agent = new Agent({",
+      "sha256": "63bd1fc91cda2bfc6eae53bed2d74412c367a3497769d607f2d45cc406bae22a"
+    },
+    {
+      "chapter": "13-agent-sdk-and-app-integration.md",
+      "path": "packages/coding-agent/src/core/agent-session.ts",
+      "start": 1404,
+      "count": 12,
+      "anchor": "subscribe(listener: AgentSessionEventListener): () => void {",
+      "sha256": "6fbd52845fcf7b3725aa12d90e97730893be8f20e75a1414254e09a3ee5c39b3"
+    },
+    {
+      "chapter": "13-agent-sdk-and-app-integration.md",
+      "path": "packages/coding-agent/src/core/agent-session.ts",
+      "start": 2519,
+      "count": 12,
+      "anchor": "async abort(): Promise<void> {",
+      "sha256": "b388604cd0bb7e8b0bbe142ba34217d8c5d025e2d79da6f8ec4926fb32a0ec77"
+    },
+    {
+      "chapter": "14-multi-agent-and-a2a.md",
+      "path": "packages/coding-agent/examples/extensions/subagent/index.ts",
+      "start": 298,
+      "count": 12,
+      "anchor": "const args: string[] = [\"--mode\", \"json\", \"-p\", \"--no-session\"];",
+      "sha256": "56921b1218157c133f79321ebedca933d008eb65ab33b527d8be2eb20566029a"
+    },
+    {
+      "chapter": "15-sandbox-code-agent-and-computer-use.md",
+      "path": "packages/coding-agent/src/core/tools/bash.ts",
+      "start": 112,
+      "count": 12,
+      "anchor": "const child = spawn(shellConfig.shell,",
+      "sha256": "04cc995e2c812746d2dc7f6898200490c4124f2b663fd36c99702bbb3307a52c"
+    },
+    {
+      "chapter": "16-durable-execution-and-human-in-the-loop.md",
+      "path": "packages/durable/src/harness/harness.ts",
+      "start": 588,
+      "count": 17,
+      "anchor": "async open<Tool extends ToolRegistration>(",
+      "sha256": "b9851880e811bcd4cc84c8e9d941fa0b02226fa26be5dea1d47f683caeffecd3"
+    },
+    {
+      "chapter": "16-durable-execution-and-human-in-the-loop.md",
+      "path": "packages/durable/src/harness/submissions.ts",
+      "start": 65,
+      "count": 9,
+      "anchor": "async submit(conversationId:",
+      "sha256": "1e8ca81670319b5c6216d1b3d9740d0d399df4d4430ec0b546367571b87c803b"
+    },
+    {
+      "chapter": "16-durable-execution-and-human-in-the-loop.md",
+      "path": "packages/durable/src/harness/tool.ts",
+      "start": 195,
+      "count": 5,
+      "anchor": "const intent = { phase: \"execute\", arguments: final, replay: tool.replay ?? \"unsafe\" } as const;",
+      "sha256": "fb195781def30c25838907d87ffef50936845567a65d493f13cb5a663b2cc774"
+    },
+    {
+      "chapter": "16-durable-execution-and-human-in-the-loop.md",
+      "path": "packages/durable/src/harness/tool.ts",
+      "start": 207,
+      "count": 15,
+      "anchor": "if (replay === \"safe\" && tool?.replay === \"safe\") {",
+      "sha256": "51bd7550e25ccf4bf7ac82d044f3be98bf8c44bff0f5e2a015adb67204838e08"
+    },
+    {
+      "chapter": "17-security-guardrails-and-governance.md",
+      "path": "packages/coding-agent/src/core/agent-session.ts",
+      "start": 669,
+      "count": 7,
+      "anchor": "this.agent.beforeToolCall =",
+      "sha256": "4eb929432c6f26d586426d8ffa3f33d8d339e00efccd4fc523fae60cfc3f3e8f"
+    },
+    {
+      "chapter": "18-observability-evaluation-and-harness-engineering.md",
+      "path": "packages/evals/src/plan.ts",
+      "start": 39,
+      "count": 23,
+      "anchor": "export function createTaskPlan(",
+      "sha256": "3decde33f14721f565845ca81d9aa222905bcec11d1e26c129cda39235a23f04"
+    },
+    {
+      "chapter": "02-model-api-and-message-protocols.md",
+      "path": "packages/ai/src/api/anthropic-messages.ts",
+      "start": 1334,
+      "count": 8,
+      "anchor": "function convertToolResult(msg: ToolResultMessage, content = msg.content): ContentBlockParam {",
+      "sha256": "0529ff102f24852f6037ef1fe91f789568abfc1460cbc0033bb4f0892917fd5f"
+    },
+    {
+      "chapter": "06-session-memory-retrieval-and-compaction.md",
+      "path": "packages/coding-agent/src/core/session-manager.ts",
+      "start": 551,
+      "count": 16,
+      "anchor": "const edits = new Map<string, ContextEditEntry>();",
+      "sha256": "4a68a0eaf2c90227c78a5162f76103ef1f809919afaeb471494c00beebbd6550"
+    },
+    {
+      "chapter": "09-extensions-plugins-and-packages.md",
+      "path": "packages/coding-agent/src/core/extensions/runner.ts",
+      "start": 1253,
+      "count": 13,
+      "anchor": "for (const { handlers } of snapshotEventHandlers(this.extensions, \"tool_call\")) {",
+      "sha256": "19dceeb54cd5ad69c8051fb8b39ae8eaa9f7842f103ff260cadc0b44448319a8"
+    },
+    {
+      "chapter": "11-workflow-patterns.md",
+      "path": "packages/coding-agent/examples/extensions/subagent/index.ts",
+      "start": 344,
+      "count": 16,
+      "anchor": "const proc = spawn(invocation.command, invocation.args, {",
+      "sha256": "18c91f5997eb388d2140bff2252bd8b27a7c7cdd914c1c40a5f1a4c1af5dac51"
+    }
+  ]
+}

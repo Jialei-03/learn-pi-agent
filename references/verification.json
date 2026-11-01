@@ -1,0 +1,60 @@
+{
+  "checked_on": "2026-11-01",
+  "source_excerpts": 48,
+  "course_links_checked": 203,
+  "upstream_build": "npm run build:offline passed",
+  "selected_tests": [
+    {
+      "package": "agent",
+      "files": [
+        "test/agent-loop.test.ts",
+        "test/agent.test.ts"
+      ],
+      "passed": 79,
+      "skipped": 0
+    },
+    {
+      "package": "mcp",
+      "files": [
+        "test/client.test.ts",
+        "test/content.test.ts"
+      ],
+      "passed": 15,
+      "skipped": 0
+    },
+    {
+      "package": "coding-agent",
+      "files": [
+        "test/session-manager/build-context.test.ts",
+        "test/compaction.test.ts"
+      ],
+      "passed": 42,
+      "skipped": 2
+    },
+    {
+      "package": "durable",
+      "files": [
+        "test/harness-tasks-recovery.test.ts",
+        "test/harness-restart-failure.test.ts",
+        "test/harness-storage-failure.test.ts"
+      ],
+      "passed": 67,
+      "skipped": 0
+    }
+  ],
+  "test_command_from_package_directory": "node ../../node_modules/vitest/dist/cli.js --run <files>",
+  "total_passed": 203,
+  "total_skipped": 2,
+  "limits": [
+    "Only selected tests were run",
+    "No paid provider calls or model task evals were executed"
+  ],
+  "website_checks": [
+    "Static build passed",
+    "JavaScript syntax passed",
+    "Browser screenshots inspected at 320, 390, 768, 1280 and 1440px widths",
+    "No page-level horizontal overflow at checked widths",
+    "Course menu, section navigation, search and code copying verified",
+    "Reading progress and reading position storage removed"
+  ]
+}
