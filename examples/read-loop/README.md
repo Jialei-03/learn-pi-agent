@@ -30,6 +30,7 @@ npm run session
 | 章节 | 运行 | 对照什么 |
 | --- | --- | --- |
 | 02–05 | `node boundaries.mjs stream`、`queue`、`bytes`、`context`（任选一个作为参数） | 两个工具参数交错、消息投递时机、整行字节预算和系统指令重放 |
+| 04 | `node edit-boundaries.mjs` | 运行内置 edit，检验匹配歧义、批量区间、文件编码与取消后的磁盘内容 |
 | 06 | `node recompact.mjs` | 两次压缩、一次编辑，再切回旧叶子的可见消息 |
 | 07 | [MCP 往返](../mcp-roundtrip/roundtrip.mjs)：在其目录运行 `npm ci && npm start` | 两个响应乱序与一条被取消的请求 |
 | 08、09 | `node skills.mjs`、`node context-hooks.mjs` | 同名技能留下谁、旧扩展上下文何时失效 |

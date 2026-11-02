@@ -258,6 +258,57 @@ expect(turnToolResultIds).toEqual(["tool-1", "tool-2"]);
 
 在课程的本地示例中，`node cli.mjs missing` 让脚本模型请求不存在的 `absent.md`。实测 `read.execute` 进入 1 次，随后 `read-1` 收到 `isError=true`。与上一章截断场景的 0 次对照，两条同为错误的工具结果就能定位到不同的失败阶段。[运行方法](../examples/read-loop/README.md) · [磁盘读取入口](../examples/read-loop/cli.mjs)
 
+## 写入实验：一次 edit 为什么会被拒绝
+
+你让编码 Agent 把**开发环境**的限额从 10 改成 12，文件中却有两个环境。模型提出替换「两个空格、`limit=10`、换行」这一整行。JSON 参数合规、文件存在、旧文字也找得到。这次能写吗？
+
+```text
+prod:
+  limit=10
+dev:
+  limit=10
+```
+
+先从调用者的目的看：两个位置都匹配，只有第二处符合“开发环境”。工具拿到的是文件路径、旧文本和新文本，参数中没有开发环境这个独立字段。只要执行器决定接受第一处，模型就可能得到一个成功结果，而生产配置已经被改了。要看 Pi 如何作选择，就得追到实际写入之前。
+
+### 在文件里找到它，还要证明它可以唯一定位
+
+`createEditToolDefinition` 将路径解析到当前工作目录，进入该文件的修改队列，读取字节，剥离开头可能存在的 UTF-8 BOM，并将换行暂时归一化为 LF。接着它将**原文件内容与整批 edits**交给 `applyEditsToNormalizedContent`。这个函数必须先构造出新的完整内容，外层才有东西可交给 `ops.writeFile`。[工具调用与实际写入](https://github.com/earendil-works/pi/blob/072e413bf3f8ee0cf8d9f2862fd1dbfc5d337afa/packages/coding-agent/src/core/tools/edit.ts#L157-L208)
+
+在替换函数中找到两个相邻判断。`fuzzyFindText` 返回一处候选位置；如果一处都没有，抛出未找到错误。随后 `countOccurrences` 另算出现次数，大于 1 又会抛错。**找到第一处**只能证明至少有一处；要写入还必须排除第二处。把上一行 `dev:` 也放进旧文本，再用含相同前缀的新文本替换，候选区间就只有一个。这次工具写盘一次，`prod` 行保持原值。[查找、计数与保存位置](https://github.com/earendil-works/pi/blob/072e413bf3f8ee0cf8d9f2862fd1dbfc5d337afa/packages/coding-agent/src/core/tools/edit-diff.ts#L316-L340)
+
+同样的输入也可以拿去读 Aider。它的 SEARCH/REPLACE 编辑器有个短函数 `perfect_replace`：固定搜索段的行数，在完整文件上向前滑动窗口，遇到第一段逐行完全相等时立即返回拼接结果。在上面的输入上，独立调用这个函数得到 `prod=12`、`dev=10` 所对应的文件内容；Pi 则拒绝这次模糊意图。这里比较的是 Aider 的这一条精确匹配分支与 Pi 的编辑工具，两个实现对“已经找到”承担的责任不同。[Aider 的匹配函数](https://github.com/Aider-AI/aider/blob/main/aider/coders/editblock_coder.py#L146-L155)
+
+再换一个输入：文件有两行，分别是 `name=“dev”` 与 `name="dev"`，模型提供直引号的那行。肉眼只看到一个逐字相等的目标，Pi 在本例中仍报告两处。`countOccurrences` 对文件和搜索串都运行 `normalizeForFuzzyMatch` 再计数，弯引号与直引号会折叠成相同字符。这样一来，**哪怕精确查找已经成功，唯一性检查仍可能失败**。此时应补入能区分位置的相邻文本，而不是反复让模型重新转义引号。[字符归一化](https://github.com/earendil-works/pi/blob/072e413bf3f8ee0cf8d9f2862fd1dbfc5d337afa/packages/coding-agent/src/core/tools/edit-diff.ts#L35-L53) · [出现次数的实际算法](https://github.com/earendil-works/pi/blob/072e413bf3f8ee0cf8d9f2862fd1dbfc5d337afa/packages/coding-agent/src/core/tools/edit-diff.ts#L247-L251)
+
+### 同一批两个修改，为什么从后往前应用
+
+用去掉 BOM、统一换行后的字符串 `aa\nzz\n` 手算一次。第一项要将 `aa` 替成七个 a，旧区间为 [0, 2)；第二项要将 `zz` 替成 Z，旧区间为 [3, 5)。两项的位置都来自**修改前**的文件。如果先把第一项增长五个字符，再用原先的位置 3 去找第二项，那里早已变成 a。Pi 先按起点排序，比较相邻区间，若后一个起点落在前一个区间内便报重叠。区间互不重叠时从右往左替换：先动位置 3，不会移动前面的 0；再动位置 0，已经处理完的尾部会整体随它移动。[区间校验](https://github.com/earendil-works/pi/blob/072e413bf3f8ee0cf8d9f2862fd1dbfc5d337afa/packages/coding-agent/src/core/tools/edit-diff.ts#L341-L358) · [逆序写入内存字符串](https://github.com/earendil-works/pi/blob/072e413bf3f8ee0cf8d9f2862fd1dbfc5d337afa/packages/coding-agent/src/core/tools/edit-diff.ts#L111-L122)
+
+所以第二项找不到、第二项与第一项重叠，都发生在写文件**之前**。第一项即使单独看完全合法，本批也不会先把它写进去。成功时外层按原有换行形式恢复文本、补回 BOM，再调用文件后端。实验直接比较文件字节，能区分界面上看起来完全一样的 LF 与 CRLF。
+
+### 把错误提示和磁盘事实分别量出来
+
+以下实验在临时目录运行 Pi 内置编辑工具，计数器包在真正的写文件函数外面。每次调用完都重新打开磁盘文件做断言；无需模型密钥。[完整程序](../examples/read-loop/edit-boundaries.mjs)
+
+```bash
+cd examples/read-loop
+npm ci
+node edit-boundaries.mjs
+```
+
+| 只改动这个条件 | 调用者观察到 | 写盘次数 | 文件里实际留下什么 |
+| --- | --- | --- | --- |
+| 只给重复的旧行 | 两处匹配 | 0 | 两处仍为 10 |
+| 把目标配置行前的 `dev:` 也纳入匹配 | 成功，附 patch | 1 | 只有 dev 变成 12 |
+| 第一项正确，第二项不存在 | 定位到第二项的错误 | 0 | 第一项也没写入 |
+| 两项都唯一，但区间重叠 | 区间冲突 | 0 | 保持原文 |
+| 一处直引号与一处弯引号 | 归一化后重复 | 0 | 保持两种原始引号 |
+| 带 BOM、CRLF 的文件，两个替换长度不同 | 成功，附 patch | 1 | 两项均正确，BOM 与 CRLF 都在 |
+| 后端已写完，随后发出取消信号 | 调用抛出中止错误 | 1 | dev 已变成 12 |
+
+最后一行值得单独停一下。文件后端完成写入后，`execute` 还会再检查一次取消信号。实验故意在这个间隙触发取消，调用者收到错误，而文件已经变了。前几行证明的是「校验失败前没有执行写操作」，最后一行说明这项保证止于何处。若上层看到取消就盲目重试同一批 oldText，第二次很可能变成找不到旧文字。先重读或核对实际 diff，才能决定下一步。第十六章的持久任务会面对同一类问题，只是事实可能保存在另一项服务里。[任务中断后的恢复](16-durable-execution-and-human-in-the-loop.md)
+
 > **先预测**　给 read 指定 limit=1，是不是意味着 Pi 在磁盘上只读一行？
 >
 > **核对推导**　普通文本路径先读文件、解码、按行切分，再对返回给模型的内容应用行数和字节限制。结果只含一行不能证明磁盘只读了一行；要验证磁盘读取量，应观察文件操作那一层。

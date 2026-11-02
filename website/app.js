@@ -36,7 +36,7 @@ function group(label, entries) {
 }
 function renderNav() {
   const guides = ['home','00-source-learning-path','00-course-structure'].map(s => s === 'home' ? {slug:'home', title:'课程首页'} : bySlug(s)).filter(Boolean);
-  const refs = ['source-map','glossary','papers','version-baseline'].map(bySlug).filter(Boolean);
+  const refs = ['open-source-agent-reading','source-map','glossary','papers','version-baseline'].map(bySlug).filter(Boolean);
   nav.innerHTML = group('开始学习',guides) + group('基础与运行',chapters.slice(0,4)) + group('上下文与能力',chapters.slice(4,9)) + group('工作流与编排',chapters.slice(9,14)) + group('工程实践',chapters.slice(14)) + group('参考资料',refs);
 }
 function home() {

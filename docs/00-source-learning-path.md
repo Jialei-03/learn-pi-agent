@@ -36,3 +36,5 @@ npm run build
 ```
 
 所有示例都附有讲解，你可以选择只在网页上沿图阅读，也可以在本地运行同一份程序。查询某个函数属于哪个包时，可使用[源码地图](../references/source-map.md)和[术语表](../references/glossary.md)。
+
+想看其他项目如何处理同一个问题，可以打开[高星开源 Agent 学习资料](../references/open-source-agent-reading.md)，从编辑器的匹配规则、上下文预算或恢复测试选一个与 Pi 对读。

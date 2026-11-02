@@ -99,7 +99,7 @@ for p in files:
         elif not href.startswith('#'):
             parts=href.split('#',1); target=(p.parent/unquote(parts[0])).resolve()
             if target in slugs:
-                a['href']='#/'+slugs[target]+(('?section='+quote(parts[1])) if len(parts)>1 else '')
+                a['href']='#/'+slugs[target]+(('?section='+quote(unquote(parts[1]))) if len(parts)>1 else '')
             else:
                 try:
                     rel=target.relative_to(ROOT).as_posix()
