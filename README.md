@@ -2,7 +2,7 @@
 
 从真实代码出发，系统理解 Pi Agent 的整体架构与关键实现。
 
-**[打开学习网站](https://learn-pi-agent-course.chic-melon-1504.chatgpt.site)** · [课程路线](docs/00-source-learning-path.md) · [源码地图](references/source-map.md)
+**[打开学习网站](https://learn-pi-agent-course.leslie102303.chatgpt.site)** · [课程路线](docs/00-source-learning-path.md) · [源码地图](references/source-map.md)
 
 ## 学习目标
 
