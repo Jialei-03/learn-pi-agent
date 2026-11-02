@@ -20,4 +20,19 @@ SessionManager 保存可恢复的会话分支。它与组织模型调用的 Mode
 3. **新能力怎样进入同一个循环。** 第 7～9 章分别从远程服务、磁盘上的 Skill 和扩展函数出发，定位它们在发现、注册、请求和执行阶段的接入点。[MCP](07-mcp-protocol-and-pi-integration.md) · [Skill](08-skills-and-prompt-templates.md) · [扩展](09-extensions-plugins-and-packages.md)
 4. **应用和长任务怎样组合这些能力。** 第 10～18 章覆盖编排、计划、SDK、子进程、持久执行、安全策略和评测。想先在应用里嵌入 Pi，可以直接运行第十三章的离线 SDK 会话，再回到各个专题。[SDK 运行示例](13-agent-sdk-and-app-integration.md) · [完整目录](00-course-structure.md)
 
+## 怎样把书里的现象跑一遍
+
+第一次不用先装 Pi。打开[第一章](01-from-llm-to-agent.md)，改掉示例文件里的一句话，分别看第一次请求、工具结果、第二次请求。能指出「哪一条消息最先变化」，就已经抓住了这套架构的入口。每章结尾都有一个换条件的例子，网页可以展开推导，不记录答题或阅读进度。
+
+想调试程序时，下载课程仓库，在 `examples/read-loop` 运行一次 `npm ci`。该目录的[实验索引](../examples/read-loop/README.md)按现象列出具体命令，多数实验只需要 Node.js，不需要模型账户。观察消息投递可以运行 `node boundaries.mjs queue`；想看复原历史与重新读文件的差别，则运行 `node resume.mjs`。这些程序会打印结果，正文解释为什么得到这些结果、换一个条件会怎样。
+
+后几章也有直接运行上游测试的例子。它们需要完整的 Pi 源码树，和课程里的小程序是两个位置。从课程仓库的上级目录执行下面的准备命令。随后切换进正文指定的上游包目录，再运行其中的测试，而不是在课程目录寻找 Pi 的内部文件。[Pi 的开发说明](https://github.com/earendil-works/pi#development)
+
+```bash
+git clone https://github.com/earendil-works/pi.git pi
+cd pi
+npm install --ignore-scripts
+npm run build
+```
+
 所有示例都附有讲解，你可以选择只在网页上沿图阅读，也可以在本地运行同一份程序。查询某个函数属于哪个包时，可使用[源码地图](../references/source-map.md)和[术语表](../references/glossary.md)。

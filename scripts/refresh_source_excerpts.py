@@ -1,32 +1,48 @@
 #!/usr/bin/env python3
-"""Expand authored source markers and retain their evidence for maintenance."""
+"""Expand pending source markers, verify every rendered excerpt, then rebuild the evidence index."""
+import argparse
+import hashlib
+import json
 from pathlib import Path
-import argparse, hashlib, json, re, subprocess, textwrap
-p=argparse.ArgumentParser();p.add_argument('source',type=Path);args=p.parse_args()
-root=Path(__file__).resolve().parent.parent
-source=args.source.resolve()
-pattern=re.compile(r'\[\[code:(.*?)\|(.*?)\|(\d+)\]\]')
-records=[]; outputs={}
-for file in sorted((root/'docs').glob('*.md')):
- def replace(m):
-  path, anchor, count=m.group(1),m.group(2),int(m.group(3))
-  lines=(source/path).read_text().splitlines()
-  matches=[i for i,line in enumerate(lines) if anchor in line]
-  if not matches: raise ValueError(f'{file.name}: missing {anchor!r} in {path}')
-  start=matches[0]; raw='\n'.join(lines[start:start+count]); code=textwrap.dedent(raw)
-  records.append({'chapter':file.name,'path':path,'start':start+1,'count':count,'anchor':anchor,'sha256':hashlib.sha256(raw.encode()).hexdigest()})
-  return f'源码摘录：[{path}](https://github.com/earendil-works/pi/blob/main/{path}#L{start+1})\n\n```ts\n{code}\n```'
- outputs[file]=pattern.sub(replace,file.read_text())
-# Validate every marker before changing any authored document.
-for file, content in outputs.items(): file.write_text(content)
-if not records:
-    print('No pending source markers; existing evidence retained')
-    raise SystemExit(0)
-commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=source,text=True).strip()
-existing_path=root/'references/source-evidence.json'
-if existing_path.exists():
-    previous=json.loads(existing_path.read_text()).get('excerpts',[])
-    keys={(x['chapter'],x['path'],x['start']) for x in records}
-    records=[x for x in previous if (x['chapter'],x['path'],x['start']) not in keys]+records
-(root/'references/source-evidence.json').write_text(json.dumps({'repository':'https://github.com/earendil-works/pi','inspected_commit':commit,'excerpts':records},ensure_ascii=False,indent=2)+'\n')
-print(f'Expanded {len(records)} verified excerpts in {len(outputs)} documents')
+import re
+import subprocess
+import textwrap
+
+parser = argparse.ArgumentParser()
+parser.add_argument("source", type=Path)
+source = parser.parse_args().source.resolve()
+root = Path(__file__).resolve().parent.parent
+repo = "https://github.com/earendil-works/pi"
+commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+marker = re.compile(r"\[\[code:(.*?)\|(.*?)\|(\d+)\]\]")
+excerpt = re.compile(r"^源码摘录：\[([^\]]+)\]\(" + re.escape(repo)
+    + r"/blob/(?:main|[0-9a-f]{40})/([^#]+)#L(\d+)(?:-L\d+)?\)\n\n```[^\n]*\n(.*?)\n```", re.M | re.S)
+records, documents = [], {}
+for doc in sorted((root / "docs").glob("*.md")):
+    def expand(match):
+        path, anchor, size = match.groups()
+        lines = (source / path).read_text().splitlines()
+        start = next(i for i, line in enumerate(lines) if anchor in line)
+        body = textwrap.dedent("\n".join(lines[start:start + int(size)]))
+        return f"源码摘录：[{path}]({repo}/blob/{commit}/{path}#L{start+1})\n\n```ts\n{body}\n```"
+
+    content = marker.sub(expand, doc.read_text())
+    matches = list(excerpt.finditer(content))
+    if len(matches) != content.count("源码摘录："):
+        raise ValueError(f"{doc.name}: malformed excerpt label")
+    for match in matches:
+        label, path, line, code = match.groups()
+        start, count = int(line), len(code.splitlines())
+        raw = "\n".join((source / path).read_text().splitlines()[start-1:start-1+count])
+        if label != path or textwrap.dedent(raw) != code:
+            raise ValueError(f"{doc.name}: does not match {path}:{start}")
+        records.append(dict(chapter=doc.name, path=path, start=start, count=count,
+            anchor=code.splitlines()[0].strip(), sha256=hashlib.sha256(raw.encode()).hexdigest()))
+    documents[doc] = content
+# Leave all authored documents unchanged if any verification failed.
+for doc, content in documents.items():
+    if doc.read_text() != content:
+        doc.write_text(content)
+index = {"repository": repo, "inspected_commit": commit, "excerpts": records}
+(root / "references/source-evidence.json").write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n")
+print(f"Verified {len(records)} source excerpts in {len(documents)} course documents")

@@ -69,6 +69,24 @@ for p in files:
             if node.name in ('h2','h3'): break
             if node.name: parts.append(node.get_text(' ', strip=True))
         sections.append({'id':heading['id'], 'title':heading.get_text(' ', strip=True), 'text':' '.join(parts)})
+    # Keep the question and its derivation readable on GitHub. In the book,
+    # leave a pause between them and let the reader reveal the reasoning.
+    for quote_block in soup.select('blockquote'):
+        paragraphs = quote_block.find_all('p', recursive=False)
+        if len(paragraphs) != 2: continue
+        question, answer = paragraphs
+        if not (question.strong and question.strong.get_text() == '先预测' and
+                answer.strong and answer.strong.get_text() == '核对推导'): continue
+        quote_block.name = 'aside'
+        quote_block['class'] = ['prediction']
+        quote_block['aria-label'] = '用本章机制做个判断'
+        answer.strong.decompose()
+        details = soup.new_tag('details')
+        summary = soup.new_tag('summary')
+        summary.string = '核对推导'
+        details.append(summary)
+        details.append(answer.extract())
+        quote_block.append(details)
     for a in soup.select('a[href]'):
         href=a['href']
         if href.startswith(('http://','https://','mailto:')):

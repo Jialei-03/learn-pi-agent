@@ -1,7 +1,15 @@
 {
   "repository": "https://github.com/earendil-works/pi",
-  "inspected_commit": "3e0eec29f50e7861e9db91f2d12723267411b4f3",
+  "inspected_commit": "9823079ad98d39f3587286c8d9f29556dfb3687b",
   "excerpts": [
+    {
+      "chapter": "01-from-llm-to-agent.md",
+      "path": "packages/agent/src/agent.ts",
+      "start": 585,
+      "count": 4,
+      "anchor": "case \"message_end\":",
+      "sha256": "59756adfa1a00e2c8420e1283f7ac8aab4ec4466236a73d1a0cdf30cb50093c1"
+    },
     {
       "chapter": "02-model-api-and-message-protocols.md",
       "path": "packages/agent/src/agent-loop.ts",
@@ -25,6 +33,14 @@
       "count": 8,
       "anchor": "function convertToolResult(msg: ToolResultMessage, content = msg.content): ContentBlockParam {",
       "sha256": "0529ff102f24852f6037ef1fe91f789568abfc1460cbc0033bb4f0892917fd5f"
+    },
+    {
+      "chapter": "02-model-api-and-message-protocols.md",
+      "path": "packages/ai/src/api/transform-messages.ts",
+      "start": 188,
+      "count": 20,
+      "anchor": "const closePendingToolCalls = () => {",
+      "sha256": "abb703e274ce930b724ff8e3a2000bce8b92d00333f5e2e79d52853824cb7726"
     },
     {
       "chapter": "03-agent-loop-state-machine-and-stopping.md",
@@ -57,6 +73,14 @@
       "count": 13,
       "anchor": "const decision = await config.finishTurn?.(lastCompletedTurn, signal);",
       "sha256": "ec1b60ef71bbd586d208c1e7894a5fde3637d0fde23d774d98e4a4b89139b3ef"
+    },
+    {
+      "chapter": "03-agent-loop-state-machine-and-stopping.md",
+      "path": "packages/agent/src/agent.ts",
+      "start": 165,
+      "count": 11,
+      "anchor": "peek(): AgentMessage[] {",
+      "sha256": "ced4f6cac259b61d456c1eef7ddf603c1a40e901f1a2ba688292d056ae34cb27"
     },
     {
       "chapter": "04-tools-and-function-calling.md",
@@ -100,6 +124,14 @@
     },
     {
       "chapter": "04-tools-and-function-calling.md",
+      "path": "packages/coding-agent/src/core/tools/truncate.ts",
+      "start": 126,
+      "count": 12,
+      "anchor": "for (let i = 0; i < lines.length && i < maxLines; i++) {",
+      "sha256": "f28756986c8c57d6a5e675afac0de1385c144d2d8bffc7ba638d7a338a9dbcd1"
+    },
+    {
+      "chapter": "04-tools-and-function-calling.md",
       "path": "packages/agent/src/agent-loop.ts",
       "start": 940,
       "count": 15,
@@ -137,6 +169,14 @@
       "count": 13,
       "anchor": "export function diffSystemPromptSections(",
       "sha256": "89f7f312afcc3c0cd77072b36a0b2bc55a334c119facb1e851823b7df63ddad9"
+    },
+    {
+      "chapter": "05-context-engineering-and-structured-output.md",
+      "path": "packages/ai/src/utils/transcript.ts",
+      "start": 77,
+      "count": 10,
+      "anchor": "for (const message of messages) {",
+      "sha256": "e5876bfd2eadc2ce1ddab90b0a72f181e9583ae936f9948a8081fe6bc281cc5c"
     },
     {
       "chapter": "05-context-engineering-and-structured-output.md",
@@ -243,6 +283,22 @@
       "sha256": "b9d2e017accf63dd072b45aaf5d3027d689721cf63c91c849f7c318e5953e9b6"
     },
     {
+      "chapter": "10-workflow-vs-agent.md",
+      "path": "packages/evals/src/harness.ts",
+      "start": 374,
+      "count": 7,
+      "anchor": "for (const step of steps) {",
+      "sha256": "a4faab202f216f4c66ed52afd1344c359ed398c8b58169dfa7ce0375a0015fec"
+    },
+    {
+      "chapter": "11-workflow-patterns.md",
+      "path": "packages/coding-agent/examples/extensions/subagent/index.ts",
+      "start": 168,
+      "count": 11,
+      "anchor": "function getFinalOutput(messages: Message[]): string {",
+      "sha256": "753a9d129496aa9bc562aceac590993aa4d245d7c97703451cc38e3294ab6446"
+    },
+    {
       "chapter": "11-workflow-patterns.md",
       "path": "packages/coding-agent/examples/extensions/subagent/index.ts",
       "start": 217,
@@ -257,6 +313,22 @@
       "count": 11,
       "anchor": "function enablePlanModeTools(): void {",
       "sha256": "1859938773feba44fb9d297f8e49fc412e4947bdd851f2f9044135ada2ac0da7"
+    },
+    {
+      "chapter": "12-planning-and-reasoning-patterns.md",
+      "path": "packages/coding-agent/examples/extensions/plan-mode/utils.ts",
+      "start": 161,
+      "count": 8,
+      "anchor": "export function markCompletedSteps(text: string, items: TodoItem[]): number {",
+      "sha256": "6056a73f1dd7e64413e0020fc1d6a60d6ce5c6845a10c717f7eec1b689c98c19"
+    },
+    {
+      "chapter": "13-agent-sdk-and-app-integration.md",
+      "path": "packages/coding-agent/src/core/session-manager.ts",
+      "start": 1167,
+      "count": 5,
+      "anchor": "private _hasConversation(): boolean {",
+      "sha256": "2477f494cdf4f95ef39024a9e13f607c7ace045155c605ba69fb476d015ed537"
     },
     {
       "chapter": "14-multi-agent-and-a2a.md",
@@ -291,6 +363,14 @@
       "sha256": "28db6f56401249d98d4b82b19c68aab5303c3924a67d26d051f4fb247aeabbc4"
     },
     {
+      "chapter": "15-sandbox-code-agent-and-computer-use.md",
+      "path": "packages/coding-agent/src/core/tools/output-accumulator.ts",
+      "start": 64,
+      "count": 15,
+      "anchor": "append(data: Buffer): void {",
+      "sha256": "7b28280a7719c3f2a675fafe842400c9898de18b3684e8c30bcf2acd2fcfef5f"
+    },
+    {
       "chapter": "16-durable-execution-and-human-in-the-loop.md",
       "path": "packages/durable/src/harness/submissions.ts",
       "start": 65,
@@ -300,11 +380,27 @@
     },
     {
       "chapter": "16-durable-execution-and-human-in-the-loop.md",
+      "path": "packages/durable/src/harness/submissions.ts",
+      "start": 312,
+      "count": 5,
+      "anchor": "const entry = await appendInput(tx, conversationId, draft.content, draft.entry, now);",
+      "sha256": "9b2c1b3676c9c0307ae20110e54df79c8e7b8da7852b78ee013887e0d24d370d"
+    },
+    {
+      "chapter": "16-durable-execution-and-human-in-the-loop.md",
       "path": "packages/durable/src/harness/tool.ts",
       "start": 195,
       "count": 5,
       "anchor": "await runtime.commit(() => {",
       "sha256": "1e8a190e9b399e36ed2d983ef1ca50dc6333925dcaedaa72aa05f75a4b42bf91"
+    },
+    {
+      "chapter": "17-security-guardrails-and-governance.md",
+      "path": "packages/coding-agent/src/core/resource-loader.ts",
+      "start": 548,
+      "count": 10,
+      "anchor": "let preTrustExtensions: LoadExtensionsResult | undefined;",
+      "sha256": "e30b9534bafafabd7dd1067dbaa415c5cc8d3bdbf5d8835690a364af0f4d1a88"
     },
     {
       "chapter": "17-security-guardrails-and-governance.md",
@@ -321,6 +417,14 @@
       "count": 9,
       "anchor": "const tasks: EvalTask[] = [];",
       "sha256": "ba96043f790f493f4fb896ecc2944fd5c5eb878ab358c22b4c362a5bfbe2a10f"
+    },
+    {
+      "chapter": "18-observability-evaluation-and-harness-engineering.md",
+      "path": "packages/evals/src/report.ts",
+      "start": 251,
+      "count": 14,
+      "anchor": "const reasons: string[] = [];",
+      "sha256": "b2217da2d41d4218ce5b7141fcc1147bb54e5c74e632199156a5d2ca3f03eb84"
     }
   ]
 }

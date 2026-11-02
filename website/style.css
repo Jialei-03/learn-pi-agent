@@ -241,3 +241,10 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* A pause at the end of a worked example. Native disclosure also works offline. */
+.article .prediction { margin: 36px 0; padding: 18px 22px 4px; background: var(--soft); border-radius: 12px; }
+.article .prediction > p { margin: 0; }
+.article .prediction > p > strong:first-child { display: block; margin-bottom: 5px; font-size: 14px; color: var(--muted); }
+.article .prediction summary { width: fit-content; padding: 10px 0; min-height: 44px; color: var(--accent); cursor: pointer; font-size: 15px; }
+.article .prediction details p { margin: 0 0 14px; }
