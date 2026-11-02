@@ -50,10 +50,15 @@ for p in files:
                 for child in list(BeautifulSoup(rendered, 'html.parser').contents): code.append(child)
             except ValueError: pass
         pre=code.parent
-        block=soup.new_tag('div', attrs={'class':'code-block'})
+        block=soup.new_tag('div', attrs={'class':'code-block', 'data-language':language})
         pre.wrap(block)
         toolbar=soup.new_tag('div', attrs={'class':'code-toolbar'})
-        label=soup.new_tag('span'); label.string=language.upper(); toolbar.append(label)
+        label=soup.new_tag('span')
+        label.string={'ts':'TypeScript', 'js':'JavaScript', 'bash':'Shell', 'text':'文本'}.get(language, language.upper())
+        toolbar.append(label)
+        wrap=soup.new_tag('button', attrs={'type':'button','data-wrap-code':'','aria-pressed':'false','hidden':''})
+        wrap.string='自动换行'
+        toolbar.append(wrap)
         button=soup.new_tag('button', attrs={'type':'button','data-copy-code':'','aria-label':'复制代码'})
         button.string='复制代码'; toolbar.append(button); block.insert(0, toolbar)
     seen={}
@@ -117,8 +122,27 @@ for p in files:
         else:
             dest.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(path,dest)
         img['src']=dest.relative_to(OUT).as_posix(); img['loading']='lazy'; img['decoding']='async'
+        if dest.suffix == '.webp':
+            with Image.open(dest) as asset:
+                img['width'], img['height'] = map(str, asset.size)
+        parent = img.parent
+        if parent.name == 'p' and len(parent.contents) == 1:
+            parent.name = 'figure'
+            parent['class'] = ['lesson-figure']
+            zoom = soup.new_tag('a', href=img['src'], target='_blank', rel='noopener noreferrer')
+            zoom['aria-label'] = '查看大图（在新标签页打开） ' + img.get('alt','')
+            img.wrap(zoom)
+            hint = soup.new_tag('span')
+            hint.string = '查看大图 ↗'
+            zoom.append(hint)
     for table in soup.select('table'):
-        wrapper=soup.new_tag('div',**{'class':'table-scroll'}); table.wrap(wrapper)
+        wrapper=soup.new_tag('div',**{'class':'table-scroll'})
+        table.wrap(wrapper)
+        outer=soup.new_tag('div',**{'class':'table-block'})
+        wrapper.wrap(outer)
+        hint=soup.new_tag('small',attrs={'class':'table-hint','hidden':''})
+        hint.string='左右滚动查看各列 ↔'
+        wrapper.insert_before(hint)
     title=soup.h1.get_text(' ',strip=True) if soup.h1 else p.stem
     kind='chapter' if re.match(r'^\d\d-',p.name) and not p.name.startswith('00-') else ('guide' if p.parent.name=='docs' else 'reference')
     items.append({'slug':p.stem,'title':title,'kind':kind,'number':int(p.name[:2]) if kind=='chapter' else None,

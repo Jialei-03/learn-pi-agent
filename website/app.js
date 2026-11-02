@@ -10,6 +10,27 @@ const e = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<
 const bySlug = slug => pages.find(p => p.slug === slug);
 const route = slug => '#/' + slug;
 const shortTitle = title => title.replace(/^(第\s*\d+\s*章[：:]?\s*)/, '').split(/[：:]/)[0];
+// Offer scroll and wrap controls only when the content exceeds its reading column.
+const readingSizes = new ResizeObserver(entries => {
+  for (const {target} of entries) {
+    const wide = target.scrollWidth > target.clientWidth + 1;
+    if (target.matches('pre')) {
+      const toggle = target.parentElement.querySelector('[data-wrap-code]');
+      toggle.hidden = !wide && toggle.getAttribute('aria-pressed') !== 'true';
+      continue;
+    }
+    target.previousElementSibling.hidden = !wide;
+    if (wide) {
+      target.tabIndex = 0;
+      target.setAttribute('role', 'region');
+      target.setAttribute('aria-label', '表格，可横向滚动');
+    } else {
+      target.removeAttribute('tabindex');
+      target.removeAttribute('role');
+      target.removeAttribute('aria-label');
+    }
+  }
+});
 function group(label, entries) {
   return `<div class="nav-group"><div class="nav-label">${e(label)}</div>${entries.map(p => `<a class="nav-link ${current === p.slug ? 'active' : ''}" href="${route(p.slug)}" ${current === p.slug ? 'aria-current="page"' : ''}><span class="nav-no">${p.number ? String(p.number).padStart(2,'0') : '·'}</span><span>${e(shortTitle(p.title))}</span></a>`).join('')}</div>`;
 }
@@ -46,6 +67,8 @@ function article(page, section) {
   if(page.kind==='chapter'){const n=chapters.indexOf(page); prev=chapters[n-1]; next=chapters[n+1];}
   app.innerHTML = `<div class="reading-layout"><div class="breadcrumb"><a href="#/home">课程</a><span aria-hidden="true">/</span><span>${e(label)}</span></div><header class="reading-header"><h1>${e(page.title)}</h1></header><article class="article" id="article">${page.html}</article>${prev||next?`<nav class="next-row" aria-label="相邻章节">${prev?`<a href="${route(prev.slug)}"><small>← 上一章</small>${e(shortTitle(prev.title))}</a>`:''}${next?`<a href="${route(next.slug)}"><small>下一章 →</small>${e(shortTitle(next.title))}</a>`:''}</nav>`:''}</div>`;
   mountExperiments(document.getElementById('article'));
+  app.querySelectorAll('.table-block > .table-scroll, .code-block:has([data-wrap-code]) > pre')
+    .forEach(block => readingSizes.observe(block));
   const headings = [...app.querySelectorAll('.article h2, .article h3')];
   const sectionLinks = headings.map(h=>`<a class="${h.tagName==='H3'?'sub':''}" href="${route(page.slug)}?section=${encodeURIComponent(h.id)}">${e(h.textContent)}</a>`).join('');
   outline.innerHTML = headings.length ? `<div class="outline-title">本页目录</div>${sectionLinks}` : '';
@@ -65,6 +88,7 @@ function render(){
     }
   }
   current=slug || 'home';
+  readingSizes.disconnect();
   const p=bySlug(current);
   if(current==='home') home(); else if(p) article(p,new URLSearchParams(query).get('section')); else {current='home';home();}
   renderNav(); closeMenu(); if(!query) window.scrollTo({top:0,behavior:'instant'});
@@ -120,6 +144,15 @@ window.addEventListener('hashchange',render);
 fetch('./course.json', {cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('无法加载课程');return r.json()}).then(data=>{pages=data;chapters=pages.filter(p=>p.kind==='chapter').sort((a,b)=>a.number-b.number);render()}).catch(()=>{app.innerHTML='<div class="loading">课程内容加载失败。请通过网站地址或本地服务打开。</div>'});
 
 document.addEventListener('click', async (event) => {
+  const wrap = event.target.closest('[data-wrap-code]');
+  if (wrap) {
+    const block = wrap.closest('.code-block');
+    const active = block.classList.toggle('wrap-lines');
+    wrap.setAttribute('aria-pressed', String(active));
+    const pre = block.querySelector('pre');
+    if (!active && pre.scrollWidth <= pre.clientWidth + 1) wrap.hidden = true;
+    return;
+  }
   const button = event.target.closest('[data-copy-code]');
   if (!button) return;
   try {

@@ -11,30 +11,30 @@
 .experiment-settings:empty { display: none; }
 .case-picker { display: flex; align-items: center; gap: 12px; font-size: 14px; color: #46564f; }
 .case-picker select, .apply-fixture, .frame-button {
-  min-height: 40px; padding: 6px 12px; border: 1px solid #b8c9c5; border-radius: 7px;
+  min-height: 44px; padding: 6px 12px; border: 1px solid var(--control-line); border-radius: 7px;
   background: #fff; color: #224b45; font: 600 14px/1.45 var(--sans); cursor: pointer;
 }
 .edit-fixture { margin: 6px 0 0; }
 .edit-fixture summary, .frame-details summary {
-  width: fit-content; padding: 7px 0; color: #23594f; cursor: pointer; font-size: 14px;
+  width: fit-content; min-height: 44px; padding: 10px 0; color: #23594f; cursor: pointer; font-size: 14px;
 }
 .edit-fixture textarea {
   display: block; margin: 3px 0 10px; padding: 10px 12px; width: 100%; resize: vertical;
-  border: 1px solid #b8c9c5; border-radius: 7px; font: 14px/1.7 var(--mono); background: white; color: #182c29;
+  border: 1px solid var(--control-line); border-radius: 7px; font: 14px/1.7 var(--mono); background: white; color: #182c29;
 }
 .frame-track { position: relative; display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); padding: 8px 0 13px; }
 .frame-track::before { content: ''; position: absolute; top: 25px; left: 10%; right: 10%; height: 2px; background: #c8d7d3; }
 .frame-node { position: relative; display: grid; justify-items: center; align-content: start; gap: 6px;
   background: transparent; color: #4d5d58; font: 13px/1.5 var(--sans); border: 0; padding: 0 2px; cursor: pointer; }
 .node-number { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%;
-  border: 1px solid #b4c9c3; background: #fff; font: 600 14px/1 var(--mono); }
+  border: 1px solid var(--control-line); background: #fff; font: 600 14px/1 var(--mono); }
 .frame-node[aria-pressed="true"] { color: #153e37; font-weight: 700; }
-.frame-node[aria-pressed="true"] .node-number { background: #20584d; color: #fff; border-color: #20584d; outline: 3px solid #d5e5df; }
+.frame-node[aria-pressed="true"] .node-number { background: var(--accent); color: #fff; border-color: var(--accent); outline: 3px solid #d5e5df; }
 .frame-body { padding: 16px 18px 13px; border-radius: 10px; background: #fff; border: 1px solid #dce7e3; }
 .frame-title { display: block; margin: 5px 0; font-size: 17px; }
 .article .frame-body p { margin: 0 0 12px; font-size: 15px; line-height: 1.7; color: #46534e; }
 .article .frame-body pre { padding: 10px 12px; background: #f1f5f3; color: #1c3e35; border-radius: 6px;
-  font: 13px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; }
+  font: 14px/1.65 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; }
 .frame-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 13px; }
 .frame-counter { font: 12px/1 var(--mono); color: #52625d; }
 .frame-button:disabled { opacity: .48; cursor: default; }
@@ -49,15 +49,13 @@
   .frame-details summary, .edit-fixture summary { padding-block: 10px; }
 }
 .book-intro { display: grid; grid-template-columns: 1.1fr 1fr; align-items: center; gap: 20px; border-bottom: 1px solid var(--line); padding-bottom: 38px; }
-.book-intro img { display: block; width: 100%; height: auto; }
+.book-intro img { display: block; width: 100%; max-width: 450px; justify-self: center; height: auto; }
 .book-intro .home-intro { padding: 0; }
 .book-intro h1 { font-size: clamp(35px,4.2vw,58px); }
-.home .book-kicker { color: #2d6659; text-transform: uppercase; font: 600 12px/1.5 var(--mono); letter-spacing: .12em; }
-.book-intro .primary-btn { background: #22584c; }
-.book-intro .primary-btn:hover { background: #18493f; }
-@media (max-width: 820px) {
-  .book-intro { grid-template-columns: 1fr; gap: 12px; padding-bottom: 22px; }
-  .book-intro img { width: min(100%, 320px); margin-inline: auto; }
+.home .book-kicker { color: var(--accent); text-transform: uppercase; font: 600 12px/1.5 var(--mono); letter-spacing: .12em; }
+@media (max-width: 719px) {
+  .book-intro { grid-template-columns: 1fr; gap: 8px; padding-bottom: 22px; }
+  .book-intro img { width: min(100%, 285px); margin-inline: auto; }
 }
 
 .mechanism-map { margin: 0 0 12px; padding: 5px 1px 13px; border-bottom: 1px solid #e1eae6; }
