@@ -13,7 +13,7 @@ for file in files:
  for target in re.findall(r'\]\(([^)]+)\)',text):
   links+=1
   if target.startswith('https://github.com/earendil-works/pi/'):
-   m=re.match(r'https://github.com/earendil-works/pi/(?:blob|tree)/main/([^#]+)(?:#L(\d+))?',target)
+   m=re.match(r'https://github.com/earendil-works/pi/(?:blob|tree)/(?:main|[0-9a-f]{40})/([^#]+)(?:#L(\d+))?',target)
    if m:
     path=source/unquote(m[1])
     if not path.exists(): errors.append(f'{file.name}: missing source {m[1]}')

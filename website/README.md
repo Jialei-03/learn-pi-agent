@@ -4,10 +4,11 @@
 
 ## 本地构建和预览
 
-需要 Python 3 和 `markdown-it-py`、`beautifulsoup4`、`Pillow`、`Pygments`：
+需要 Node.js 22.19 或更新版本、Python 3 和 `markdown-it-py`、`beautifulsoup4`、`Pillow`、`Pygments`：
 
 ```bash
 python3 -m pip install markdown-it-py beautifulsoup4 Pillow Pygments
+npm ci --prefix examples/read-loop
 python3 website/build.py
 python3 -m http.server 18765 --bind 127.0.0.1 --directory website/dist
 ```
@@ -19,3 +20,5 @@ python3 -m http.server 18765 --bind 127.0.0.1 --directory website/dist
 ## 界面验证
 
 组件尺寸、响应式布局与浏览器操作记录见 [界面检查记录](UI-REVIEW.md)，其中包含实际截图。阅读页不统计进度或保存上次阅读位置。
+
+第一章在浏览器运行 Pi 的实际循环，使用可编辑的内存文件和本地模拟模型。第三章运行两个工具的批次和后续输入。第六章的图解数据在构建时用 Pi 的切点计算与会话投影生成。三个图解的源码均在 `examples/read-loop/`。

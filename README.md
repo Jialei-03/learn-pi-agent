@@ -16,6 +16,7 @@
 
 ## 内容与维护
 
+- [可运行示例](examples/read-loop/README.md)：用同一份模型脚本运行网页循环、内置文件工具与完整 SDK 会话。
 - `docs/`：18 章课程与导航。
 - `references/`：源码地图、术语、论文与内容维护证据。
 - `assets/`：Mox 教学配图与原有素材。角色规范见 [Mox IP](references/mox-ip.md)。

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Build the local course sources into the static reading site."""
-import json, re, shutil, hashlib
+import json, re, shutil, hashlib, subprocess
 from pathlib import Path
 from urllib.parse import quote, unquote
 from markdown_it import MarkdownIt
@@ -15,8 +15,16 @@ OUT = Path(__file__).resolve().parent / 'dist'
 OUT.mkdir(exist_ok=True)
 shutil.rmtree(OUT/'assets', ignore_errors=True)
 (OUT/'assets').mkdir(exist_ok=True)
-for name in ('index.html', 'style.css', 'app.js'):
+for name in ('index.html', 'style.css', 'app.js', 'experiments.js'):
     shutil.copy2(Path(__file__).resolve().parent/name, OUT/name)
+# Build the same runtime used by the Node example, then publish the tiny
+# projection fixture from Pi's own cut-point and projection functions.
+example = ROOT / 'examples/read-loop'
+subprocess.run(['npm', 'run', 'build:web'], cwd=example, check=True)
+projection = subprocess.check_output(['node', 'projection.mjs'], cwd=example)
+(OUT / 'projection.json').write_bytes(projection)
+(OUT / 'style.css').write_text((OUT / 'style.css').read_text() + '\n' + (ROOT / 'website/experiments.css').read_text())
+shutil.copyfile(example / 'THIRD-PARTY.txt', OUT / 'read-loop.LICENSE.txt')
 hero = ROOT/'assets/mox-illustrations/mox-learning-path.png'
 hero_out = OUT/'assets/mox-illustrations/mox-learning-path.webp'
 hero_out.parent.mkdir(parents=True, exist_ok=True)
@@ -35,7 +43,7 @@ for p in files:
     for code in soup.select('pre > code'):
         classes=code.get('class', [])
         language=next((x.removeprefix('language-') for x in classes if x.startswith('language-')), 'text')
-        if language in ('ts','typescript','json','bash','python','yaml','xml'):
+        if language in ('ts','typescript','js','javascript','json','jsonl','bash','python','yaml','xml','markdown'):
             try:
                 rendered=highlight(code.get_text(), get_lexer_by_name(language), HtmlFormatter(nowrap=True))
                 code.clear()
@@ -54,6 +62,13 @@ for p in files:
         base=re.sub(r'[^\w\-\u4e00-\u9fff ]','',title.lower()).strip().replace(' ', '-') or 'section'
         n=seen.get(base,0); seen[base]=n+1
         h['id']=base + ('-'+str(n) if n else '')
+    sections=[]
+    for heading in soup.select('h2,h3'):
+        parts=[]
+        for node in heading.next_siblings:
+            if node.name in ('h2','h3'): break
+            if node.name: parts.append(node.get_text(' ', strip=True))
+        sections.append({'id':heading['id'], 'title':heading.get_text(' ', strip=True), 'text':' '.join(parts)})
     for a in soup.select('a[href]'):
         href=a['href']
         if href.startswith(('http://','https://','mailto:')):
@@ -89,9 +104,21 @@ for p in files:
     title=soup.h1.get_text(' ',strip=True) if soup.h1 else p.stem
     kind='chapter' if re.match(r'^\d\d-',p.name) and not p.name.startswith('00-') else ('guide' if p.parent.name=='docs' else 'reference')
     items.append({'slug':p.stem,'title':title,'kind':kind,'number':int(p.name[:2]) if kind=='chapter' else None,
-                  'html':str(soup),'text':search_text, 'source':str(p.relative_to(ROOT))})
-digest=hashlib.sha256(((OUT/'app.js').read_text()+(OUT/'style.css').read_text()).encode()).hexdigest()[:12]
-html=(OUT/'index.html').read_text().replace('./app.js', './app.js?v='+digest).replace('./style.css', './style.css?v='+digest)
-(OUT/'index.html').write_text(html)
+                  'html':str(soup),'text':search_text, 'sections':sections, 'source':str(p.relative_to(ROOT))})
+# Fingerprint imported modules too, so an updated article cannot accidentally
+# run an older diagram from the browser cache.
+def revision(filename):
+    return hashlib.sha256((OUT / filename).read_bytes()).hexdigest()[:12]
+
+def version_imports(filename, dependencies):
+    path = OUT / filename
+    content = path.read_text()
+    for dependency in dependencies:
+        content = content.replace('./' + dependency, './' + dependency + '?v=' + revision(dependency))
+    path.write_text(content)
+
+version_imports('experiments.js', ['read-loop.mjs', 'projection.json'])
+version_imports('app.js', ['experiments.js'])
+version_imports('index.html', ['app.js', 'style.css'])
 (OUT/'course.json').write_text(json.dumps(items,ensure_ascii=False,separators=(',',':')),encoding='utf-8')
 print(f'Built {len(items)} pages to {OUT}')

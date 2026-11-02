@@ -1,46 +1,14 @@
 # Durable：提交、任务状态与崩溃后的继续执行
 
-保存聊天记录不足以回答“进程崩溃前那个外部动作到底执行了吗”。本章进入 `pi-durable`，说明持久化会话、提交、任务检查点和重放策略怎样协作。
+设想一个工具把款项提交给外部服务，然后进程在写入成功记录之前重启。会话里缺少结果，此时重新调用一次，会不会造成两次转账？Pi 仓库用一个金额为 7、回执为 70 的模拟服务，把这个问题写成了可重复的恢复测试。我们先从这个例子理解“继续”究竟从哪里开始。
 
 ![Mox 核对已提交记录与可能发生的外部动作](../assets/mox-mechanisms/durable.png)
 
-## 1. 两种运行路径
+## 1. 一条消息和一项可恢复的工作
 
-Coding Agent 的 `SessionManager` 保存可恢复消息树；`pi-durable` 则提供独立的 Harness、Conversation、Task、Submission 与存储接口。不能把一个包的持久化保证直接套到另一个包。
+前面看到的 `SessionManager` 管理消息树。`pi-durable` 则提供另一条运行路径。打开 `Harness` 时，应用把存储、注册的任务和运行配置交给它。一个 `Conversation` 接纳输入，创建可追踪的 `Submission`，具体执行单元称为 `Task`。任务状态里可以保存 `checkpoint`，其中的 `phase` 指向下次进入哪个处理函数。[Harness 的打开路径](https://github.com/earendil-works/pi/blob/main/packages/durable/src/harness/harness.ts) · [提交接口](https://github.com/earendil-works/pi/blob/main/packages/durable/src/harness/submissions.ts)
 
-Durable 中，模型轮次、工具和状态以存储提交组织。它还有实验性 API 和独立实现边界；学习重点应是其数据和控制语义。
-
-## 2. Harness 打开存储
-
-源码摘录：[packages/durable/src/harness/harness.ts](https://github.com/earendil-works/pi/blob/main/packages/durable/src/harness/harness.ts#L588)
-
-```ts
-async open<Tool extends ToolRegistration>(
-	storage: Storage,
-	options: HarnessOptions<Tool>,
-	context: Context,
-): Promise<Harness> {
-	context.abortSignal?.throwIfAborted();
-	const snapshot = options.registry.snapshot();
-	const missing = BUILTIN_TASKS.filter((task) => snapshot.task(task.definition.name) === undefined);
-	if (missing.length > 0) {
-		const names = missing.map((task) => task.definition.name).join(", ");
-		throw new Error(`Registry lacks built-in tasks ${names}; create it with createRegistry()`);
-	}
-	const harness = new HarnessImpl(storage, options, context);
-	try {
-		await harness.openTasks(context);
-	} catch (error) {
-		// The caller's context may be what failed open: close without it, and rethrow the open error.
-```
-
-`Harness.open()` 检查注册表中的内置任务，并启动已保存任务的处理。`root()` 取得根会话，`submit()` 接收输入，返回的 Submission 可以等待结果。内存存储只在进程内保留；恢复跨进程工作需要相应持久后端。
-
-Chord Context 显式携带取消和遥测上下文；它与发给模型的文本 Context 是不同对象。等待被取消也不等于已提交任务自动取消。
-
-## 3. 输入怎样被原子接纳
-
-源码摘录：[packages/durable/src/harness/submissions.ts](https://github.com/earendil-works/pi/blob/main/packages/durable/src/harness/submissions.ts#L65)
+源码摘录：[packages/durable/src/harness/submissions.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/src/harness/submissions.ts#L65)
 
 ```ts
 async submit(conversationId: ConversationId, draft: SubmissionDraft, context: Context): Promise<Submission> {
@@ -54,77 +22,60 @@ async submit(conversationId: ConversationId, draft: SubmissionDraft, context: Co
 }
 ```
 
-提交路径通过 Session 的事务边界接纳输入，并返回可跟踪的句柄。`submit(tx, draft)` 还允许将接纳放进调用者的提交，但对事务归属及读写时序有约束。
+返回的句柄保存提交标识。`wait(context)` 允许调用者等到提交结束，`abort(context)` 则显式请求中止。一次等待被取消和被跟踪的工作被取消属于两个操作。要在重启后继续，后端必须能跨进程保留事务提交的数据，恢复时仍需可解析原任务的注册定义。[等待与中止](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/src/harness/submissions.ts#L133)
 
-原子提交保证相关存储变化共同成功或失败。它无法把任意远端系统也自动放入同一个数据库事务。
+## 2. 跟踪一笔模拟转账
 
-## 4. 工具动作前先保存意图
+上游测试定义了一个只有 `prepare` 和 `apply` 两个阶段的任务。为了看清边界，下面只列出测试涉及的存储事实。`id` 表示同一项任务的标识。[任务定义与模拟服务](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/test/harness-tasks-recovery.test.ts#L50)
 
-工具任务先解析和校验参数、运行钩子，并再次验证最终参数。这里与低层 Agent 工具前钩子的再校验行为不同，必须按各自实现理解。
-
-源码摘录：[packages/durable/src/harness/tool.ts](https://github.com/earendil-works/pi/blob/main/packages/durable/src/harness/tool.ts#L195)
-
-```ts
-		const intent = { phase: "execute", arguments: final, replay: tool.replay ?? "unsafe" } as const;
-		return { status: "running", checkpoint: intent };
-	}, context);
-	await run(runtime, task.input, call, tool, final, context);
-},
-```
-
-保存意图后才进入执行。若进程在动作发生后、结果写入前崩溃，存档能说明动作可能已经开始，却不能从缺失结果推出动作肯定没有发生。
-
-## 5. 重放的具体规则
-
-源码摘录：[packages/durable/src/harness/tool.ts](https://github.com/earendil-works/pi/blob/main/packages/durable/src/harness/tool.ts#L207)
-
-```ts
-if (replay === "safe" && tool?.replay === "safe") {
-	// The rerun reports from scratch: clear what the interrupted attempt published, and show the slot running with
-	// the arguments it runs with again, as the deferred commit that showed them may have been lost with the crash.
-	await runtime.commit(async (tx) => {
-		const slot = toolSlot(await tx.doc(LiveDoc, runtime.conversationId), runtime.taskId);
-		if (slot !== undefined) {
-			clearProgress(slot);
-			slot.status = "running";
-			if ("parentTaskId" in slot) slot.arguments = args;
-		}
-		return undefined;
-	}, context);
-	return run(runtime, task.input, call, tool, args, context);
-}
-const message = `Tool ${call.name} was interrupted and may have partially run`;
-```
-
-恢复只有在保存的策略与当前工具策略都允许安全重放时才重新执行。其他中断路径会记录可能部分执行的状态。它不宣称任意外部动作都具备 exactly-once 语义。
-
-发送邮件、支付或发布等动作可能需要外部幂等键、状态查询和补偿。检查点解决恢复位置，业务系统仍需解决动作是否可重复。
-
-## 6. 人工批准也是持久状态
-
-可恢复的批准流程需要记录待执行的具体动作、申请人与批准结果，批准后重新检查动作是否仍有效。对话中的一句“同意”若无法关联动作和任务，恢复后就难以可靠执行。
-
-工具钩子阻止动作，可以提供接入位置；完整批准产品还需要存储、身份、UI 和恢复控制。不能把一个阻止回调等同于完整的人机协作系统。
-
-## 7. 从测试看恢复保证
-
-`harness-tasks-recovery.test.ts`、`harness-restart-failure.test.ts` 与 `harness-storage-failure.test.ts` 分别覆盖恢复、重启失败和存储故障。读测试要确认崩溃注入在哪个位置，以及断言的是存储状态、动作次数还是结果。
-
-下一章把这些执行边界放进安全模型，区分输入来源、策略、身份和系统隔离。
-
-## 8. 四个崩溃位置的不同含义
-
-| 崩溃位置 | 已知事实 | 恢复时的关键问题 |
+| 步骤 | 任务存储中的事实 | 外部模拟服务的事实 |
 | --- | --- | --- |
-| 意图保存之前 | 尚无已提交的执行意图 | 输入是否已被接纳 |
-| 意图已保存、动作前后不明 | 工具可能已开始 | 是否允许安全重放 |
-| 动作完成、结果未提交 | 外部效果可能存在 | 查询或幂等键能否确认 |
-| 结果已提交 | 已有持久完成事实 | 后续读取是否重复执行 |
+| 受理 | 输入金额为 7，初始阶段为 `prepare` | 尚未被调用 |
+| 准备完毕 | memo 记住 7，检查点记为 `{phase:"apply", key:"transfer-<id>"}` | 尚未被调用 |
+| 第一次 apply | 检查点仍是 `apply` | 服务收到键，保存 `7 × 10 = 70`，调用次数 1 |
+| 结果提交前关闭，重新打开 SQLite | 调度器把原来运行中的任务协调为 `pending`，保留键与 memo | 服务仍持有已有回执 |
+| 恢复并完成 | `resume()` 再次进入 `apply`，提交完成结果 `{receipt:70}` | 同一键收到第二次调用，返回已有回执 |
 
-Durable 的恢复逻辑对保存和当前 `safe` 策略同时检查，正是为了避免恢复时把策略变化忽略。默认不安全的动作不能仅因崩溃就盲目再次执行。
+为什么调用两次只产生一个有效结果？模拟服务的 `Map` 以传入的键查重，首次写入时计算回执，后续请求直接读取。要是每次尝试都生成新键，服务就会将第二次调用视为另一笔转账。键在执行之前写进检查点，因此重启不会改变它。
 
-这也说明“提交后再展示”的价值：观察者看到的状态能对应已保存事实。但外部服务和本地存储之间仍有不确定窗口，必须依据具体业务处理，而不能由通用 Harness 凭空消除。
+上游测试先等到服务收到第一次调用，再关闭并重开同一 SQLite 数据库。第二次 `resume()` 后，它同时断言任务结果为 70、调用次数为 2、服务端已应用的键只有 1 个。再次重开后，已完成的任务记录仍然相同。这里的服务是测试替身，保证来自服务端的查重逻辑和本地持久检查点的配合。[恢复测试与三个断言](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/test/harness-tasks-recovery.test.ts#L113)
 
+## 3. 普通工具调用如何决定能不能再跑
+
+用户自定义的转账任务明确实现了恢复逻辑。内置 `pi.tool` 任务面对的是大量语义各异的工具。它先解析和校验参数，依次运行 `beforeTool` 钩子。钩子可以阻止调用，也能返回替换后的参数。通过钩子后再校验一次，将参数整理为可持久化的 JSON，然后保存执行意图。[准备与二次校验](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/src/harness/tool.ts#L156)
+
+源码摘录：[packages/durable/src/harness/tool.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/src/harness/tool.ts#L195)
+
+```ts
+await runtime.commit(() => {
+	const intent = { phase: "execute", arguments: final, replay: tool.replay ?? "unsafe" } as const;
+	return { status: "running", checkpoint: intent };
+}, context);
+await run(runtime, task.input, call, tool, final, context);
+```
+
+这五行决定了故障边界。`await runtime.commit(...)` 完成后，才调用 `run(...)`。意图表明“这次动作已准备好执行，参数是这些”，具体的外部动作仍可能处在尚未发出、进行中、已完成三个时刻中的任何一个。没有声明重放策略的工具会把 `unsafe` 保存到意图中。
+
+恢复时先读取检查点，再查看当前环境里还能否解析同名工具，同时受到重复中断次数等守卫限制。走到重放判断时，需要保存的策略和当前工具的策略同时为 `safe`。条件成立会清空上次显示的部分进度，用保存的参数再次执行。条件不成立则生成“中断且可能已部分执行”的结果。[恢复分支与中断结果](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/src/harness/tool.ts#L200)
+
+| 第一次保存 | 重新打开时 | 普通恢复分支 |
+| --- | --- | --- |
+| `safe` | `safe` | 允许重跑 |
+| `safe` | `unsafe` | 当前定义已收紧，报告中断 |
+| `unsafe` | `safe` | 旧动作当时未声明可重放，报告中断 |
+| `unsafe` | `unsafe` | 报告中断 |
+
+前三行直接对应上游参数化测试。每组都先让工具进入执行，再关闭 Harness、更换注册策略并重开。允许重跑时断言总执行次数为 2，否则为 1，并检查工具结果的 `isError`。第四行可以由同一个布尔条件推导，也有默认不安全工具的独立用例。[策略变化的测试](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/test/harness-tools-recovery.test.ts#L200) · [保留部分输出的测试](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/test/harness-tools-recovery.test.ts#L109)
+
+## 4. “提交结束”和“每个工具都成功”有何差别
+
+在不安全工具的用例中，模拟模型先请求 `work`，收到中断的工具结果后，还有一条已安排的结束响应。最终 `Submission.status` 为 `done`，同一次记录中的工具结果却是 `isError: true`，并保留了第一次执行的部分文本。提交结束说明外层交互走到了结尾，业务是否完成要读具体结果。这和第 10 章固定阶段的成功判据是同一个问题，只是这里的证据能跨重启保存。[用例中的提交状态与工具结果](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/durable/test/harness-tools-recovery.test.ts#L120)
+
+## 5. 人工确认适合保存在哪一侧
+
+假设业务还要求人确认这笔转账。下面是基于上述边界的应用设计，数字、动作名和状态字段由应用定义。可以在调用外部服务之前保存 `{actionId, amount:7, status:"waiting"}`。界面针对这个 `actionId` 展示金额并写回决定。恢复时如果仍在等待，就重新展示同一请求。如果动作已获批且金额未变，就从保存的动作生成稳定键并执行。如果金额改了，原确认记录不能证明新的动作已获批。
+
+这样拆分后，每一份证据都能找到所有者。用户的决定保存在应用的动作记录里，任务的继续位置在检查点里，动作是否已生效则由外部服务的查询或幂等协议回答。临时存在内存里的弹窗回调不会随进程重启自动恢复。
 
 [继续阅读：Security：信任边界怎样在代码中落实](17-security-guardrails-and-governance.md)
 

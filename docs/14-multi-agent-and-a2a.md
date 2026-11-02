@@ -1,70 +1,91 @@
 # Multi-Agent：多个独立循环怎样协作
 
-本章从“一个 Agent 调查、另一个 Agent 修改”开始。多个模型调用并不天然构成多 Agent；关键是是否具有独立上下文、循环、状态和生命周期，以及任务与结果怎样跨越这些边界。
+在第 11 章，scout 先调查，planner 再根据调查结果制订计划。现在把其中一次委托放大。父 Agent 调用了一次工具，子 Agent 却可能经历好几轮工具调用。两个循环之间究竟共享了哪些数据？Pi 的 Subagent 扩展示例给出了从工具参数一直到操作系统进程的实现。
 
 ![Mox 解释本章的机制关系](../assets/multi-agent-illustrations/01-control-patterns.png)
 
-## 1. 四种控制关系
+## 1. 一个名字怎样选中执行配置
 
-Manager–Worker 描述管理者拆分与汇总；Agents-as-Tools 表示父 Agent 通过工具等待子任务；Handoff 转交活动工作；Delegation 则更一般地描述委托。它们可能组合，不能当成完全互斥的产品标签。
+假设父模型发出以下调用。这里的参数是教学示例。默认的 `agentScope` 为 `user`，所以例子假定用户已经装好了 `scout` 定义以及该扩展。[扩展示例与安装方式](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/extensions/subagent/README.md)
 
-Pi 的工具执行机制允许在工具内部组织子 Agent，但具体隔离和调度由实现选择。了解一种扩展示例，也不能推断所有产品都采用相同机制。
-
-## 2. Subagent 示例怎样启动进程
-
-[`examples/extensions/subagent/index.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/extensions/subagent/index.ts) 通过独立 Pi 子进程运行任务，使用 JSON 输出收集事件和结果。
-
-源码摘录：[packages/coding-agent/examples/extensions/subagent/index.ts](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/extensions/subagent/index.ts#L298)
-
-```ts
-const args: string[] = ["--mode", "json", "-p", "--no-session"];
-const inheritsDispatchConfig = !agent.model;
-const model = agent.model ?? dispatchDefaults.model;
-if (model) args.push("--model", model);
-if (inheritsDispatchConfig && dispatchDefaults.thinkingLevel) {
-	args.push("--thinking", dispatchDefaults.thinkingLevel);
-}
-if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
-
-let tmpPromptDir: string | null = null;
-let tmpPromptPath: string | null = null;
-
+```json
+{"agent":"scout","task":"定位处理空文件名的 CLI 代码，返回文件和函数名"}
 ```
 
-父进程调用工具，工具启动子进程，子进程拥有独立模型循环；父进程解析其输出，再生成父工具结果。这是一条真正的控制与数据流，而不是简单给同一个模型换一个称呼。
+扩展首先统计 single、parallel、chain 有几种模式被选中，只接受一种。然后根据作用域发现 Agent 定义。Markdown 文件的头部给出名字、描述、允许工具及可选模型，正文成为系统提示补充。找不到名字时会产生失败结果，附上可选的名字，不会启动子进程。[配置发现与结构](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/extensions/subagent/agents.ts) · [参数判定](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L481)
 
-## 3. 上下文隔离与契约
+模型回退有一个小细节。定义里显式配置了模型，就用它。没有配置则继承父会话的模型，只有这种继承情形才会一并传父级 thinking 设置。这样子角色选择了不同模型时，不会自动收到另一个模型的推理设置。[启动参数构造](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L298)
 
-Agent 定义的加载在同目录 `agents.ts`。父任务需要传递目标、输入材料、允许范围和结果要求；子任务只看到被传入和自行取得的上下文。
+## 2. 跨进程的输入是什么
 
-结果最好包含结论、证据、产物位置和失败状态。让子 Agent 复制整个聊天记录既浪费输入，也容易把无关指令和假设带过去。返回一句“完成”则难以验证发生了什么。
+`runSingleAgent` 使用 `--mode json -p --no-session` 作为基本参数，按需追加模型、推理级别及工具名称。如果角色有系统提示正文，父侧把它写入临时文件，以 `--append-system-prompt` 指向该文件。最后一个参数是以 `Task: ` 开头的任务字符串。下面是简化后的参数形状，省略了模型和工具的具体值。
 
-## 4. single、parallel 与 chain
+```text
+参数数组
+  --mode  json  -p  --no-session
+  --tools  <角色允许的工具列表>
+  --append-system-prompt  <临时文件路径>
+  Task: 定位处理空文件名的 CLI 代码，返回文件和函数名
+```
 
-示例分别组织单任务、并行任务和串行链。并行结果需要明确回收、合并与取消；串行则要限制上一节点输出进入下一节点的方式。不同进程仍可能共享 `cwd`，因此文件冲突不会因为上下文独立而消失。
+`spawn` 以 `shell: false` 启动 Pi，将任务作为一个参数传递。标准输入设为忽略，stdout、stderr 各接一条管道。工作目录默认使用父侧目录，也可以单独传入。子进程没有继承父 Session 的消息数组，但它仍可能读到同一目录里的文件和在该进程环境下可用的资源。`--no-session` 控制此次会话的持久化，也是另一个独立维度。[进程启动与输入通道](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L330)
 
-进程退出码、JSON 事件、文本和实际产物可能传达不同信息。父工具应保留错误和截断信息，而不是把所有退出都包装成成功的说明。
+## 3. 为什么要留一个未处理的缓冲区
 
-## 5. Durable 的任务和子会话
+JSON 模式的输出以换行分隔记录。操作系统交来的一个数据块可能只含半行，也可能有多行。父侧用这个处理器把数据块拼回记录。
 
-`pi-durable` 还提供自己的任务所有权和子任务机制，涉及持久化、恢复与取消。它与 CLI Subagent 扩展是不同实现路径。把其中一个的行为推广到另一个，会误判恢复保证和生命周期。
+源码摘录：[packages/coding-agent/examples/extensions/subagent/index.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L388)
 
-## 6. A2A 放在什么边界
+```ts
+proc.stdout.on("data", (data) => {
+	buffer += data.toString();
+	const lines = buffer.split("\n");
+	buffer = lines.pop() || "";
+	for (const line of lines) processLine(line);
+});
+```
 
-A2A 用于跨系统 Agent 协作；MCP 用于外部能力接入。协议适配需要任务标识、认证、状态、产物和取消映射，不能仅把一个本地 Session 的方法换成 HTTP 地址就视为完整协议实现。
+以只含 ASCII 字符的两个**示意字节块**推演算法，A 为 `{"type":"message_`，B 为 `end"}\n{"type":"other"}\n`，其中 `\n` 表示一个实际换行。收到 A，分割后没有完整行，所有字符留在 `buffer`。收到 B，连接后有两条完整记录，依次调用 `processLine`，尾部留下空串。遇到不合法 JSON 时，解析函数捕获错误并跳过该行。进程关闭时还会尝试解析最后一段非空缓冲，即使它没有末尾换行。[逐行解析与退出收尾](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L350)
 
-本章的源码事实来自 Pi 的 Subagent 示例与 Durable 任务路径；对 A2A 的讨论是架构比较，不声称 Pi 因此自动提供完整 A2A Server。
+这是这个扩展示例的解码实现。它对每个 Buffer 单独调用 `toString()`；如果一个 UTF-8 多字节字符恰好跨过字节块，单纯拼字符串可能损坏字符。若用相同协议实现自己的接收器，应在字节层保留未完成的字符或使用流式解码器。换行分帧解决的是“记录不完整”，字符解码另有边界。
 
-下一章进入执行环境，理解上下文独立与操作系统隔离的区别。
+## 4. 子结果怎样变回父工具结果
 
-## 7. 父子之间真正传递的数据
+收到 `message_end` 时，处理器把消息放入 `currentResult.messages`。如果是助手消息，还会累计轮数、输入输出 Token、缓存和费用，并记录最近的停止原因、错误文字。stderr 单独累积。父侧 `onUpdate` 可以展示进展，而提交给父模型的文本则要等这项工作结束后从消息里选取。[子消息与用量累积](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L360)
 
-Subagent 的进程输出会被解析为消息，assistant 的用量被计入结果；父工具随后对外返回可消费的信息。这使父 Agent 能将子任务视为一次工具调用，但父运行的 Context 并不会自动获得子进程全部内存。
+源码摘录：[packages/coding-agent/examples/extensions/subagent/index.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L180)
 
-取消也需要传播：父运行停止时，子进程或远端任务必须有明确的停止策略；等待者停止读取 stdout 不等于子进程已经退出。持久任务还要考虑子任务的所有权和重启后的归属。
+```ts
+function isFailedResult(result: SingleResult): boolean {
+	return result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
+}
 
-多个 Agent 协作能减少单个上下文负担，也增加通信、延迟和错误传播成本。只有任务可拆、契约清楚、验证能独立完成时，这些额外边界才更容易带来收益。
+function getResultOutput(result: SingleResult): string {
+	if (isFailedResult(result)) {
+		return result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
+	}
+	return getFinalOutput(result.messages) || "(no output)";
+}
+```
 
+| 执行情况 | 单子任务的判定 | 父侧会取什么文字 |
+| --- | --- | --- |
+| 退出码 0，最后助手完成并有文本 | 成功 | 最近含文本的助手消息中的第一个文本块 |
+| 进程正常退出，但助手 `stopReason = "error"` | 失败 | 优先取 `errorMessage`，然后是 stderr，再回退到助手文本 |
+| 子程序未能正常启动 | `error` 事件将退出码设为 1 | 错误信息或备用文本 |
+| 父运行取消，处理器已发停止信号 | 记录 `wasAborted`，等待结束后抛出中止异常 | 进入调用者的取消或错误路径 |
+
+模型看到的 `content` 和界面可使用的 `details.results` 目的不同。单任务成功只送出选中的最终文本。并行模式还会对每个任务的可见输出分别限长，完整结果仍保留于详情。链式模式选择最后一个成功步骤的文本向父侧返回，早期步骤留在详情里。[三种结果的返回分支](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L581)
+
+## 5. 取消和信任有什么进程级含义
+
+父运行的 `AbortSignal` 会触发 `proc.kill("SIGTERM")`，代码在 5 秒后根据 `proc.killed` 决定是否再发 `SIGKILL`。这个标志代表发过终止信号，不能单独证明整个子进程树已退出。示例在 `finally` 中清理角色提示的临时文件。需要可靠中止进程树的服务，还应核对进程和后代的实际生命周期。第 15 章内置 Shell 使用了自己的进程树处理。[子进程取消与清理](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L399)
+
+项目里的角色定义可以改变模型要执行的任务。示例默认只发现用户侧角色。如果允许项目角色、启用运行前确认、有 UI 且项目未受信任，扩展将检查被请求的角色是否真的来自项目，再决定是否弹出确认。回归测试让同一个虚拟模型请求项目角色，对已信任项目断言确认次数是 0，对未信任的交互项目则断言会询问，拒绝时工具文字包含取消原因。[确认条件](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L519) · [两种信任情形的测试](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/test/suite/regressions/8261-subagent-project-trust.test.ts#L69)
+
+## 6. 把本地委托放回系统地图
+
+本例属于“Agent 作为工具”。父模型生成动作，扩展负责运行独立的子循环，再把结果交回原父模型。传给下一步的材料来自显式任务字符串、角色配置和共享文件。跨服务的 A2A 协作还需另外定义任务标识、身份、状态、产物和取消如何跨网络传递。Pi 的 Durable 子任务又有自己的存储与恢复语义。它们可以解决相似业务问题，生命周期则分别由子进程、网络协议和持久任务系统承担。
 
 [继续阅读：执行环境：工具的动作到底在哪里发生](15-sandbox-code-agent-and-computer-use.md)
 

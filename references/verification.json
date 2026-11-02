@@ -1,60 +1,56 @@
 {
-  "checked_on": "2026-11-01",
-  "source_excerpts": 48,
-  "course_links_checked": 203,
+  "checked_on": "2026-11-02",
+  "upstream_commit": "3e0eec29f50e7861e9db91f2d12723267411b4f3",
+  "source_excerpts": 40,
+  "course_links_checked": 378,
   "upstream_build": "npm run build:offline passed",
   "selected_tests": [
     {
-      "package": "agent",
-      "files": [
-        "test/agent-loop.test.ts",
-        "test/agent.test.ts"
-      ],
-      "passed": 79,
-      "skipped": 0
+      "scope": "Agent loop and Agent state, read tool, streaming JSON argument handling",
+      "passed": 97
     },
     {
-      "package": "mcp",
-      "files": [
-        "test/client.test.ts",
-        "test/content.test.ts"
-      ],
-      "passed": 15,
-      "skipped": 0
-    },
-    {
-      "package": "coding-agent",
-      "files": [
-        "test/session-manager/build-context.test.ts",
-        "test/compaction.test.ts"
-      ],
-      "passed": 42,
+      "scope": "Compaction, system prompt updates, MCP extension, prompt templates, skills, extension runner, truncated summaries",
+      "passed": 244,
       "skipped": 2
     },
     {
-      "package": "durable",
-      "files": [
-        "test/harness-tasks-recovery.test.ts",
-        "test/harness-restart-failure.test.ts",
-        "test/harness-storage-failure.test.ts"
-      ],
-      "passed": 67,
-      "skipped": 0
+      "scope": "Plan mode, bash output truncation, subagent project trust, user bash interception, durable recovery, eval comparison and planning",
+      "passed": 56
     }
   ],
-  "test_command_from_package_directory": "node ../../node_modules/vitest/dist/cli.js --run <files>",
-  "total_passed": 203,
-  "total_skipped": 2,
-  "limits": [
-    "Only selected tests were run",
-    "No paid provider calls or model task evals were executed"
-  ],
+  "total_passed": 397,
+  "examples": {
+    "read_execute_counts": {
+      "success": 1,
+      "missing": 1,
+      "length": 0
+    },
+    "batch_request_counts": {
+      "mixed": 2,
+      "all": 1,
+      "followUp": 2
+    },
+    "session_messages": [
+      "system",
+      "user",
+      "assistant",
+      "toolResult",
+      "assistant"
+    ],
+    "projection_after": [
+      "compactionSummary",
+      "assistant",
+      "toolResult"
+    ]
+  },
   "website_checks": [
-    "Static build passed",
-    "JavaScript syntax passed",
-    "Browser screenshots inspected at 320, 390, 768, 1280 and 1440px widths",
-    "No page-level horizontal overflow at checked widths",
-    "Course menu, section navigation, search and code copying verified",
-    "Reading progress and reading position storage removed"
+    "25 pages built",
+    "18 chapters checked at 320, 390, 768 and 1440px",
+    "Chapter 1: all scenarios, editable fixture, trace fields, next and previous frame controls",
+    "Chapter 3: mixed and terminating batches, queued follow-up",
+    "Chapter 6: cut point, recovery and old leaf projection",
+    "Search deep link and mobile navigation checked",
+    "Real Pi runtime with a scripted model; no remote model evaluation performed"
   ]
 }

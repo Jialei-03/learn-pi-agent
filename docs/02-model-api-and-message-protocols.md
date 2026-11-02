@@ -1,130 +1,111 @@
-# 模型 API 与消息协议：一条消息怎样穿过 Provider
+# 消息协议：模型怎样拿到 README 的内容
 
-本章追踪第一章的 `read` 请求在模型边界上的表达：Pi 内部使用什么数据，供应商协议如何转换，以及流式内容怎样成为一条完整消息。理解这一层后，看到模型回复异常时，就可以区分上游响应、适配器与 Agent Loop 各自的责任。
+模型第一次收到“读取 README”时，文件内容尚未进入请求。第二次请求里出现了文件原文，模型才有材料回答。从第一次到第二次，要区分 Agent 保存的消息、模型层接收的消息列表，以及最终发给具体服务的 HTTP 请求体。这一章跟踪同一个调用标识 `read-1` 穿过这三层。
 
 ![Mox 将流式片段组装为消息](../assets/mox-mechanisms/stream.png)
 
-## 1. 三层接口分别负责什么
+## 第一次请求里有什么
 
-`pi-ai` 处理模型访问；`pi-agent-core` 用它推进循环；`pi-coding-agent` 再装配认证、会话与工具。模型 API 接收工具声明、返回调用请求，执行本地操作的代码仍在宿主程序里。
+假设项目的 README 介绍一个叫“木星笔记”的工具。本章的 JSON 是从源码规则推导出的教学示意，选取与解释有关的字段。先看用户输入进入 Agent 后的形状。
 
-[`types.ts`](https://github.com/earendil-works/pi/blob/main/packages/ai/src/types.ts) 中的 `Message` 是系统、用户、assistant 和工具结果消息的联合类型。程序先按 `role` 判断角色，再读取对应字段。
-
-源码摘录：[packages/ai/src/types.ts](https://github.com/earendil-works/pi/blob/main/packages/ai/src/types.ts#L561)
-
-```ts
-export interface SystemMessage {
-	role: "system";
-	/** Instruction text. On the leading message this is the base prompt; later, additional instructions. */
-	content: string | TextContent[];
-	/**
-	 * Named, ordered prompt sections rendered verbatim after `content`. The leading message
-	 * declares them; later messages replace sections by name, and `null` removes one. Keep
-	 * each section self-delimiting (a tag, a heading) so the model can relate an update to
-	 * the original. Avoid integer-like names; JSON objects reorder those.
-	 */
-	sections?: Record<string, string | null>;
-	/** Complete definitions of tools that become available at this point. */
-	toolsAdded?: Tool[];
-	/** Tools that stop being available at this point. */
-	toolsRemoved?: ToolReference[];
-	timestamp: number; // Unix timestamp in milliseconds
+```json
+{
+  "role": "user",
+  "content": [{ "type": "text", "text": "读取 README.md，告诉我这个项目是做什么的。" }]
 }
 ```
 
-系统消息还携带命名提示章节和工具增删声明。重放这些消息可以得到某一时点有效的指令和工具集，使变化过程进入消息历史。
+`role` 指消息的作者，`content` 可以包含多个块。用户既可以提交文字也可以提交图片，所以 Pi 用 `type` 标明每个块的形状。TypeScript 把这类“读一个标签就能确定后续字段”的类型写成联合类型。`role === "assistant"` 才能读取模型的 `stopReason`，`role === "toolResult"` 则可以读取 `toolCallId`。运行时的工具对象另放在 `AgentContext.tools` 中，`read.execute` 是宿主进程里的函数。[消息类型](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/types.ts#L561)
 
-## 2. Context 的标准化
+模型得知工具名字和参数格式的依据是一条系统消息。`declareToolChanges()` 取出历史系统消息已经声明的工具，再把当前可执行工具转换成声明，计算增删差异。首次提供 `read` 时，声明会进入 `toolsAdded`。稍后移除它时，历史里还可以看到旧调用，当前有效工具集合却已发生变化。[声明变更](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/agent/src/agent-loop.ts#L342) · [只提取声明字段](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/utils/transcript.ts#L123)
 
-公开接口接受 `Context`，允许调用者用 `systemPrompt` 和 `tools` 快捷字段；Provider 接收的 `TranscriptContext` 已把这些信息折入系统消息。
+| 数据所在位置 | 这次出现的内容 | 消费它的代码 |
+| --- | --- | --- |
+| Agent 的工具数组 | 名为 `read` 的对象，带 `parameters` 和可执行函数 | `prepareToolCall` 查找它，执行器调用 `execute` |
+| 系统消息 | `toolsAdded` 中的 `read` 声明，含名称、描述、参数 Schema | Provider 适配器转换工具定义 |
+| 用户消息 | 问题文字，包含字符串 `README.md` | 模型据此决定要调用哪个工具 |
 
-源码摘录：[packages/ai/src/types.ts](https://github.com/earendil-works/pi/blob/main/packages/ai/src/types.ts#L786)
+因此“允许读取哪些路径”还要由宿主的实际执行环境或策略实施。把路径写进用户问题，仅仅提供了一个名字。
+
+## 从 Agent 的上下文进入模型层
+
+在一次模型调用即将发出时，`streamAssistantResponse()` 先调用可选的 `transformContext` 选择本次要给模型的材料，再让 `convertToLlm` 把应用专用消息转成模型层识别的 `Message[]`。随后才创建标准化的请求上下文。
+
+源码摘录：[packages/agent/src/agent-loop.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/agent/src/agent-loop.ts#L398)
 
 ```ts
-export interface Context {
-	systemPrompt?: string;
-	messages: Message[];
-	tools?: Tool[];
+let messages = context.messages;
+if (config.transformContext) {
+	messages = await config.transformContext(messages, signal);
 }
-```
 
-源码摘录：[packages/agent/src/agent-loop.ts](https://github.com/earendil-works/pi/blob/main/packages/agent/src/agent-loop.ts#L404)
-
-```ts
+// Convert to LLM-compatible messages (AgentMessage[] → Message[])
 const llmMessages = await config.convertToLlm(messages);
 
 const llmContext = normalizeContext({ messages: llmMessages });
-
-// Resolve API key (important for expiring tokens)
-const resolvedApiKey =
-	(config.getApiKey ? await config.getApiKey(config.model.provider) : undefined) || config.apiKey;
-
-const response = await streamFunction(config.model, llmContext, {
-	...config,
-	apiKey: resolvedApiKey,
-	identity: mergeClientIdentity(DEFAULT_AGENT_IDENTITY, config.identity),
-	signal,
-});
 ```
 
-先转换消息，再标准化 Context，最后调用模型流函数。快捷输入和 Provider 实际收到的记录是两个处理阶段，不能混作同一个结构。
+这里的 `await` 表示要等上一步完成。假设历史里有四条旧消息，本次再追加一个问题，一个仅保留最后两条的 `transformContext` 会让转换器只看到“上一条回答、本次问题”。上游测试正是用四条旧消息和一个新问题构造该顺序，两个阶段分别记录数组，最后都得到长度 2。另一个测试捕获送入模型流函数的对象，检查它只有 `messages` 这个键，并检查首条系统消息就是调用者传入的对象。[转换顺序测试](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/agent/test/agent-loop.test.ts#L253) · [请求形状测试](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/agent/test/agent-loop.test.ts#L160)
 
-## 3. 工具请求和结果怎样配对
+`pi-ai` 的简便调用也能传顶层 `systemPrompt` 和 `tools`。下面是两条入口汇合的函数。传了快捷字段时，`createInitialSystemMessage` 将它们折成一条系统消息。Agent 这条链路传的是已含声明的 `messages`，因此直接沿用消息数组。`as TranscriptContext` 是 TypeScript 的类型断言，真正改变数据形状的是前面构造对象的代码。
 
-模型的统一请求内容块是 `ToolCall`：`id` 标识调用，`name` 指明工具，`arguments` 保存 JSON 参数。结果的 `toolCallId` 对应这个 ID，多个工具并行完成时也不依赖数组位置猜对应关系。
-
-源码摘录：[packages/ai/src/types.ts](https://github.com/earendil-works/pi/blob/main/packages/ai/src/types.ts#L444)
+源码摘录：[packages/ai/src/utils/transcript.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/utils/transcript.ts#L30)
 
 ```ts
-export interface ToolCall {
-	type: "toolCall";
-	id: string;
-	name: string;
-	arguments: JsonObject;
-	thoughtSignature?: string; // Google-specific: opaque signature for reusing thought context
-	/** OpenAI Responses namespace for calls to dynamically loaded or namespaced tools. */
-	namespace?: string;
-	/**
-	 * Set when the model's complete arguments text was not a valid JSON object. `arguments` is then `{}`.
-	 * Describes the problem and includes the text the model sent; tool argument validation fails with it.
-	 */
-	argumentsError?: string;
+export function normalizeContext(context: Context): TranscriptContext {
+	const initialMessage = createInitialSystemMessage(context.systemPrompt, context.tools);
+	const messages = initialMessage ? [initialMessage, ...context.messages] : context.messages;
+	return { messages } as TranscriptContext;
+}
 ```
 
-`argumentsError` 保留参数文本解析失败的诊断；后续校验会失败。收到流式参数片段，不意味着已经拥有合法的完整参数。
+## 同一份调用怎样写进 Anthropic 请求
 
-## 4. 以 Anthropic 适配器为例
+适配器接收标准化消息，`buildParams()` 取出首条系统指令，再转换对话、工具定义和请求选项。以普通 API Key、文本输入、固定工具集合为例，首个请求体的相关字段如下。示意简写了系统提示、工具说明及 Schema，省略具体模型名、Token 上限等字段。
 
-阅读 [`api/anthropic-messages.ts`](https://github.com/earendil-works/pi/blob/main/packages/ai/src/api/anthropic-messages.ts) 的 `buildParams`、`convertMessages` 和 `mapStopReason`：工具请求变成 `tool_use`，结果用 `tool_use_id` 关联请求；响应内容与停止原因再映射回统一类型。
+```json
+{
+  "system": [{ "type": "text", "text": "你可以读取项目文件。" }],
+  "tools": [{
+    "name": "read",
+    "description": "读取文件",
+    "input_schema": {
+      "type": "object",
+      "properties": { "path": { "type": "string" } },
+      "required": ["path"]
+    }
+  }],
+  "messages": [{
+    "role": "user",
+    "content": [{ "type": "text", "text": "读取 README.md，告诉我这个项目是做什么的。" }]
+  }],
+  "stream": true
+}
+```
 
-适配器还处理系统消息的位置、工具结果顺序、图片、缓存和供应商约束。它承担的是语义适配，而不只是字段改名。例如工具请求和结果之间存在系统更新时，仍要维持供应商要求的合法消息顺序。
+上一步的 `TranscriptContext` 只有 `messages` 一个字段，HTTP 请求却有 `system`、`tools`、`messages`。中间是 `buildParams` 做了拆分。这解释了为什么检查网络请求时，要把观测点放在适配器后面。对于工具动态变更、缓存、OAuth 或特殊模型，适配器还会按相应条件调整请求。[构造请求](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/api/anthropic-messages.ts#L1153) · [工具序列化](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/api/anthropic-messages.ts#L1663)
 
-[`providers/anthropic.ts`](https://github.com/earendil-works/pi/blob/main/packages/ai/src/providers/anthropic.ts) 注册模型、认证与 API；真正序列化请求和解析流的是 API 实现。排查问题时应找到后者。
+## 一串参数字符怎样变成调用对象
 
-## 5. Streaming 的事件边界
+第一次回答可能只包含一个工具请求。底层流按事件到达，一段参数字符串可能横跨多个事件。下表把同一个工具块的几个时刻展开。片段划分为教学示意，服务可以在别的位置分块。
 
-成功响应通常经历 `start`、内容增量和 `done`；准备请求失败也可能直接产生错误。`text_delta` 适合即时显示，完整消息才适合后续控制与存档。
-
-| 数据 | 适合做什么 | 不能推断什么 |
+| 时刻 | 服务给适配器的数据 | Pi 在这一刻做的事 |
 | --- | --- | --- |
-| 文本增量 | 更新显示 | 回答已经完整 |
-| 工具参数增量 | 组装请求 | 参数合法、工具已执行 |
-| 完整 assistant 消息 | 判断请求和停止原因 | Agent 必然已空闲 |
-| 工具结果 | 为下一轮提供观测 | 任务业务目标已完成 |
+| 打开内容块 | `tool_use`，ID 为 `read-1`，名字为 `read` | 在输出消息里创建 `toolCall`，用服务的块索引找到它的参数解析器 |
+| 第一段字符 | `{"path":"READ` | 将字符交给 `append`，向订阅者发出 `toolcall_delta`，其中携带当前部分消息 |
+| 第二段字符 | `ME.md"}` | 同一个解析器继续接收。拼接后的原文成为 `{"path":"README.md"}` |
+| 关闭内容块 | `content_block_stop` | 调 `finish()` 解析完整原文，把最终参数或错误写回这个块，然后发出 `toolcall_end` |
+| 模型结束响应 | `stop_reason = tool_use` | 映射成 `stopReason = "toolUse"`，最终的 assistant 消息交给循环 |
 
-Agent Loop 根据事件更新部分消息和最终消息，界面再订阅其变化。流式显示、模型响应完成、整段运行结束是不同时间点。
+`ToolCallArgumentsStream` 一方面保留收到的原文，另一方面维护增量解析器给界面显示当前值。最终解析会检查顶层对象形状。假如收到完整的 `[]`，这个值虽然是合法 JSON，却不满足工具参数须为对象的要求，结果会携带空参数和 `argumentsError`。后续工具校验会读取这个错误。即使参数看起来完整，若整个响应因长度上限结束，循环还会走另一条保护分支，见下一章。[流事件处理](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/api/anthropic-messages.ts#L756) · [增量解析器](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/utils/streaming-json.ts#L452) · [完整参数检查](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/utils/json-parse.ts#L106)
 
-## 6. 用测试核对转换顺序
+上游怎样确认渐进显示没有弄丢字符？一个测试构造含长正文的 `write` 调用，将参数文本每 24 个字符分一段，检查每个可显示的正文都是最终正文的前缀，长度只能增加或持平。最后它检查整条调用的参数等于最初构造的对象。只断言最后成功会漏掉中途显示回退，只断言界面有文字又会漏掉末尾缺失。[分片输入与断言](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/test/streaming-tool-arguments.test.ts#L340)
 
-[`agent-loop.test.ts`](https://github.com/earendil-works/pi/blob/main/packages/agent/test/agent-loop.test.ts) 的 `should build provider context exclusively from transcript messages` 检查 Provider 上下文来源；`should apply transformContext before convertToLlm` 检查转换顺序。一个 Provider 的案例只能证明其覆盖的协议行为，不能推广为全部服务的保证。
+## 第二次请求如何把文件交回模型
 
-下一章回到循环本身，观察统一消息怎样形成后续行动。
+文件读取完成后，Pi 有了一条 `role: "toolResult"` 的消息。它带有 `toolCallId: "read-1"` 和一个文本块。将它放进下一次请求时，Anthropic 适配器先构造如下内容块。
 
-## 7. 一条结果的协议转换实例
-
-假设统一工具结果包含 `toolCallId: "read-1"`、文本内容和 `isError: false`。Anthropic 适配器用下面的函数生成对应内容块：
-
-源码摘录：[packages/ai/src/api/anthropic-messages.ts](https://github.com/earendil-works/pi/blob/main/packages/ai/src/api/anthropic-messages.ts#L1334)
+源码摘录：[packages/ai/src/api/anthropic-messages.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/api/anthropic-messages.ts#L1334)
 
 ```ts
 function convertToolResult(msg: ToolResultMessage, content = msg.content): ContentBlockParam {
@@ -137,11 +118,31 @@ function convertToolResult(msg: ToolResultMessage, content = msg.content): Conte
 }
 ```
 
-可以逐项对应：关联 ID 进入 `tool_use_id`；内容经过 `convertContentBlocks()`；错误标记进入 `is_error`。这保留了调用关联、观测内容和失败语义。完整消息的角色和相邻顺序则由外层 `convertMessages()` 处理。
+`convertContentBlocks` 遇到纯文本结果时用换行连接文本块，返回字符串。外层 `convertMessages` 收集相邻的工具结果，把它们装进一条 `user` 角色的消息。于是第二次请求的 `messages` 在原有用户问题后新增两项。以下仅展示这两项，`\n` 表示文件中的换行。
 
-若 UI 能显示读取结果，模型却没有据此回答，应继续检查结果是否进入转换前的消息、是否被 Context 钩子筛掉、转换后的角色是否正确，以及供应商是否拒绝了消息序列。这比只检查接口是否返回 200 更接近实际故障链。
+```json
+[
+  {
+    "role": "assistant",
+    "content": [{
+      "type": "tool_use", "id": "read-1", "name": "read",
+      "input": { "path": "README.md" }
+    }]
+  },
+  {
+    "role": "user",
+    "content": [{
+      "type": "tool_result", "tool_use_id": "read-1", "is_error": false,
+      "content": "# 木星笔记\n\n一个将 Markdown 笔记整理成索引的命令行工具。\n"
+    }]
+  }
+]
+```
 
+网络请求中的第二个 `user` 由适配器生成。`type: "tool_result"` 和 `tool_use_id` 告诉服务，这是对上一条具体调用的答复。假如一次请求里同时读两个文件，两条调用都叫 `read`，这时仍能通过各自的 ID 配对。适配器还会安排中途系统更新的位置，以满足工具请求与结果的相邻关系。[结果内容编码](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/api/anthropic-messages.ts#L154) · [工具结果分组与消息顺序](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/api/anthropic-messages.ts#L1348)
 
-[继续阅读：Agent Loop：状态、事件、队列与停止条件](03-agent-loop-state-machine-and-stopping.md)
+第二次响应若正常生成解释，`end_turn` 映射为 `stop`。决定这两次请求属于同一次运行的是 Agent Loop。[停止原因映射](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/ai/src/api/anthropic-messages.ts#L1669)
 
-[返回课程路线](00-source-learning-path.md) · [查看源码地图](../references/source-map.md)
+课程的配套示例用脚本模型接收统一消息，同一输入可以反复重放。运行 `node cli.mjs success --json` 时，`requests[0]` 和 `requests[1]` 保存两次送给模型的消息投影。上文的 Anthropic 请求体是把这些语义映射到另一种协议的示意。[本地运行方法](../examples/read-loop/README.md) · [收集请求的代码](../examples/read-loop/run.mjs)
+
+[继续阅读：一次运行为什么有两轮模型调用](03-agent-loop-state-machine-and-stopping.md) · [课程路线](00-source-learning-path.md)

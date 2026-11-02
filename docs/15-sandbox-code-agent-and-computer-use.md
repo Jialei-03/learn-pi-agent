@@ -1,16 +1,23 @@
 # 执行环境：工具的动作到底在哪里发生
 
-模型要求运行测试时，真正接触文件、进程和网络的是执行器。本章从 Bash 和文件工具进入，解释工作目录、策略、沙箱和 Computer Use 的不同边界。
+假设一次测试输出了“开始检查”，然后以状态码 7 退出。界面可能已经显示了这行文字，模型又该从哪里知道命令失败了？顺着内置 `bash` 工具往下走，可以看到三种各自有寿命的数据：模型写出的参数、操作系统交还的字节流、Pi 最终提交的工具结果。
 
 ![Mox 解释本章的机制关系](../assets/sandbox-illustrations/03-cwd-is-not-sandbox.png)
 
-## 1. Shell 子进程怎样启动
+## 1. 从参数对象到子进程
 
-[`tools/bash.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/tools/bash.ts) 的默认操作使用 Node 子进程启动 Shell，并传递工作目录和环境。输出、超时、取消和子进程生命周期要分别处理。
+下面是一份教学输入，命令仅打印文字并返回非零状态。
 
-源码摘录：[packages/coding-agent/src/core/tools/bash.ts](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/tools/bash.ts#L112)
+```json
+{"command":"printf 'checking'; exit 7","timeout":10}
+```
+
+模型提供的是字符串和秒数。`createBashTool(cwd)` 创建定义并用 `wrapToolDefinition` 把它接进 Agent。收到调用后，`execute` 选取会话的工作目录，准备命令和环境，如果设置了 `commandPrefix` 或 `spawnHook`，实际执行的值还会变。最终执行位置由 `operations` 决定。默认实现先检查工作目录存在、取消信号尚未触发，再启动所配置的 Shell。[工具装配和执行入口](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L242)
+
+源码摘录：[packages/coding-agent/src/core/tools/bash.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L110)
 
 ```ts
+const commandFromStdin = shellConfig.commandTransport === "stdin";
 const child = spawn(shellConfig.shell, commandFromStdin ? shellConfig.args : [...shellConfig.args, command], {
 	cwd,
 	detached: process.platform !== "win32",
@@ -25,48 +32,61 @@ if (commandFromStdin) {
 if (child.pid) trackDetachedChildPid(child.pid);
 ```
 
-Shell 命令字符串有自己的语法和副作用。参数通过工具 Schema 只说明它是一个字符串，不保证命令安全或符合任务目的。
+这里的 `stdio` 指定三个通道。标准输入有两种用法，取决于 Shell 接收命令的方式。标准输出与标准错误分别接入管道，然后都把数据块交给同一个 `onData`。默认呈现会将两种输出汇集在一起，单看一行字符已经不能判断它最初走的是哪个通道。Shell 按自身语法解释 `;` 和 `exit`，所以这一条工具调用可以包含多个动作。[流接入和取消处理](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L125)
 
-## 2. `cwd` 的作用
+## 2. 输出逐渐到达，结果在退出后形成
 
-`cwd` 决定相对路径解析和资源发现的起点，绝对路径仍可能指向其他目录。`path-utils.ts` 的解析逻辑能帮助理解这点。工作目录是定位方式，不是文件系统权限边界。
+| 时刻 | 新获得的信息 | 由谁保存或消费 |
+| --- | --- | --- |
+| 开始执行 | 调用已开始，还没有输出 | 若提供 `onUpdate`，先发送空内容 |
+| 收到字节 | 此例得到 `checking` | `OutputAccumulator.append` 累积输出，按节流规则向界面发快照 |
+| Shell 结束 | 退出码为 7，管道可能还有数据 | `waitForChildProcess` 处理进程与管道的收尾 |
+| 生成结果 | 文本、结构化输出、错误标记 | `finishOutput` 完成快照，工具据退出码构造返回值 |
 
-同样，Git worktree 方便隔离文件修改和分支状态，却不是系统调用沙箱。进程仍使用启动账号的权限。
+更新是当前快照。将每个快照直接拼接成最终文本会重复之前收到的字符。实际的完成操作先关闭数据入口 `acceptingOutput`，停止计时器，发出待刷新的更新，再取最终快照并关闭临时文件。这个顺序给“最后一批数据”和“结算”画出明确边界。[累积、节流与完成快照](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L281)
 
-## 3. 替换 Operations
+源码摘录：[packages/coding-agent/src/core/tools/bash.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L399)
 
-Read、Bash 等工具提供可替换操作接口。把操作路由到远端执行器或隔离环境，可以复用上层工具契约，但必须检查所有动作是否都走了这条路径。
+```ts
+if (exitCode !== 0) {
+	return {
+		content: [{ type: "text", text: appendStatus(outputText, `Command exited with code ${exitCode}`) }],
+		details,
+		structuredContent,
+		isError: true,
+	};
+}
+return { content: [{ type: "text", text: outputText }], details, structuredContent };
+```
 
-若只替换 Bash，而读写工具或扩展仍在宿主运行，边界就只覆盖一部分动作。用户 Shell、安装器、语言服务器和自定义工具也可能产生副作用。
+沿上例推演，模型可见的 `content` 包含 `checking` 和 `Command exited with code 7`。调用方可以直接从 `structuredContent.exit_code` 读取 7，`isError` 为真。用时取决于实际运行。退出码 0 走代码块的最后一行。超时、取消则从异常分支带着已有输出离开，分别追加超时原因或 `Command aborted`。这解释了为什么业务层要检查状态字段，而不能只搜索输出中有没有“error”。[异常和结构化结果](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L360)
 
-## 4. 整体隔离与局部隔离
+## 3. 为什么同一条命令会有三种长度
 
-Pi 的 [`containerization.md`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/containerization.md) 描述整进程容器化及通过工具操作进行路由等方式。整进程隔离能够覆盖更多执行入口；工具路由能保留宿主交互和认证，但其余宿主代码仍在边界之外。
+测试日志可能有几万行。Pi 会为模型展示末尾最多 2,000 行、50 KiB，先达到的限制生效。日志尾部通常包含报错位置和最终的测试统计。截断时文本还会写明保留了哪一部分以及完整输出的临时文件路径。程序化调用读取的 `structuredContent.output` 有自己独立的 1 MiB 上限。完整文件、程序化输出与模型摘要的体积因此可以不同。[截断常量](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/truncate.ts#L11) · [结构化输出上限](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L22)
 
-挂载目录、网络、凭据和资源额度决定隔离环境实际能访问什么。给容器暴露所有宿主文件或高权限服务，会显著改变这条边界。
+例如运行产生 2,500 行很短的 ASCII 日志，且按字节未达到 50 KiB。模型看到的只是尾部和截断提示，程序化输出仍可能容纳全部字节。反过来，若只有一行极长的输出，限制先由字节数触发，提示可以描述最后一行保留了多少字节。行数本身无法预测结果。[截断说明的三个分支](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L337)
 
-## 5. Tool Gate 与 Sandbox
+## 4. 一个曾经丢日志的时序
 
-工具钩子可以阻止已识别的请求，适合业务策略和人类批准。沙箱通过系统或虚拟化限制进程能影响的资源。前者依赖具体调用路径和动作识别，后者约束实际执行环境。
+Shell 退出与最后一个写入者关闭管道可能相隔一段时间。举例说，一个命令派生了继承 stdout 的进程，父进程先退出，后者仍能写日志。一直等管道关闭可能卡住，在父进程退出时马上停止读取又可能丢数据。Pi 的等待逻辑在退出后观察管道活动，每次再收到数据就重置空闲计时器。[进程等待实现](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/utils/child-process.ts#L41)
 
-Pi 的安全文档明确要求把模型生成命令和项目内容当成不可信材料；默认运行使用启动账号权限，不会对每次工具调用都询问批准。
+回归测试使用虚拟时钟精确构造了这条时间线：
 
-## 6. Computer Use 的动作循环
+| 虚拟时刻 | 测试动作 | 可推断的状态 |
+| --- | --- | --- |
+| 0 ms | 写 `HEAD`，发出 `exit(0)` | 已知道退出码，等待仍在进行 |
+| 50 至 300 ms | 每隔 50 ms 再写一个 `TICK` | 连续六次延长空闲等待 |
+| 399 ms | 最后一次写入后 99 ms | 断言等待尚未结束 |
+| 400 ms | 再推进 1 ms | 返回 0，输出同时包含 `HEAD` 和 `TICK6` |
 
-截图或可访问性状态提供观察，模型提出点击或输入，宿主实际操作，再重新观察。它与读文件工具循环相似，但 UI 状态会变化，坐标和元素句柄可能失效。
+“100 ms”在这里表示最近一次活动后的空闲窗口。如果从退出起固定等待 100 ms，第六个数据块会消失。这种测试同时检查返回时机和保留内容，能捕捉只比对退出码会遗漏的错误。[回归用例与断言](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/test/suite/regressions/5303-bash-output-truncation.test.ts#L39)
 
-这属于另一种执行接口，不是本地 Pi CLI 自动拥有的所有能力。应用集成 Computer Use 时还需维护会话、输入范围、敏感操作和结果验证。
+## 5. 工作目录、取消与执行环境
 
-下一章研究程序崩溃后如何继续，尤其是外部动作已经发生而结果尚未保存时怎么办。
+`cwd` 为相对路径提供起点。默认执行器以当前操作系统用户的权限运行，能够访问哪些绝对路径、网络和凭据由进程环境决定。`timeout` 会触发杀进程树，调用者发出取消信号也会走杀进程树的路径。已经写入的文件会保留，事务回滚需要应用自己实现。[默认执行器](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L96)
 
-## 7. 输出截断与动作状态
-
-Shell 可以持续产生大量输出。UI 的预览、模型收到的文本和磁盘保存的完整输出有各自限制，不能只凭预览最后一行判定命令执行结果。退出码、超时或取消标记同样需要保留。
-
-文件工具也可能已经读取完整文件，再按行数或字节限制构造模型结果。输出长度限制保护 Context 和显示性能，不能代替文件访问控制。
-
-一个可检查的执行记录至少包含命令或工具名、解析后的目标、工作目录、停止原因和结果来源。涉及敏感数据时还需控制记录内容，避免为了调试把所有输入和环境无差别保存。
-
+要把命令放到远端或容器里，应沿 `BashOperations.exec(command, cwd, { onData, signal, timeout, env })` 这个接口替换执行后端。适配器需要把远端输出送回 `onData`，将远端状态变成本地退出码，并把取消传到真正运行命令的一端。只替换 Bash 只会改变走该接口的动作，文件工具和扩展的执行位置还要分别检查。屏幕点击等 Computer Use 工具同样需要自己的执行器与权限边界。[可替换的操作接口](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/tools/bash.ts#L70) · [Pi 的隔离部署说明](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/security.md)
 
 [继续阅读：Durable：提交、任务状态与崩溃后的继续执行](16-durable-execution-and-human-in-the-loop.md)
 

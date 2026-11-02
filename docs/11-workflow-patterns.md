@@ -1,104 +1,80 @@
 # Workflow Patterns：把多个 Agent 节点连接起来
 
-本章以代码修复流程为例，说明串行、路由、并行和评审循环如何建立在明确契约上。这里的模式是应用设计方法；Pi SDK 提供节点内部的 Agent 能力，应用决定节点如何组合。
+假设项目的 CLI 传入空文件名时会崩溃。要做四件事：找入口、检查已有测试、拟定修复计划、核验实际修改。知道它们之间的依赖，比先决定“用几个 Agent”更有用。Pi 的 Subagent 扩展示例提供一段真实的调度代码，正好可以用来推演哪些步骤能同时发生。
 
 ![Mox 解释本章的机制关系](../assets/workflow-pattern-illustrations/04-parallel-sectioning-and-voting.png)
 
-## 1. 节点首先要有契约
+## 1. 用数据依赖决定调度方式
 
-一个节点至少需要说明输入、产物、失败与取消的表达方式。对于代码修改，产物可以是 diff、测试记录和总结；对于检索，产物可以是来源和证据。让下游从一大段聊天文字猜测状态会变得脆弱。
+| 节点 | 需要的输入 | 交给下游的产物 | 何时可启动 |
+| --- | --- | --- | --- |
+| 调查入口 | 故障描述、仓库 | 相关函数和文件位置 | 立即 |
+| 调查测试 | 故障描述、仓库 | 覆盖范围、缺失用例 | 可与入口调查同时 |
+| 规划修复 | 两份调查结果 | 修改范围、验证条件 | 两份证据都回来后 |
+| 检查产物 | 实际修改和测试结果 | 通过或失败、具体原因 | 修改产生后 |
 
-Pi 的事件可用于显示进度，而持久的输出需要由应用明确选取。Session 的历史不是天然稳定的业务结果 Schema。
+这是一个教学设计。第一对节点独立读取仓库，适合并行。若两者同时写同一个快照文件，设计就多了一个共享依赖，需要分开工作目录或改变顺序。所谓路由，则是在这些节点之间根据结果选路。例如入口未找到时返回调查节点，证据完备才进入规划。路由条件来自代码时，即使节点里运行了模型，下一站仍由宿主决定。
 
-## 2. 串行与路由
+## 2. 串行链究竟传递什么
 
-串行节点依赖前一步的结果，例如先找到故障再修复。每个边界应验证前一步确实给出了下游需要的材料。路由可以是代码规则，也可以调用模型分类；模型参与分类不改变外层流程仍由代码选择分支这一事实。
+上游的 `scout-and-plan` 提示模板要求模型用 `subagent` 的 `chain` 参数，先派 scout 调查，再派 planner 生成计划。前者和后者是独立角色。以下是针对本章故障的**教学调用参数**，字段来自扩展示例。[上游提示模板](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/extensions/subagent/prompts/scout-and-plan.md) · [模式参数与执行入口](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L448)
 
-教学伪代码如下：
-
-```text
-diagnosis = 调查节点(仓库、问题)
-校验 diagnosis 的文件、症状与证据
-选择修复路径(diagnosis)
-修改节点(diagnosis)
-验证节点(实际修改与测试命令)
+```json
+{
+  "chain": [
+    {"agent":"scout","task":"查找 CLI 接收空文件名时的入口和测试"},
+    {"agent":"planner","task":"根据这些调查结果拟定修复计划：{previous}"}
+  ]
+}
 ```
 
-校验应检查内容而不只是字段是否存在，特别是命令输出和模型总结可能不一致。
+`previousOutput` 从空字符串开始。每一步先将任务中的 `{previous}` 替换成前一步选出的文本，再等待 `runSingleAgent(...)`。如果成功，`getFinalOutput` 逆序扫描消息，找到含文本块的最近助手消息，从其中取第一个文本块。假设它返回 `entry.ts 的 parseName 接受了空字符串`，这段话便会出现在 planner 的任务参数中。planner 并未收到 scout 的完整上下文；它可以凭文件位置再查原文。[链式替换与失败返回](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L548) · [最终文本的选择规则](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L168)
 
-## 3. 并行的前提是没有写入冲突
+如果 scout 的退出码非零，或停止原因是错误、中止，当前结果会被保存进 `details.results`，工具返回 `isError: true`，并在文字中指出停在哪一步。planner 不再启动。只有整个链成功才把最后一步文本放进父工具的 `content`。这使“第一步失败”和“规划结果为空”能在结果边界上区分开。
 
-独立调查可以并行，依赖对方产物的任务不能简单同时开始。多个节点写同一文件时，需要独立 checkout、工作区或显式合并策略；独立 Agent 对象不能替代这些边界。
+## 3. 并行怎样限制数量并维持顺序
 
-并行还要处理部分失败、超时、取消、结果回收和成本。最慢的关键依赖决定总时间；启动更多节点不保证更快。
+示例接受最多 8 个并行任务，同时运行的 worker 最多 4 个。这里的 worker 是一个不断取任务的异步函数，领取一个任务才启动相应子进程。
 
-## 4. Orchestrator–Workers
-
-管理者负责拆任务和聚合结果，Worker 负责局部目标。Pi 的 Subagent Extension 示例提供 single、parallel 和 chain 等执行组织，可以作为一个具体实现观察：
-
-源码摘录：[packages/coding-agent/examples/extensions/subagent/index.ts](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/extensions/subagent/index.ts#L270)
+源码摘录：[packages/coding-agent/examples/extensions/subagent/index.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L217)
 
 ```ts
-async function runSingleAgent(
-	defaultCwd: string,
-	dispatchDefaults: DispatchDefaults,
-	agents: AgentConfig[],
-	agentName: string,
-	task: string,
-	cwd: string | undefined,
-	step: number | undefined,
-	signal: AbortSignal | undefined,
-	onUpdate: OnUpdateCallback | undefined,
-	makeDetails: (results: SingleResult[]) => SubagentDetails,
-): Promise<SingleResult> {
-	const agent = agents.find((a) => a.name === agentName);
-
-	if (!agent) {
+async function mapWithConcurrencyLimit<TIn, TOut>(
+	items: TIn[],
+	concurrency: number,
+	fn: (item: TIn, index: number) => Promise<TOut>,
+): Promise<TOut[]> {
+	if (items.length === 0) return [];
+	const limit = Math.max(1, Math.min(concurrency, items.length));
+	const results: TOut[] = new Array(items.length);
+	let nextIndex = 0;
+	const workers = new Array(limit).fill(null).map(async () => {
+		while (true) {
+			const current = nextIndex++;
+			if (current >= items.length) return;
+			results[current] = await fn(items[current], current);
+		}
+	});
+	await Promise.all(workers);
+	return results;
+}
 ```
 
-此处展示的是仓库中的扩展示例，不代表每次 `createAgentSession()` 都自动启动这些子进程。核心、内置资源和可选示例需要分开定位。
+假设传入五个任务 A、B、C、D、E。前四个 worker 在第一次 `await` 前分别取得索引 0、1、2、3。若 B 最先完成，它把结果写到 `results[1]`，随后领取索引 4，开始 E。这时 A 不必结束。假设结束次序恰好是 B、D、E、C、A，最终数组依然是 A、B、C、D、E，因为每个结果写回自己领取的索引。这里的索引分配发生在同一个 JS 执行环境中，取号与递增之间没有异步等待。
 
-## 5. Evaluator–Optimizer
+`Promise.all(workers)` 等所有 worker 的循环结束。正常返回的子任务结果中可以有失败项，汇总时逐项套用 `isFailedResult`，生成例如 `Parallel: 4/5 succeeded` 的文字及每项的状态，详细记录保留在 `details`。这一汇总返回没有把任一普通子任务失败都升级为整个工具的 `isError`。调用端要据自己的业务定义判断“允许部分成功”还是“必须全部成功”。如果子进程调度本身抛异常，Promise 的拒绝又是另一条路径。[并行汇总与输出上限](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/examples/extensions/subagent/index.ts#L643)
 
-评审循环需要明确的评价标准、最大迭代次数和最好候选保存策略。否则“再改好一点”可能让结果越改越差。评审也可以出错，不能把另一个模型的肯定直接当成测试通过。
+## 4. 评审循环需要一项能终止循环的判断
 
-需要评估代码时，先依据实际执行结果检查行为，再结合可读性和设计评论。外部副作用应放在可靠的批准和执行边界之后。
+上游还有 `implement-and-review` 模板，指定 worker 修改、reviewer 评审、worker 应用反馈三个步骤。第三次调用由模板预先指定，次数有限。应用也可以把评审改为条件循环。以下是这两种方案在同一个故障上的区别。[三个固定步骤](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/extensions/subagent/prompts/implement-and-review.md)
 
-## 6. 运行证据
+| 本轮结果 | 固定链 | 教学设计中的条件循环 |
+| --- | --- | --- |
+| 审阅没有发现问题 | 仍有模板指定的后续步骤 | 若真实回归测试已通过，可返回候选 |
+| 发现缺少空字符串检查 | 最后一个 worker 接收评审文字 | 把失败断言和 diff 作为下一轮输入 |
+| 连续多轮没有改善 | 固定步骤到头即结束 | 达到预算后保留最佳已验证候选，停止自动修改 |
 
-应用记录节点 ID、输入来源、Session、产物、错误、取消和花费，有助于判断问题在哪个节点。重试时要辨别计算可重复与副作用可重复：重新分析通常不同于重复发送一封邮件。
-
-下一章研究规划和推理强度：模型产生计划，与系统按照计划可靠行动，依然是不同职责。
-
-## 7. 并行工作者为何仍需要外层约束
-
-Subagent 示例用 `spawn` 启动进程并解析逐行 JSON 输出：
-
-源码摘录：[packages/coding-agent/examples/extensions/subagent/index.ts](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/examples/extensions/subagent/index.ts#L344)
-
-```ts
-const proc = spawn(invocation.command, invocation.args, {
-	cwd: cwd ?? defaultCwd,
-	shell: false,
-	stdio: ["ignore", "pipe", "pipe"],
-});
-let buffer = "";
-
-const processLine = (line: string) => {
-	if (!line.trim()) return;
-	let event: any;
-	try {
-		event = JSON.parse(line);
-	} catch {
-		return;
-	}
-
-```
-
-每个子进程的消息和用量要归属到正确结果对象；父进程还要在返回前汇总状态。stdout 中出现不合法的一行，不应被当成一条正确的运行事件。
-
-并行修复两个模块时，即使模型上下文彼此独立，两个进程仍可能竞争共享文件和依赖安装目录。先设计哪些资源独占、哪些结果合并，再决定并发数，才能避免速度增加却更难复现。
-
+对这个故障，最有价值的交接材料包括具体函数、用例输入、期望行为和实际测试状态。模型可以根据这些材料改进代码，判定“空字符串是否仍然崩溃”的证据则来自运行。第 14 章会打开单个 worker 的子进程边界，看参数如何送达、状态又怎样回到这个调度器。
 
 [继续阅读：Planning 与 Reasoning：从推理配置到可执行计划](12-planning-and-reasoning-patterns.md)
 

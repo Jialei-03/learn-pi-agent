@@ -1,124 +1,136 @@
-# Skills 与 Prompt Templates：工作方法怎样进入请求
+# Skills 与 Prompt Templates：一份 Markdown 在哪一轮被读到
 
-用户可能反复要求相同格式的代码评审。工具提供读文件、运行测试等动作，Skill 则描述方法、顺序和标准。本章沿加载、索引、正文读取和命令展开，解释 Pi 的具体实现。
+项目有一份审阅指南。用户说「帮我审阅新模块」时，模型可能先调用 `read` 读取指南。用户改用 `/skill:review 新模块`，同一份指南却能直接出现在用户消息中。还有一种写法 `/review 新模块`，由提示模板展开。三种输入看起来都在「调用一个方法」，实际上有三条数据路径。
 
-![Mox 区分方法说明与可执行扩展](../assets/mox-mechanisms/extensions.png)
+![Mox 演示 Skill 的索引、正文与附属材料](../assets/skill-illustrations/02-progressive-disclosure.png)
 
-## 1. Skill 是可发现的指令资源
+## 1. 从两个文件开始
 
-`skills.ts` 解析目录中的 `SKILL.md` 和 frontmatter，得到名字、描述、位置及诊断。描述帮助模型判断任务是否匹配；正文和附属资料在需要时再读取。
+下面的教学目录放在已启用项目资源的示例项目中。`SKILL.md` 描述如何工作，`criteria.md` 存放可选的详细标准；另一个目录里的 `review.md` 是用户可以点名的模板。
 
-源码摘录：[packages/coding-agent/src/core/skills.ts](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/skills.ts#L358)
-
-```ts
-export function formatSkillsForPrompt(skills: Skill[], fileReadTool: "read" | "bash" | "indirect" = "read"): string {
-	const visibleSkills = skills.filter((s) => !s.disableModelInvocation);
-
-	if (visibleSkills.length === 0) {
-		return "";
-	}
-
-	const lines = [
-		"\n\nThe following skills provide specialized instructions for specific tasks.",
-		fileReadTool === "read"
-			? "Use the read tool to load a skill's file when the task matches its description."
-			: fileReadTool === "bash"
-				? "Use bash to load a skill's file when the task matches its description."
-				: "Load a skill's file when the task matches its description.",
-		"Resolve relative paths against the skill's directory (parent of SKILL.md). Use absolute paths in tool calls.",
-		"",
-		"<available_skills>",
+```text
+/work/demo/.pi/
+  skills/
+    review/
+      SKILL.md
+      criteria.md
+  prompts/
+    review.md
 ```
 
-`disableModelInvocation` 可以让某个 Skill 不进入模型自动选择的索引，但仍能被用户显式调用。索引可见性、资源是否存在、正文是否已加载，是三件事。
+`SKILL.md` 内容如下。顶部两个 `---` 之间的 YAML 称为 frontmatter，它供加载器读取元数据。空行以下是正文。
 
-## 2. 渐进式披露的真实含义
+```markdown
+---
+name: review
+description: 根据变更文件检查输入校验与失败处理。
+---
 
-系统提示中主要放名字、说明和路径，而不是把所有 Skill 正文都塞入每次请求。模型根据说明选择后，使用当前可用的读取能力加载正文。
-
-这样可以节省 Context，但不是自动保证选择正确。描述太宽会造成误触发，太窄则会遗漏；正文要求的工具缺失时，Skill 也不能凭文字创造新的执行能力。
-
-## 3. 显式 `/skill:name`
-
-AgentSession 的 `_expandSkillCommand()` 处理用户显式调用，把相应内容放入输入路径。它与模型自行选择并调用 `read` 读取 Skill 是两条流程。
-
-源码摘录：[packages/coding-agent/src/core/agent-session.ts](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/agent-session.ts#L2232)
-
-```ts
-private _expandSkillCommand(text: string): string {
-	if (!text.startsWith("/skill:")) return text;
-
-	const spaceIndex = text.indexOf(" ");
-	const skillName = spaceIndex === -1 ? text.slice(7) : text.slice(7, spaceIndex);
-	const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1).trim();
-
-	const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
-	if (!skill) return text; // Unknown skill, pass through
-
-	try {
-		const content = readFileSync(skill.filePath, "utf-8");
-		const body = stripFrontmatter(content).trim();
-		const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
-		return args ? `${skillBlock}\n\n${args}` : skillBlock;
-	} catch (err) {
-		// Emit error like extension commands do
-		this._extensionRunner.emitError({
+先读取变更文件，列出公开输入和可能失败的外部调用。
+遇到重试逻辑时，阅读同目录的 criteria.md。
 ```
 
-脚本、图片和 `references/` 目录是附属资源。正文引用它们并不代表文件会自动执行；只有后续工具调用真正发生，执行才会发生。
+发现时，`loadSkillFromFile` 读取文件、解析 frontmatter，构造的 `Skill` 对象含 `name`、`description`、`filePath`、`baseDir`、`sourceInfo` 和 `disableModelInvocation`。这里容易混淆「Pi 进程已经读过文件」与「模型已经收到正文」。加载器为了提取元数据读入了文件，传给索引格式化函数的对象里却没有正文属性。[源文件解析](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/skills.ts#L275)
 
-## 4. Prompt Template 的参数展开
+如果 `name` 没有填写，加载器可以使用父目录名。`description` 缺失或全是空白时，这份 Skill 会被跳过。命名规则告警可以和加载成功同时出现。两条路径若经符号链接解析到同一已注册文件会去重；不同文件声明同名时，`loadSkills` 保留先遇到的记录，把胜者和落选路径写进碰撞诊断。实际次序取决于加载器给出的路径顺序，因此定位选错的指南要看获选 `filePath`。[发现、去重与诊断](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/skills.ts#L414)
 
-Prompt Template 更接近一段可复用的输入文本。`parseCommandArgs()` 处理参数，`substituteArgs()` 把位置参数、全部参数、默认值或切片替换到模板。
+## 2. 模型自行选用时，第一次请求只有索引
 
-源码摘录：[packages/coding-agent/src/core/prompt-templates.ts](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/prompt-templates.ts#L76)
+`buildSystemPromptSections` 检查选中的工具和可见声明，决定是否加入技能索引，并给出合适的读文件提示。声明中若有 `read`，提示使用 `read`；需要通过间接机制读取时，提示避免硬编码一个未声明的工具名。然后 `formatSkillsForPrompt` 过滤 `disableModelInvocation`，逐个输出下面三个字段。[提示构建中的条件](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/system-prompt.ts#L171)
+
+源码摘录：[packages/coding-agent/src/core/skills.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/skills.ts#L377)
 
 ```ts
-export function substituteArgs(content: string, args: string[]): string {
-	const allArgs = args.join(" ");
-
-	return content.replace(
-		/\$\{(\d+|ARGUMENTS|@):-([^}]*)\}|\$\{@:(\d+)(?::(\d+))?\}|\$(ARGUMENTS|@|\d+)/g,
-		(_match, defaultTarget, defaultValue, sliceStart, sliceLength, simple) => {
-			if (defaultTarget) {
-				const value =
-					defaultTarget === "@" || defaultTarget === "ARGUMENTS" ? allArgs : args[parseInt(defaultTarget, 10) - 1];
-				return value ? value : defaultValue;
-			}
-
-			if (sliceStart) {
-				let start = parseInt(sliceStart, 10) - 1; // Convert to 0-indexed (user provides 1-indexed)
-				// Treat 0 as 1 (bash convention: args start at 1)
-				if (start < 0) start = 0;
+for (const skill of visibleSkills) {
+	lines.push("  <skill>");
+	lines.push(`    <name>${escapeXml(skill.name)}</name>`);
+	lines.push(`    <description>${escapeXml(skill.description)}</description>`);
+	lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
+	lines.push("  </skill>");
+}
 ```
 
-实现只在模板字符串上替换，不递归地把参数里看似 `$1` 的文本再展开。这个边界避免用户输入被多次解释。模板展开也不等于 Shell 执行；后续如果把文本当命令执行，仍要遵守命令参数的处理规则。
+因此一次正常的教学输入会得到如下系统章节片段。正文中的「遇到重试逻辑」尚未出现，`criteria.md` 也还没读。
 
-## 5. 三种能力的对照
+```xml
+<available_skills>
+  <skill>
+    <name>review</name>
+    <description>根据变更文件检查输入校验与失败处理。</description>
+    <location>/work/demo/.pi/skills/review/SKILL.md</location>
+  </skill>
+</available_skills>
+```
 
-| 对象 | 改变什么 | 运行位置 |
-| --- | --- | --- |
-| Skill | 模型采用的方法与上下文 | 指令经宿主进入模型请求 |
-| Prompt Template | 用户输入文本 | 模型调用前的文本展开 |
-| Extension | 工具、命令、事件、UI 等运行行为 | Pi 进程中的代码 |
+此时只有**模型选择**能触发下一步。设模型认为用户的任务匹配，它可以提出 `read({path:"/work/demo/.pi/skills/review/SKILL.md"})`。工具真正读取成功后，下一轮收到的 `toolResult` 里才出现文件内容。若模型随后需要详细标准，还需针对 `/work/demo/.pi/skills/review/criteria.md` 再次读取。相对引用的起点是 Skill 目录，即 `baseDir`。如果文件在发现后被移动，名称可能仍在这次索引快照中，真正的 `read` 却会失败。
 
-一个发布工作流可以同时使用三者：模板收集输入，Skill 说明发布标准，Extension 注册必要的工具和状态显示。组合仍要沿明确的调用链发生。
+```text
+请求 1  系统消息含 description + location；用户消息含审阅要求
+响应 1  assistant 发出 read(SKILL.md) 调用
+宿主    read 返回文件内容，形成 toolResult
+请求 2  原有消息 + assistant 调用 + toolResult；模型此时能读到方法正文
+```
 
-## 6. 质量和安全的判断
+这种拆分把每轮常驻的信息限制在简短的描述和位置。代价是描述必须足以帮助模型做决定，选用后还需一次实际读取。
 
-有效 Skill 应减少任务遗漏、改善证据和产出，而不是只让回复更长。可以比较同一组任务使用前后的结果，但模型具有随机性，需要多次案例而非一次印象。
+## 3. 用户显式写出 /skill:review 时
 
-Skill 是进入 Context 的指令来源，附属脚本还可能带来执行风险。项目资源信任与系统隔离的作用范围不同，后面会结合资源加载代码继续解释。
+`AgentSession.prompt` 在输入处理路径调用 `_expandSkillCommand`。该函数从 `/skill:` 后取第一个空格前的名字，从 `resourceLoader.getSkills().skills` 找到它，然后在宿主进程直接读取 `skill.filePath`，去掉 frontmatter 并把正文包起来。[命令解析与失败分支](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/agent-session.ts#L2232)
 
-## 7. 参数展开的可见结果
+源码摘录：[packages/coding-agent/src/core/agent-session.ts](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/agent-session.ts#L2243)
 
-以下为教学示例：模板 `Review $1; focus: ${2:-correctness}` 接收参数 `src/app.ts` 时，第二个参数缺省，输出包含 `focus: correctness`；提供第二个参数时使用它。位置参数从 1 开始，内部数组索引则减 1。
+```ts
+const content = readFileSync(skill.filePath, "utf-8");
+const body = stripFrontmatter(content).trim();
+const skillBlock = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>`;
+return args ? `${skillBlock}\n\n${args}` : skillBlock;
+```
 
-如果用户参数本身含 `$1`，它作为参数值进入结果后，不再递归展开。参数替换与程序执行是不同阶段，因此模板里出现“运行测试”这几个字，并不表示已经有子进程启动。
+输入 `/skill:review 新模块` 变成的**用户消息文本**如下。模板字符串中的 `\n` 在运行时是换行。
 
-Skill 正文的读取路径与模板不同：前者通常先出现在索引中，再由模型选择读取；显式 Skill 命令由 Session 展开。区分两条激活路径，才能解释为什么某次输入立即含有 Skill 正文，而另一次先出现工具读取事件。
+```text
+<skill name="review" location="/work/demo/.pi/skills/review/SKILL.md">
+References are relative to /work/demo/.pi/skills/review.
 
+先读取变更文件，列出公开输入和可能失败的外部调用。
+遇到重试逻辑时，阅读同目录的 criteria.md。
+</skill>
 
-[继续阅读：Extensions 与 Packages：能力怎样注册并参与运行](09-extensions-plugins-and-packages.md)
+新模块
+```
 
-[返回课程路线](00-source-learning-path.md) · [查看源码地图](../references/source-map.md)
+这条路径中读取正文不需要模型先选择或发出工具调用。若名称未找到，函数返回原文；若读取文件抛错，Session 会发出 `skill_expansion` 错误并返回原文。`disable-model-invocation: true` 只影响自动索引过滤，显式路径仍从已发现的技能集合按名字寻找。上游有一个测试把可见和禁用自动选择的 Skill 一同交给格式化器，断言结果只含前者，另一个测试检查全部禁用时最终结果是空字符串。[索引过滤测试](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/test/skills.test.ts#L308)
+
+## 4. /review 模板在发送前做字符串替换
+
+同一项目的 `prompts/review.md` 可以只有一行正文：
+
+```text
+请审阅 $1；优先检查 ${@:2}。
+```
+
+用户输入 `/review "src/payment service.ts" 超时 重试`，`expandPromptTemplate` 先按命令名找到 `review` 模板，再把参数文本交给 `parseCommandArgs`。解析器在引号内部保留空格，在引号外遇到空白才结束当前参数。这是本地字符串解析，没有启动 shell。[参数解析与替换](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/prompt-templates.ts#L25)
+
+| 阶段 | 手上的数据 |
+| --- | --- |
+| 命令名 | `review` |
+| 参数数组 | `["src/payment service.ts", "超时", "重试"]` |
+| `$1` | `src/payment service.ts` |
+| `${@:2}` | 从第 2 个参数起，用空格连接，得到 `超时 重试` |
+| 展开后的输入 | `请审阅 src/payment service.ts；优先检查 超时 重试。` |
+
+`$@` 或 `$ARGUMENTS` 表示全部参数，`${2:-失败处理}` 表示第二个参数缺失或为空时使用给定值。替换只扫描原始模板一遍。如果用户的一项参数恰好是字面量 `$1`，插入它后不会拿它再替换一次。上游用参数本身含 `${@:2}` 的情况断言了这一点。这使模板接收包含 shell 写法的文本时仍能保留原意。[模板展开入口](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/src/core/prompt-templates.ts#L309) · [单次替换测试](https://github.com/earendil-works/pi/blob/3e0eec29f50e7861e9db91f2d12723267411b4f3/packages/coding-agent/test/prompt-templates.test.ts#L287)
+
+## 5. 从消息轨迹判断发生了哪件事
+
+假设已经进入普通 prompt 路径，且扩展没有提前消费输入。
+
+| 入口 | 谁做选择 | 模型最早在哪儿看到方法或文本 | 运行时可观察的证据 |
+| --- | --- | --- | --- |
+| 用户说「帮我审阅」 | 模型根据技能描述判断 | 索引先出现；完整文件在读取后的工具结果里 | 有 assistant 的 `read` 请求及配对的 toolResult |
+| 用户输入 `/skill:review 文件` | Session 按已发现的名字展开 | 首次用户消息就含 `<skill ...>` 正文 | 展开本身没有额外的工具调用 |
+| 用户输入 `/review 文件` | Session 按模板名匹配 | 首次用户消息含替换后的提示 | 参数值成为文本，没有额外读取 Skill 的步骤 |
+
+这三个入口可以共存。一份 Skill 中要求「运行测试」，只是正文的一句话；要让测试实际运行，还要由模型提出 `bash` 等动作并经过工具执行路径。下一章的 Extension 则能直接在宿主注册函数，改变工具执行或消息转换的行为。
+
+[继续阅读：扩展的注册、执行与拦截](09-extensions-plugins-and-packages.md) · [返回课程路线](00-source-learning-path.md)

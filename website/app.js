@@ -1,3 +1,4 @@
+import { mountExperiments } from './experiments.js';
 const app = document.querySelector('#app');
 const nav = document.querySelector('#nav');
 const outline = document.querySelector('#outline');
@@ -20,7 +21,22 @@ function renderNav() {
 function home() {
   document.title = 'Learn Pi Agent · 源码学习手册';
   outline.innerHTML = '';
-  app.innerHTML = `<div class="home"><div class="home-intro"><div class="eyebrow">LEARN PI AGENT</div><h1>把 Agent 看透。<br><span>从源码开始。</span></h1><p>从一次模型调用，到完整的 Agent 系统。<br>沿着真实代码，理解每一个关键机制。</p><div class="home-actions"><a class="primary-btn" href="${route('00-source-learning-path')}">开始学习 <span>→</span></a><a class="continue-link" href="${route('01-from-llm-to-agent')}">阅读第一章 <span>›</span></a></div></div><div class="hero-visual" aria-label="Agent 从用户输入到模型和工具的运行关系"><div class="visual-caption">PI AGENT <span> / </span> SYSTEM OVERVIEW</div><div class="flow-track"><div class="flow-node"><span class="node-glyph">↗</span><span>输入</span></div><div class="flow-connector"></div><div class="flow-node focus-node"><span class="node-glyph">π</span><span>Agent Loop</span></div><div class="flow-connector"></div><div class="flow-node"><span class="node-glyph">⌘</span><span>工具</span></div></div><div class="visual-caption visual-bottom">MODEL <span>·</span> CONTEXT <span>·</span> TOOLS <span>·</span> SESSION</div></div><section class="home-section"><div class="section-head"><div><h2>先建立全局，再深入细节。</h2><p>一条围绕真实源码设计的学习路线。</p></div><a href="${route('00-source-learning-path')}" class="section-link">查看完整路线 <span>›</span></a></div><div class="learning-steps"><a href="${route('00-source-learning-path')}"><span class="step-num">01</span><div><h3>认识整体架构</h3><p>理解 Pi 各层如何连接，从系统全貌开始。</p></div><span class="step-arrow">↗</span></a><a href="${route('03-agent-loop-state-machine-and-stopping')}"><span class="step-num">02</span><div><h3>追踪一次请求</h3><p>走进模型、Agent Loop、工具与会话。</p></div><span class="step-arrow">↗</span></a><a href="${route('09-extensions-plugins-and-packages')}"><span class="step-num">03</span><div><h3>理解关键机制</h3><p>阅读上下文、扩展和工程边界的具体实现。</p></div><span class="step-arrow">↗</span></a></div></section><section class="home-section chapters-section"><div class="section-head"><div><h2>十八章，一步步读懂。</h2><p>概念、代码与工程实践，都在这里。</p></div><a class="section-link" href="${route('00-course-structure')}">课程结构 <span>›</span></a></div><div class="chapter-grid">${chapters.map(p=>`<a class="chapter-tile" href="${route(p.slug)}"><span class="tile-num">${String(p.number).padStart(2,'0')}</span><span class="tile-title">${e(p.title)}</span><span class="tile-arrow">›</span></a>`).join('')}</div><p class="more-note">十八章课程，沿真实调用链理解 Pi 的实现。</p></section></div>`;
+  const topics = [
+    ['01', '跟踪工具循环', '让 Pi 读一次 README，在图中切换成功、文件缺失和截断三种情形。', chapters[0]],
+    ['02', '观察上下文压缩', '沿一个调用和一份工具结果，找到历史记录的保留边界。', chapters[5]],
+    ['03', '运行完整 SDK 会话', '创建 Session，订阅消息，把每次事件和会话记录对起来。', chapters[12]],
+  ];
+  app.innerHTML = `<div class="home"><section class="book-intro"><div class="home-intro">
+    <div class="book-kicker">PI · SOURCE HANDBOOK</div><h1>Pi Agent<br>源码学习手册</h1>
+    <p>从读取一份 README 开始，看清消息、工具和会话怎样协作。</p>
+    <div class="home-actions"><a class="primary-btn" href="${route(chapters[0].slug)}">从第一章开始 →</a>
+    <a class="continue-link" href="${route('00-source-learning-path')}">学习路线 ›</a></div></div>
+    <img src="./assets/mox-mechanisms/loop.webp" width="1536" height="1024" alt="Mox 把模型的工具请求送进 read，再把文件内容送回模型"></section>
+    <section class="home-section"><div class="section-head"><div><h2>从三个案例进入</h2>
+    <p>每个案例都能找到对应的程序与运行结果。</p></div></div>
+    <div class="learning-steps">${topics.map(([n,title,description,page])=>`<a href="${route(page.slug)}"><span class="step-num">${n}</span><div><h3>${title}</h3><p>${description}</p></div><span class="step-arrow">↗</span></a>`).join('')}</div></section>
+    <section class="home-section"><div class="section-head"><h2>全书目录</h2><a class="section-link" href="${route('source-map')}">按源码查找 ›</a></div>
+    <div class="chapter-grid">${chapters.map(p=>`<a class="chapter-tile" href="${route(p.slug)}"><span class="tile-num">${String(p.number).padStart(2,'0')}</span><span class="tile-title">${e(p.title)}</span><span class="tile-arrow">›</span></a>`).join('')}</div></section></div>`;
 }
 function article(page, section) {
   document.title = `${page.title} · Learn Pi Agent`;
@@ -29,8 +45,9 @@ function article(page, section) {
   let prev = null, next = null;
   if(page.kind==='chapter'){const n=chapters.indexOf(page); prev=chapters[n-1]; next=chapters[n+1];}
   app.innerHTML = `<div class="reading-layout"><div class="breadcrumb"><a href="#/home">课程</a><span aria-hidden="true">/</span><span>${e(label)}</span></div><header class="reading-header"><h1>${e(page.title)}</h1></header><article class="article" id="article">${page.html}</article>${prev||next?`<nav class="next-row" aria-label="相邻章节">${prev?`<a href="${route(prev.slug)}"><small>← 上一章</small>${e(shortTitle(prev.title))}</a>`:''}${next?`<a href="${route(next.slug)}"><small>下一章 →</small>${e(shortTitle(next.title))}</a>`:''}</nav>`:''}</div>`;
+  mountExperiments(document.getElementById('article'));
   const headings = [...app.querySelectorAll('.article h2, .article h3')];
-  const sectionLinks = headings.map(h=>`<a class="${h.tagName==='H3'?'sub':''}" href="#${e(h.id)}">${e(h.textContent)}</a>`).join('');
+  const sectionLinks = headings.map(h=>`<a class="${h.tagName==='H3'?'sub':''}" href="${route(page.slug)}?section=${encodeURIComponent(h.id)}">${e(h.textContent)}</a>`).join('');
   outline.innerHTML = headings.length ? `<div class="outline-title">本页目录</div>${sectionLinks}` : '';
   if (headings.length) document.querySelector('.reading-header').insertAdjacentHTML('afterend', `<details class="compact-outline"><summary>本页目录</summary><nav aria-label="本页章节">${sectionLinks}</nav></details>`);
   if(section) requestAnimationFrame(()=>document.getElementById(section)?.scrollIntoView());
@@ -38,6 +55,15 @@ function article(page, section) {
 function render(){
   const raw=location.hash.startsWith('#/')?location.hash.slice(2):'home';
   const [slug,query='']=raw.split('?');
+  if (slug === current && query && document.getElementById('article')) {
+    const target = document.getElementById(new URLSearchParams(query).get('section'));
+    if (target) {
+      const menu = document.querySelector('.compact-outline');
+      if (menu) menu.open = false;
+      target.scrollIntoView({behavior:'instant'});
+      return;
+    }
+  }
   current=slug || 'home';
   const p=bySlug(current);
   if(current==='home') home(); else if(p) article(p,new URLSearchParams(query).get('section')); else {current='home';home();}
@@ -60,8 +86,25 @@ closeMenu();
 function doSearch(){
   const q=search.value.trim().toLowerCase();
   if(!q){results.innerHTML='<div class="search-result"><small>试试「Agent Loop」「工具」「Session」或「扩展」</small></div>';return;}
-  const hits=pages.map(p=>({p,score:(p.title.toLowerCase().includes(q)?100:0)+(p.text.toLowerCase().includes(q)?1:0),pos:p.text.toLowerCase().indexOf(q)})).filter(x=>x.score).sort((a,b)=>b.score-a.score).slice(0,12);
-  results.innerHTML=hits.length?hits.map(({p,pos})=>`<a class="search-result" href="${route(p.slug)}"><strong>${e(p.title)}</strong><small>${e(pos>=0 ? '…'+p.text.slice(Math.max(0,pos-35),pos+100)+'…' : p.source)}</small></a>`).join(''):'<div class="search-result"><small>没有找到相关内容，请尝试其他关键词。</small></div>';
+  const hits = pages.flatMap(page => {
+    const titleHit = page.title.toLowerCase().includes(q);
+    const parts = (page.sections || []).map(part => {
+      const offset = part.text.toLowerCase().indexOf(q);
+      const headingHit = part.title.toLowerCase().includes(q);
+      if (offset < 0 && !headingHit) return null;
+      const from = Math.max(0, offset - 24);
+      return { score: headingHit ? 6 : 2, title: part.title, section: part.id,
+        preview: (from ? '…' : '') + part.text.slice(from, from + 92) };
+    }).filter(Boolean).sort((a,b) => b.score - a.score);
+    if (titleHit) parts.unshift({ score: 8, title: '', preview: page.title, section: '' });
+    if (!parts.length && page.text.toLowerCase().includes(q)) parts.push({ score: 1, title: '', preview: page.title, section: '' });
+    return parts.slice(0,2).map(hit => ({ ...hit, page }));
+  }).sort((a,b) => b.score - a.score).slice(0,14);
+  results.innerHTML = hits.length ? hits.map(hit => {
+    const url = route(hit.page.slug) + (hit.section ? '?section=' + encodeURIComponent(hit.section) : '');
+    return `<a class="search-result" href="${url}"><strong>${e(hit.title || hit.page.title)}</strong>
+      <small>${e(hit.title ? shortTitle(hit.page.title) + ' · ' : '')}${e(hit.preview)}</small></a>`;
+  }).join('') : '<div class="search-result"><small>没有找到相关内容，请尝试其他关键词。</small></div>';
 }
 document.querySelector('#menu-button').addEventListener('click',()=>document.querySelector('#sidebar').classList.contains('open')?closeMenu():openMenu());
 document.querySelector('#veil').addEventListener('click',closeMenu);
