@@ -1,0 +1,25 @@
+{
+  "name": "learn-pi-agent",
+  "private": true,
+  "type": "module",
+  "description": "从零造一个 Coding Agent，读懂 Pi，补齐生产级能力",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "node site/build.ts",
+    "serve": "node site/serve.ts",
+    "check": "node site/build.ts --check",
+    "typecheck": "npx -y -p typescript@5.9.3 -p @types/node@22 tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0"
+  },
+  "devDependencies": {
+    "markdown-it": "14.1.0",
+    "shiki": "3.13.0"
+  }
+}

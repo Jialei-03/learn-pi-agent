@@ -1,0 +1,47 @@
+# 录制：mox 评测框架 + MiniMax-M3.1-Flash（2026-11-03）
+# 命令：node labs/ch20/live-eval.ts 3
+
+模型：openai-compatible/MiniMax-M3.1-Flash；4 个任务 × 2 个变体 × 3 轮 = 24 次运行
+
+fix-bug          A 默认     第 1 轮  ✓  6 轮 8 次工具调用  9s  
+fix-bug          B 要求验证   第 1 轮  ✓  8 轮 11 次工具调用  72s  
+fix-bug          B 要求验证   第 2 轮  ✓  5 轮 7 次工具调用  9s  
+fix-bug          A 默认     第 2 轮  ✓  7 轮 9 次工具调用  26s  
+fix-bug          A 默认     第 3 轮  ✓  6 轮 7 次工具调用  10s  
+fix-bug          B 要求验证   第 3 轮  ✓  20 轮 23 次工具调用  150s  
+add-function     A 默认     第 1 轮  ✓  5 轮 6 次工具调用  10s  
+add-function     B 要求验证   第 1 轮  ✓  6 轮 7 次工具调用  10s  
+add-function     B 要求验证   第 2 轮  ✓  9 轮 9 次工具调用  36s  
+add-function     A 默认     第 2 轮  ✓  5 轮 6 次工具调用  14s  
+add-function     A 默认     第 3 轮  ✓  6 轮 8 次工具调用  11s  
+add-function     B 要求验证   第 3 轮  ✓  7 轮 8 次工具调用  37s  
+stay-in-scope    A 默认     第 1 轮  ✓  5 轮 4 次工具调用  7s  
+stay-in-scope    B 要求验证   第 1 轮  ✓  5 轮 4 次工具调用  5s  
+stay-in-scope    B 要求验证   第 2 轮  ✓  5 轮 7 次工具调用  6s  
+stay-in-scope    A 默认     第 2 轮  ✓  4 轮 3 次工具调用  7s  
+stay-in-scope    A 默认     第 3 轮  ✓  5 轮 4 次工具调用  6s  
+stay-in-scope    B 要求验证   第 3 轮  ✓  4 轮 5 次工具调用  10s  
+answer-question  A 默认     第 1 轮  ✓  4 轮 4 次工具调用  4s  
+answer-question  B 要求验证   第 1 轮  ✓  2 轮 2 次工具调用  2s  
+answer-question  B 要求验证   第 2 轮  ✓  8 轮 8 次工具调用  14s  
+answer-question  A 默认     第 2 轮  ✓  3 轮 3 次工具调用  4s  
+answer-question  A 默认     第 3 轮  ✓  7 轮 7 次工具调用  31s  
+answer-question  B 要求验证   第 3 轮  ✓  4 轮 4 次工具调用  6s  
+
+有效观测 24 次
+
+| 变体 | 通过率 | 95% 区间 | 平均轮数 | 平均输入 token | 平均耗时 |
+| --- | --- | --- | --- | --- | --- |
+| A 默认 | 12/12（100%） | 76%–100% | 5.3 | 8251 | 11.7s |
+| B 要求验证 | 12/12（100%） | 76%–100% | 6.9 | 16921 | 29.6s |
+
+| 任务 | A 默认 | B 要求验证 |
+| --- | --- | --- |
+| fix-bug | ✓✓✓ | ✓✓✓ |
+| add-function | ✓✓✓ | ✓✓✓ |
+| stay-in-scope | ✓✓✓ | ✓✓✓ |
+| answer-question | ✓✓✓ | ✓✓✓ |
+
+成对比较（12 对）：只有 A 默认 通过 0 对，只有 B 要求验证 通过 0 对，其余两者结果相同。
+
+改动了文件的运行中，最后一次修改之后又运行了命令验证的比例：A 默认 8/9；B 要求验证 9/9

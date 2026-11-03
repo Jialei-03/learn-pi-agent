@@ -52,3 +52,7 @@ generated_images/
 videos/
 playwright-report/
 test-results/
+
+# 课程网站构建输出
+site/dist/
+assets/.cache/
