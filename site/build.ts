@@ -113,7 +113,7 @@ function renderExcerpt(kind: 'pi' | 'code', args: string, where: { slug: string;
   const lineCount = ex.end - ex.start + 1;
   const url = kind === 'pi'
     ? `${PI.repo}/blob/${PI.commit}/${ex.file}#L${ex.start}-L${ex.end}`
-    : `https://github.com/Jialei-03/learn-pi-agent/blob/v2/${ex.file}#L${ex.start}-L${ex.end}`;
+    : `https://github.com/Jialei-03/learn-pi-agent/blob/main/${ex.file}#L${ex.start}-L${ex.end}`;
   if (kind === 'pi') citations.push({ chapter: where.slug, title: where.title, file: ex.file, start: ex.start, end: ex.end, url });
   const badge = kind === 'pi' ? `<span class="src-badge pi">Pi ${PI.version}</span>` : '<span class="src-badge mox">mox</span>';
   const label = opts.title ? `<span class="src-title">${esc(decodeURIComponent(opts.title))}</span>` : '';
