@@ -2,7 +2,7 @@
 
 **从零造一个 Coding Agent，再读懂一个生产级的。**
 
-每一章都做同一件事：先用几十行代码亲手实现一个机制，再故意让它坏掉，然后去 [Pi](https://github.com/earendil-works/pi)（MIT）的源码里看生产级 Agent 是怎么修的。Pi 刻意没有内置的能力——权限规则、兼容 Claude Code 协议的 Hooks、长期记忆、子 Agent、后台任务——我们用 Pi 的扩展 API 自己写出来。
+每一章拆开 Coding Agent 的一个机制（循环、工具、上下文、会话、压缩、权限、沙箱、子 Agent……）：先用几十行代码亲手实现，再对照 [Pi](https://github.com/earendil-works/pi)（MIT）的源码，看生产级 Agent 怎么设计、为什么这样取舍。Pi 刻意没有内置的能力——权限规则、兼容 Claude Code 协议的 Hooks、长期记忆、子 Agent、后台任务——我们用 Pi 的扩展 API 自己写出来。
 
 学完你手里会有：
 

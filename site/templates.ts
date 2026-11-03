@@ -131,7 +131,7 @@ export function homePage() {
   <div class="hero-copy">
     <p class="eyebrow">Agent 工程课<span>·</span>基于 Pi ${PI.version}</p>
     <h1>从零造一个 Coding Agent<br><span class="hero-sub">再读懂一个生产级的</span></h1>
-    <p class="hero-lead">先用几十行代码亲手实现一个机制，再故意让它坏掉，然后去 Pi 的源码里看生产级 Agent 是怎么修的。Pi 没有内置的能力，我们写扩展补上。</p>
+    <p class="hero-lead">读代码、改文件、跑命令——Coding Agent 的每一个机制，在代码里是怎么做出来的？每章拆开一个：先用几十行代码亲手实现，再对照 Pi 的源码，看生产级的设计和它背后的取舍。Pi 没有内置的能力，我们写扩展补上。</p>
     <div class="hero-actions">
       <a class="btn primary" href="chapters/00-course-map.html">开始学习</a>
       <a class="btn-link" href="chapters/01-from-api-to-agent.html">直接写第一个 Agent →</a>
