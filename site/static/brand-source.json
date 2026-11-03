@@ -1,0 +1,8 @@
+{
+  "product": "Pi",
+  "source": "https://pi.dev/logo-auto.svg",
+  "description": "官方 Pi README 引用的 Logo",
+  "retrieved": "2026-11-03",
+  "sha256": "abd66e7868b2d24f0f0895f9237ee8a6dcb22337583b0dc54aeb595acecb4d6b",
+  "usage": "第三方学习项目的研究对象标识；不表示官方课程或背书"
+}

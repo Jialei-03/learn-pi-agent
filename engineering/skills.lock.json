@@ -1,0 +1,34 @@
+{
+  "observedDate": "2026-11-03",
+  "selection": "reviewed instructions; no automatic source hooks",
+  "repositories": [
+    {
+      "repo": "Egonex-AI/Understand-Anything",
+      "stars": 90132,
+      "commit": "4e6d3299017a7432da15957874992837a315c5b4",
+      "skills": [
+        "understand",
+        "understand-explain"
+      ],
+      "purpose": "源码架构、节点邻域和调用关系解读"
+    },
+    {
+      "repo": "kepano/obsidian-skills",
+      "stars": 50681,
+      "commit": "3ccff5338ea700537839b21900aa5358a0402c98",
+      "skills": [
+        "json-canvas"
+      ],
+      "purpose": "可编辑思维导图"
+    },
+    {
+      "repo": "softaworks/agent-toolkit",
+      "stars": 2618,
+      "commit": "3027f20f3181758385a1bb8c022d4041dfb4de84",
+      "skills": [
+        "mermaid-diagrams"
+      ],
+      "purpose": "工程流程图与 GitHub 图示语法"
+    }
+  ]
+}

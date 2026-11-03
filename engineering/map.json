@@ -1,0 +1,115 @@
+{
+  "title": "Pi Agent 工程地图",
+  "source": {
+    "repo": "https://github.com/earendil-works/pi",
+    "commit": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+    "version": "v1.5.0",
+    "directory": "../pi-v1.5.0",
+    "env": "PI_SRC"
+  },
+  "edgeSemantics": "主题分类与实现入口；不是完整调用图",
+  "groups": [
+    {
+      "label": "Agent 循环",
+      "nodes": [
+        {
+          "label": "循环入口",
+          "file": "packages/agent/src/agent-loop.ts",
+          "start": 47,
+          "end": 79
+        },
+        {
+          "label": "Agent 状态",
+          "file": "packages/agent/src/agent.ts",
+          "start": 194,
+          "end": 230
+        }
+      ]
+    },
+    {
+      "label": "工具与副作用",
+      "nodes": [
+        {
+          "label": "读文件契约",
+          "file": "packages/coding-agent/src/core/tools/read.ts",
+          "start": 85,
+          "end": 98
+        },
+        {
+          "label": "编辑验证",
+          "file": "packages/coding-agent/src/core/tools/edit.ts",
+          "start": 156,
+          "end": 170
+        }
+      ]
+    },
+    {
+      "label": "会话与上下文",
+      "nodes": [
+        {
+          "label": "SessionManager",
+          "file": "packages/coding-agent/src/core/session-manager.ts",
+          "start": 988,
+          "end": 1025
+        },
+        {
+          "label": "历史投影",
+          "file": "packages/coding-agent/src/core/session-manager.ts",
+          "start": 476,
+          "end": 519
+        }
+      ]
+    },
+    {
+      "label": "压缩与恢复",
+      "nodes": [
+        {
+          "label": "压缩参数",
+          "file": "packages/coding-agent/src/core/compaction/compaction.ts",
+          "start": 267,
+          "end": 270
+        },
+        {
+          "label": "压缩后上下文",
+          "file": "packages/coding-agent/src/core/agent-session.ts",
+          "start": 3010,
+          "end": 3056
+        }
+      ]
+    },
+    {
+      "label": "MCP 与扩展",
+      "nodes": [
+        {
+          "label": "MCP 客户端",
+          "file": "packages/mcp/src/client.ts",
+          "start": 536,
+          "end": 575
+        },
+        {
+          "label": "工具桥接",
+          "file": "packages/coding-agent/src/extensions/mcp/tools.ts",
+          "start": 312,
+          "end": 351
+        }
+      ]
+    },
+    {
+      "label": "协议与传输",
+      "nodes": [
+        {
+          "label": "JSON-RPC 契约",
+          "file": "packages/mcp/src/protocol/jsonrpc.ts",
+          "start": 1,
+          "end": 35
+        },
+        {
+          "label": "stdio 生命周期",
+          "file": "packages/mcp/src/transports/stdio.ts",
+          "start": 152,
+          "end": 179
+        }
+      ]
+    }
+  ]
+}

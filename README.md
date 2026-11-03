@@ -92,3 +92,7 @@ git clone --branch v1.5.0 https://github.com/earendil-works/pi.git ../pi-v1.5.0
 ## License
 
 MIT。Pi 源码摘录遵循 Pi 的 MIT 许可；Claude Code 相关内容仅引用其公开文档。
+
+## 工程地图与解读方法
+
+提供[源码工程地图](docs/engineering-map.md)、[可编辑 Canvas](engineering/architecture.canvas)和[工具与方法说明](docs/engineering-workflow.md)。本地阅读站顶栏的“工程地图”支持按主题筛选、缩放和打开固定源码；`npm run map:generate` 可重建。左上角使用软件官方原始图标，来源与哈希见 `site/static/brand-source.json`。

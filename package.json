@@ -10,7 +10,8 @@
     "build": "node site/build.ts",
     "serve": "node site/serve.ts",
     "check": "node site/build.ts --check",
-    "typecheck": "npx -y -p typescript@5.9.3 -p @types/node@22 tsc -p tsconfig.json"
+    "typecheck": "npx -y -p typescript@5.9.3 -p @types/node@22 tsc -p tsconfig.json",
+    "map:generate": "node scripts/engineering-map.mjs --write"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.5.0",

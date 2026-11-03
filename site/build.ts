@@ -21,6 +21,8 @@ import { createHighlighter } from 'shiki';
 import { PI, chapters, parts } from '../course/syllabus.ts';
 import { layout, homePage, interviewPage, moxMark, sourceIndexPage, type PageMeta } from './templates.ts';
 
+import { engineeringMap } from '../scripts/engineering-map.mjs';
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'site/dist');
 const PI_SRC = process.env.PI_SRC ?? join(ROOT, '../pi-v1.5.0');
@@ -379,6 +381,8 @@ for (const page of pages) {
   }
 }
 
+const MAP = engineeringMap(ROOT);
+pages.push({ file: 'map.html', html: MAP.html });
 pages.push({ file: 'index.html', html: homePage() });
 pages.push({ file: 'interview.html', html: interviewPage(interviews) });
 pages.push({ file: 'sources.html', html: sourceIndexPage(citations) });
@@ -410,5 +414,8 @@ for (const asset of usedAssets) {
     cpSync(cached, join(OUT, asset.replace(/\.png$/, '.webp')));
   }
 }
+mkdirSync(join(OUT, 'engineering'), { recursive: true });
+writeFileSync(join(OUT, 'engineering/architecture.canvas'), MAP.canvas);
+writeFileSync(join(OUT, 'engineering/engineering-map.md'), MAP.markdown);
 writeFileSync(join(OUT, 'static/search.json'), JSON.stringify(searchIndex));
 console.log(`已生成 ${relative(ROOT, OUT)}：${pages.length} 个页面，${citations.length} 处 Pi 源码摘录，${interviews.length} 道面试题`);

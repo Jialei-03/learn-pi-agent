@@ -431,3 +431,5 @@ figure:hover .copy, .copy:focus-visible, .copy.done { opacity: 1; }
 .lab-md td:first-child { white-space: nowrap; color: var(--muted); font-weight: 500; }
 .lab-md th:first-child { width: 1%; }
 .diagram .mono, .diagram .mono text { font-family: var(--mono); }
+
+.product-icon { display: block; flex: none; width: 30px; height: 30px; object-fit: contain; }
