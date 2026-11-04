@@ -177,9 +177,10 @@ document.querySelector('.theme-toggle')?.addEventListener('click', renderLessonD
 
 // 点击图示放大查看（复杂的流程图在正文栏里字太小）
 document.addEventListener('click', event => {
-  const figure = event.target.closest('figure.diagram, figure.lesson-diagram');
-  if (!figure || event.target.closest('a, button')) return;
-  const svg = figure.querySelector('svg');
+  const figure = event.target.closest('figure.diagram, figure.lesson-diagram, figure.stepper-figure');
+  if (!figure || event.target.closest('a, button, .stepper-bar')) return;
+  // 分步动画放大的是当前这一步
+  const svg = figure.querySelector('.stepper-frame.active svg') ?? figure.querySelector('svg');
   if (!svg) return;
   const overlay = document.createElement('div');
   overlay.className = 'diagram-zoom';
@@ -191,3 +192,110 @@ document.addEventListener('click', event => {
   document.addEventListener('keydown', onKey);
   document.body.appendChild(overlay);
 });
+
+// ───────── 书本式导航 ─────────
+(() => {
+  const OPEN_KEY = 'nav-open';
+  const saved = new Set(JSON.parse(localStorage.getItem(OPEN_KEY) || '[]'));
+  document.querySelectorAll('.nav-ch').forEach(li => {
+    if (saved.has(li.dataset.slug)) li.classList.add('open');
+    const btn = li.querySelector('.nav-ch-toggle');
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', String(li.classList.contains('open')));
+    btn.addEventListener('click', () => {
+      const open = li.classList.toggle('open');
+      btn.setAttribute('aria-expanded', String(open));
+      open ? saved.add(li.dataset.slug) : saved.delete(li.dataset.slug);
+      localStorage.setItem(OPEN_KEY, JSON.stringify([...saved]));
+    });
+  });
+  // 当前章的小节跟着滚动高亮
+  const current = document.querySelector('.nav-ch.current');
+  const links = current ? [...current.querySelectorAll('.nav-sections a[data-id]')] : [];
+  const heads = links.map(a => document.getElementById(a.dataset.id)).filter(Boolean);
+  const topbar = document.querySelector('.topbar');
+  const titleSlot = document.querySelector('.topbar-title');
+  const h1 = document.querySelector('.chapter-head h1');
+  if (titleSlot && h1) titleSlot.textContent = [...h1.childNodes].map(n => n.textContent.trim()).filter(Boolean).join(' ');
+  const back = document.createElement('button');
+  back.className = 'back-to-top';
+  back.type = 'button';
+  back.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>回到顶部';
+  back.addEventListener('click', () => scrollTo({ top: 0, behavior: 'smooth' }));
+  document.body.appendChild(back);
+  let last = 0;
+  const update = () => {
+    const y = scrollY;
+    if (h1 && topbar) topbar.classList.toggle('show-title', h1.getBoundingClientRect().bottom < 60);
+    back.classList.toggle('show', y > 800 && y < last);   // 往回滚时才出现，和 Material 一样
+    last = y;
+    if (heads.length) {
+      let active = heads[0];
+      for (const h of heads) if (h.getBoundingClientRect().top < 200) active = h;
+      links.forEach(a => a.classList.toggle('active', a.dataset.id === active.id));
+    }
+  };
+  addEventListener('scroll', update, { passive: true });
+  update();
+})();
+
+// ───────── 分步动画图 ─────────
+document.querySelectorAll('.stepper').forEach(el => {
+  const frames = [...el.querySelectorAll('.stepper-frame')];
+  const notes = frames.map(f => f.dataset.note || '');
+  const note = el.querySelector('.stepper-note');
+  const count = el.querySelector('.stepper-count');
+  const badge = el.querySelector('.stepper-badge');
+  const dots = el.querySelector('.stepper-dots');
+  const [playBtn, prevBtn, nextBtn] = ['play', 'prev', 'next'].map(k => el.querySelector(`[data-act="${k}"]`));
+  dots.innerHTML = frames.map(() => '<span></span>').join('');
+  let i = 0, timer = null;
+  const PLAY = '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg>';
+  const PAUSE = '<svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4h4v16H7zM13 4h4v16h-4z" fill="currentColor"/></svg>';
+  const show = n => {
+    i = (n + frames.length) % frames.length;
+    frames.forEach((f, k) => f.classList.toggle('active', k === i));
+    note.innerHTML = notes[i];
+    count.textContent = `${i + 1} / ${frames.length}`;
+    badge.textContent = `Step ${i + 1}`;
+    [...dots.children].forEach((d, k) => d.classList.toggle('on', k === i));
+    prevBtn.disabled = !timer && i === 0;
+    nextBtn.disabled = !timer && i === frames.length - 1;
+  };
+  const stop = () => { clearInterval(timer); timer = null; playBtn.innerHTML = PLAY; playBtn.setAttribute('aria-label', '播放'); show(i); };
+  playBtn.innerHTML = PLAY;
+  playBtn.addEventListener('click', () => {
+    if (timer) return stop();
+    if (i === frames.length - 1) show(0);
+    timer = setInterval(() => (i === frames.length - 1 ? stop() : show(i + 1)), 2200);
+    playBtn.innerHTML = PAUSE; playBtn.setAttribute('aria-label', '暂停');
+  });
+  prevBtn.addEventListener('click', () => { if (timer) stop(); show(i - 1); });
+  nextBtn.addEventListener('click', () => { if (timer) stop(); show(i + 1); });
+  el.addEventListener('keydown', e => { if (e.key === 'ArrowRight') nextBtn.click(); if (e.key === 'ArrowLeft') prevBtn.click(); });
+  show(0);
+  // 每一步的图高度不同：舞台取最高的一帧，切换时页面不跳
+  const stage = el.querySelector('.stepper-stage');
+  const fit = () => { stage.style.minHeight = Math.max(...frames.map(f => f.offsetHeight)) + 44 + 'px'; };
+  new ResizeObserver(fit).observe(stage);
+  frames.forEach(f => new ResizeObserver(fit).observe(f));
+});
+
+// ───────── 代码标签页：选中的标签在整站同步（和 hello-algo 切换语言一样）─────────
+(() => {
+  const KEY = 'code-tab';
+  const pick = (group, label) => {
+    const tabs = [...group.querySelectorAll('.code-tabs-bar button')];
+    const target = tabs.find(b => b.dataset.label === label) ?? tabs[0];
+    tabs.forEach(b => b.setAttribute('aria-selected', String(b === target)));
+    group.querySelectorAll('.code-tab').forEach(p => p.classList.toggle('active', p.dataset.label === target.dataset.label));
+  };
+  const groups = [...document.querySelectorAll('.code-tabs')];
+  groups.forEach(g => {
+    pick(g, localStorage.getItem(KEY));
+    g.querySelectorAll('.code-tabs-bar button').forEach(b => b.addEventListener('click', () => {
+      localStorage.setItem(KEY, b.dataset.label);
+      groups.forEach(x => pick(x, b.dataset.label));
+    }));
+  });
+})();

@@ -50,6 +50,58 @@ Pi 的评测说明里有一句话很准确：
 
 @pi packages/evals/README.md#L103-L105
 
+::: steps runOnce：一次评测运行从头到尾
+--- `runOnce` 为这一次运行建一个全新的临时目录。任务之间、变体之间、重复之间互不影响。
+flowchart LR
+  D["mkdtemp<br/>全新目录"]:::on --> G["git init"]:::dim --> S["setup<br/>布置现场"]:::dim --> CM["commit<br/>基线"]:::dim --> T["工具与提示<br/>含变体后缀"]:::dim --> L["runLoop<br/>180s 25 轮"]:::dim --> E{"出错？"}:::dim
+  E -- 是 --> INV["无效观测<br/>不计入通过率"]:::dim
+  E -- 否 --> GR["grade<br/>看最终状态"]:::dim
+  GR --> RM["finally<br/>删除目录"]:::dim
+  INV --> RM
+--- `git init` 把它变成仓库，评分时才能用 `git status` 精确知道 Agent 改了哪些文件。
+flowchart LR
+  D["mkdtemp<br/>全新目录"]:::done --> G["git init"]:::on --> S["setup<br/>布置现场"]:::dim --> CM["commit<br/>基线"]:::dim --> T["工具与提示<br/>含变体后缀"]:::dim --> L["runLoop<br/>180s 25 轮"]:::dim --> E{"出错？"}:::dim
+  E -- 是 --> INV["无效观测<br/>不计入通过率"]:::dim
+  E -- 否 --> GR["grade<br/>看最终状态"]:::dim
+  GR --> RM["finally<br/>删除目录"]:::dim
+  INV --> RM
+--- `c.setup(dir)` 由任务自己布置现场：写入代码文件、测试、README。
+flowchart LR
+  D["mkdtemp<br/>全新目录"]:::done --> G["git init"]:::done --> S["setup<br/>布置现场"]:::on --> CM["commit<br/>基线"]:::dim --> T["工具与提示<br/>含变体后缀"]:::dim --> L["runLoop<br/>180s 25 轮"]:::dim --> E{"出错？"}:::dim
+  E -- 是 --> INV["无效观测<br/>不计入通过率"]:::dim
+  E -- 否 --> GR["grade<br/>看最终状态"]:::dim
+  GR --> RM["finally<br/>删除目录"]:::dim
+  INV --> RM
+--- 布置完提交一次，作为基线。`--allow-empty` 让没有文件的任务也能提交。
+flowchart LR
+  D["mkdtemp<br/>全新目录"]:::done --> G["git init"]:::done --> S["setup<br/>布置现场"]:::done --> CM["commit<br/>基线"]:::on --> T["工具与提示<br/>含变体后缀"]:::dim --> L["runLoop<br/>180s 25 轮"]:::dim --> E{"出错？"}:::dim
+  E -- 是 --> INV["无效观测<br/>不计入通过率"]:::dim
+  E -- 否 --> GR["grade<br/>看最终状态"]:::dim
+  GR --> RM["finally<br/>删除目录"]:::dim
+  INV --> RM
+--- 取变体的工具（没有就用 `createCodingTools`），拼系统提示，再接上变体的 `systemPromptSuffix`。A/B 两个变体的区别就在这里。
+flowchart LR
+  D["mkdtemp<br/>全新目录"]:::done --> G["git init"]:::done --> S["setup<br/>布置现场"]:::done --> CM["commit<br/>基线"]:::done --> T["工具与提示<br/>含变体后缀"]:::on --> L["runLoop<br/>180s 25 轮"]:::dim --> E{"出错？"}:::dim
+  E -- 是 --> INV["无效观测<br/>不计入通过率"]:::dim
+  E -- 否 --> GR["grade<br/>看最终状态"]:::dim
+  GR --> RM["finally<br/>删除目录"]:::dim
+  INV --> RM
+--- 跑第 3 章的 `runLoop`：初始消息只有任务的提示，超时 180 秒由 `AbortController` 执行，`finishTurn` 在 25 轮时结束。出口是 `RunResult`：最终文字、全部消息、轮数、token、耗时。
+flowchart LR
+  D["mkdtemp<br/>全新目录"]:::done --> G["git init"]:::done --> S["setup<br/>布置现场"]:::done --> CM["commit<br/>基线"]:::done --> T["工具与提示<br/>含变体后缀"]:::done --> L["runLoop<br/>180s 25 轮"]:::on --> E{"出错？"}:::dim
+  E -- 是 --> INV["无效观测<br/>不计入通过率"]:::dim
+  E -- 否 --> GR["grade<br/>看最终状态"]:::dim
+  GR --> RM["finally<br/>删除目录"]:::dim
+  INV --> RM
+--- 先看 `result.error`：网络中断、超时是这次**观测无效**，直接记成不通过并标明“运行出错”，报告会把它单独统计。没出错，才调用 `c.grade` 看最终状态（隐藏测试、`git status`），不看模型怎么说。最后无论如何 `finally` 里删掉目录。
+flowchart LR
+  D["mkdtemp<br/>全新目录"]:::done --> G["git init"]:::done --> S["setup<br/>布置现场"]:::done --> CM["commit<br/>基线"]:::done --> T["工具与提示<br/>含变体后缀"]:::done --> L["runLoop<br/>180s 25 轮"]:::done --> E{"出错？"}:::on
+  E -- 是 --> INV["无效观测<br/>不计入通过率"]:::dim
+  E -- 否 --> GR["grade<br/>看最终状态"]:::on
+  GR --> RM["finally<br/>删除目录"]:::dim
+  INV --> RM
+:::
+
 ## 评分：看结果，不看说法
 
 第 18 章说过，模型说“完成了”不算数。评分也一样：**看最终状态，不看模型怎么说**。四个任务的评分方式：
@@ -91,10 +143,85 @@ Pi 的做法相同：评测代码在 Agent 运行结束后收集一份结构化�
 - **成对比较。** 同一个任务、同一轮，两个变体各跑一次，只看结果不同的那些对。任务之间的难度差异被抵消了，比直接比较两个通过率更敏感。
 - **交替顺序。** 奇数轮先跑 A，偶数轮先跑 B，避免“总是先跑的那个”占便宜（比如服务商的缓存、限流）。Pi 的评测计划就是这样排的：
 
+::: tabs
+@@ Pi
 @pi packages/evals/src/plan.ts#createTaskPlan
+把整个评测排成一份计划，奇偶轮交替先手。
+@@ mox
+@code evals/harness.ts#runEval
+三层循环，奇数轮用 `variants`，偶数轮用 `reverse()`。
+:::
 
 - **标出不稳定的任务。** 同一个变体时而通过时而失败的任务，最需要关注，也最容易误导结论。
 - **不要只看通过率。** 成本（token）、耗时、轮数同样是指标：一个通过率高 2 个百分点、成本翻倍的改动，未必值得。
+
+::: steps runEval：交替顺序与成对比较
+--- 对每个任务，`runEval` 依次跑 `run = 1..runs` 轮；每一轮里每个变体各跑一次，每一次都是上面的 `runOnce`。下面是一个任务、三轮、两个变体的顺序。
+flowchart LR
+  subgraph R1["第 1 轮（奇数）"]
+    A1["A"]:::dim --> B1["B"]:::dim
+  end
+  subgraph R2["第 2 轮（偶数）"]
+    B2["B"]:::dim --> A2["A"]:::dim
+  end
+  subgraph R3["第 3 轮（奇数）"]
+    A3["A"]:::dim --> B3["B"]:::dim
+  end
+  R1 --> R2 --> R3
+  R3 --> P["report：同一任务同一轮的 A 和 B 配成一对"]:::dim
+--- 奇数轮用 `variants` 的原顺序：先 A 后 B。
+flowchart LR
+  subgraph R1["第 1 轮（奇数）"]
+    A1["A"]:::on --> B1["B"]:::on
+  end
+  subgraph R2["第 2 轮（偶数）"]
+    B2["B"]:::dim --> A2["A"]:::dim
+  end
+  subgraph R3["第 3 轮（奇数）"]
+    A3["A"]:::dim --> B3["B"]:::dim
+  end
+  R1 --> R2 --> R3
+  R3 --> P["report：同一任务同一轮的 A 和 B 配成一对"]:::dim
+--- 偶数轮 `[...variants].reverse()`：先 B 后 A。总是排在前面的那个变体，会在服务商缓存、限流上占便宜；轮流先手，把这种偏差平摊给两边。
+flowchart LR
+  subgraph R1["第 1 轮（奇数）"]
+    A1["A"]:::done --> B1["B"]:::done
+  end
+  subgraph R2["第 2 轮（偶数）"]
+    B2["B"]:::on --> A2["A"]:::on
+  end
+  subgraph R3["第 3 轮（奇数）"]
+    A3["A"]:::dim --> B3["B"]:::dim
+  end
+  R1 --> R2 --> R3
+  R3 --> P["report：同一任务同一轮的 A 和 B 配成一对"]:::dim
+--- 第 3 轮又回到先 A 后 B。每个观测记下任务、变体、轮次、是否通过、token、耗时。
+flowchart LR
+  subgraph R1["第 1 轮（奇数）"]
+    A1["A"]:::done --> B1["B"]:::done
+  end
+  subgraph R2["第 2 轮（偶数）"]
+    B2["B"]:::done --> A2["A"]:::done
+  end
+  subgraph R3["第 3 轮（奇数）"]
+    A3["A"]:::on --> B3["B"]:::on
+  end
+  R1 --> R2 --> R3
+  R3 --> P["report：同一任务同一轮的 A 和 B 配成一对"]:::dim
+--- `report` 做成对比较：同一个任务、同一轮，A 和 B 都有**有效**结果（没出错）才算一对，只数结果不同的对。任务难度的差异在对里被抵消，比直接比较两个通过率更敏感。
+flowchart LR
+  subgraph R1["第 1 轮（奇数）"]
+    A1["A"]:::done --> B1["B"]:::done
+  end
+  subgraph R2["第 2 轮（偶数）"]
+    B2["B"]:::done --> A2["A"]:::done
+  end
+  subgraph R3["第 3 轮（奇数）"]
+    A3["A"]:::done --> B3["B"]:::done
+  end
+  R1 --> R2 --> R3
+  R3 --> P["report：同一任务同一轮的 A 和 B 配成一对"]:::on
+:::
 
 ## 一次真实的 A/B 评测
 

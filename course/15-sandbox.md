@@ -79,6 +79,57 @@ Linux 版本的参数：
 
 Python 读 `.env`、Node 在项目外写文件，这些第 14 章的规则看不到的操作，全被内核挡了下来。限制和命令用什么语言、怎么写都没有关系。
 
+::: steps 一条 bash 命令是怎样被包进沙箱的
+--- 模型写了一条规则看不穿的命令：用 Python 读 `.env`。对话记录里保存的也是这条原始命令，扩展不会改它。
+sequenceDiagram
+  participant M as 模型
+  participant B as bash 工具
+  participant X as 沙箱扩展
+  participant K as 内核（Seatbelt）
+  M->>B: bash：python 读 .env
+  Note over B: 规则看不穿这条命令
+--- bash 工具在**启动进程的前一刻**调用 `spawnHook`，把命令、工作目录、环境变量交给扩展。
+sequenceDiagram
+  participant M as 模型
+  participant B as bash 工具
+  participant X as 沙箱扩展
+  participant K as 内核（Seatbelt）
+  M->>B: bash：python 读 .env
+  B->>X: spawnHook(context)
+--- 扩展调用 `wrapCommand`：Seatbelt 下把命令改成 `sandbox-exec -f profile.sb /bin/bash -c '原命令'`，并给环境变量加上 `TMPDIR` 和代理变量（断网模式下代理变量被清空）。工具的参数、输出、截断规则都不变。
+sequenceDiagram
+  participant M as 模型
+  participant B as bash 工具
+  participant X as 沙箱扩展
+  participant K as 内核（Seatbelt）
+  B->>X: spawnHook(context)
+  X-->>B: 包进 sandbox-exec，加 env
+--- 进程在沙箱里启动。Python 不管怎么写，最终都要调用 `open`，这一步落到内核。
+sequenceDiagram
+  participant M as 模型
+  participant B as bash 工具
+  participant X as 沙箱扩展
+  participant K as 内核（Seatbelt）
+  X-->>B: 包进 sandbox-exec，加 env
+  B->>K: 启动进程，open .env
+--- 内核按 `seatbeltProfile` 生成的策略检查：`.env` 在禁止读取的列表里，直接拒绝，不关心发起者是 bash、Python 还是编译好的二进制。
+sequenceDiagram
+  participant M as 模型
+  participant B as bash 工具
+  participant X as 沙箱扩展
+  participant K as 内核（Seatbelt）
+  B->>K: 启动进程，open .env
+  K-->>B: Operation not permitted
+--- Python 抛出 `PermissionError`，这段输出和普通的失败一样回到模型。模型看到的是一个常规错误，可以据此调整做法，或者告诉用户需要什么权限。
+sequenceDiagram
+  participant M as 模型
+  participant B as bash 工具
+  participant X as 沙箱扩展
+  participant K as 内核（Seatbelt）
+  K-->>B: Operation not permitted
+  B-->>M: PermissionError 结果
+:::
+
 ## 项目目录里也有不能写的东西
 
 实验的第二行：在项目里写一个 git 钩子。项目目录明明是可写的，为什么要拦？
@@ -104,6 +155,53 @@ Python 读 `.env`、Node 在项目外写文件，这些第 14 章的规则看不
 
 实验的最后三行展示了三种结果：白名单里的域名经代理放行；不在白名单里的被代理拒绝；试图绕过代理直接连接（`--noproxy`），被内核拒绝。不认代理环境变量的程序（比如 `ssh`、多数数据库驱动）会直接连不上——这是对的，出错时拒绝。
 
+::: steps 沙箱里的网络：只有一扇通向代理的小窗
+--- 启动代理后，`wrapCommand` 给命令设置 `HTTP_PROXY`、`HTTPS_PROXY` 等变量，指向本机的代理端口。命令发出的请求会先去找这个代理。
+sequenceDiagram
+  participant C as 沙箱里的 curl
+  participant K as 内核（Seatbelt）
+  participant P as 代理（沙箱外）
+  participant W as 外部网站
+  Note over C: wrapCommand 设置 HTTP_PROXY 为 http://localhost:代理端口
+--- curl 读到变量，先连代理。沙箱策略禁止一切网络连接，**只放行这个本机端口**，所以这条连接通过。
+sequenceDiagram
+  participant C as 沙箱里的 curl
+  participant K as 内核（Seatbelt）
+  participant P as 代理（沙箱外）
+  participant W as 外部网站
+  Note over C: wrapCommand 设置 HTTP_PROXY 为 http://localhost:代理端口
+  C->>K: 连接 localhost:代理端口
+  K-->>C: 允许：策略只放行这一个本机端口
+--- 代理（在沙箱外，Agent 进程里）读出请求的域名，`hostAllowed` 对照白名单：`localhost` 在名单里，放行并转发，内容经代理回到命令。每个决定都通过 `onProxyDecision` 记录下来。
+sequenceDiagram
+  participant C as 沙箱里的 curl
+  participant K as 内核（Seatbelt）
+  participant P as 代理（沙箱外）
+  participant W as 外部网站
+  C->>P: 请求 localhost 的页面
+  Note over P: hostAllowed：localhost 在白名单里
+  P->>W: 转发请求
+  W-->>C: 经代理返回内容
+--- 换成 `127.0.0.1`：它不在白名单里，`hostAllowed` 为假，代理回复 403 和一句“沙箱代理拒绝访问 127.0.0.1”。HTTPS 则是在 `CONNECT` 阶段按主机名拒绝。
+sequenceDiagram
+  participant C as 沙箱里的 curl
+  participant K as 内核（Seatbelt）
+  participant P as 代理（沙箱外）
+  participant W as 外部网站
+  C->>P: 请求 127.0.0.1 的页面
+  Note over P: hostAllowed：不在白名单里
+  P-->>C: 403：沙箱代理拒绝访问 127.0.0.1
+--- 最后一招：`--noproxy` 绕过代理直接连外网。这次连的不是那个本机端口，内核直接拒绝，curl 以退出码 7 失败。白名单靠的是内核封死其他出口，不是靠命令“自觉”用代理。
+sequenceDiagram
+  participant C as 沙箱里的 curl
+  participant K as 内核（Seatbelt）
+  participant P as 代理（沙箱外）
+  participant W as 外部网站
+  P-->>C: 403：沙箱代理拒绝访问 127.0.0.1
+  C->>K: curl --noproxy 直连外部地址
+  K-x C: 拒绝：连接失败，退出码 7
+:::
+
 代理挡不住的东西也要心里有数：
 
 - **白名单里的域名可能被用来传数据。** 放行 `github.com`，命令就可以把你的代码推送到任何一个 GitHub 仓库。白名单要尽量具体，优先只读的源（比如软件包仓库）。
@@ -121,6 +219,17 @@ Python 读 `.env`、Node 在项目外写文件，这些第 14 章的规则看不
 正常的开发操作（在项目里写文件、运行 node）不受影响；读凭据、写到桌面、上网都被挡下。模型看到的是普通的 “Operation not permitted” 错误，它可以据此调整做法，或者告诉用户需要什么权限。
 
 mox 没有 `spawnHook`，`extensions/sandbox/mox.ts` 换了一种办法：在 `tool_call` 里直接改写 `bash` 的 `command` 参数。这样做有一个顺序问题：权限扩展（第 14 章）必须在它**之前**加载，否则权限规则看到的将是改写后的 `sandbox-exec …` 命令。
+
+同一件事——“在进程启动前把 bash 命令包进沙箱”——Pi 和 mox 的两种做法：
+
+::: tabs
+@@ Pi
+@code extensions/sandbox/index.ts#L45-L50
+用 `spawnHook` 在启动进程的一刻改写命令和环境变量，工具的参数和对话记录不变。
+@@ mox
+@code extensions/sandbox/mox.ts#L33-L39
+没有 `spawnHook`，就在 `tool_call` 里直接改 `event.input.command`，环境变量用 `env` 命令带进去；所以这个扩展必须最后加载。
+:::
 
 还要记住沙箱**只管 bash**。`read`、`write`、`edit` 运行在 Agent 进程里，由权限规则管；钩子脚本、MCP 服务器、扩展同样不在沙箱里。Claude Code 也是这样划分的。要连同这些一起隔离，就得把整个 Agent 放进容器或虚拟机。
 

@@ -70,6 +70,84 @@ build: 回顾整个 mox：约 2900 行核心代码，加上约 2000 行扩展
 
 每一行开头是负责这一步的章节。按顺序看一遍，就是整门课的缩影：扩展加载（第 9 章）→ 设定目标（18）→ 提问前拍快照（16）→ 组装系统提示（6、10、11、13）→ 循环开始（3），每次请求前修复历史（7）→ 交给子 Agent 调研（17）→ 修改文件（5，acceptEdits 下自动放行，14）→ 危险命令被钩子拦下（13）→ `.env` 被拦下（13、14）→ 测试在沙箱里运行（15）→ 保存记忆（10）→ 准备停下时检查目标（18）。
 
+::: steps 一次提问的旅程：从输入到目标达成
+--- `host.load` 依次装入 hooks、permissions、memory、checkpoint、goal、sandbox，**sandbox 最后加载**：权限和钩子看到的是改写之前的命令。然后广播 `session_start`。
+flowchart LR
+  A["加载扩展<br/>第 9 章"]:::on --> B["设定目标<br/>第 18 章"]:::dim --> C["提问前<br/>第 13、16 章"]:::dim --> D["系统提示<br/>第 6、10、11 章"]:::dim --> E["循环<br/>第 3、7 章"]:::dim --> F["工具过关<br/>第 13 到 17 章"]:::dim --> G["准备停下<br/>第 18 章"]:::dim
+  G -- 没达成：followUp --> E
+--- `/goal "node test.js" 修好 add`：目标扩展只是记下检查命令。真正的检查要等到模型准备停下。
+flowchart LR
+  A["加载扩展<br/>第 9 章"]:::done --> B["设定目标<br/>第 18 章"]:::on --> C["提问前<br/>第 13、16 章"]:::dim --> D["系统提示<br/>第 6、10、11 章"]:::dim --> E["循环<br/>第 3、7 章"]:::dim --> F["工具过关<br/>第 13 到 17 章"]:::dim --> G["准备停下<br/>第 18 章"]:::dim
+  G -- 没达成：followUp --> E
+--- 用户提问。`host.emitInput` 触发 `input` 事件：钩子扩展跑 `UserPromptSubmit`（没有拦下），检查点扩展给工作目录拍快照，再把提示交给循环。
+flowchart LR
+  A["加载扩展<br/>第 9 章"]:::done --> B["设定目标<br/>第 18 章"]:::done --> C["提问前<br/>第 13、16 章"]:::on --> D["系统提示<br/>第 6、10、11 章"]:::dim --> E["循环<br/>第 3、7 章"]:::dim --> F["工具过关<br/>第 13 到 17 章"]:::dim --> G["准备停下<br/>第 18 章"]:::dim
+  G -- 没达成：followUp --> E
+--- `emitBeforeAgentStart` 让各扩展往系统提示里加东西：记忆的内容、钩子 `SessionStart` 补充的项目信息，加上 `buildSystemPrompt` 里的工具说明和 Skills 目录。
+flowchart LR
+  A["加载扩展<br/>第 9 章"]:::done --> B["设定目标<br/>第 18 章"]:::done --> C["提问前<br/>第 13、16 章"]:::done --> D["系统提示<br/>第 6、10、11 章"]:::on --> E["循环<br/>第 3、7 章"]:::dim --> F["工具过关<br/>第 13 到 17 章"]:::dim --> G["准备停下<br/>第 18 章"]:::dim
+  G -- 没达成：followUp --> E
+--- `runLoop` 开始。每一轮先修复历史再请求模型（实验里一共 7 轮）。第 1 轮模型调用 `agent` 工具，把调研交给子 Agent（第 17 章）。
+flowchart LR
+  A["加载扩展<br/>第 9 章"]:::done --> B["设定目标<br/>第 18 章"]:::done --> C["提问前<br/>第 13、16 章"]:::done --> D["系统提示<br/>第 6、10、11 章"]:::done --> E["循环<br/>第 3、7 章"]:::on --> F["工具过关<br/>第 13 到 17 章"]:::dim --> G["准备停下<br/>第 18 章"]:::dim
+  G -- 没达成：followUp --> E
+--- 模型的每个工具调用都要过 `tool_call` 闸门。edit 在 acceptEdits 下自动放行，`rm -rf build` 和读 `.env` 被拦下，`node test.js` 在沙箱里运行，`save_memory` 由记忆扩展处理——细节见下一个动画。
+flowchart LR
+  A["加载扩展<br/>第 9 章"]:::done --> B["设定目标<br/>第 18 章"]:::done --> C["提问前<br/>第 13、16 章"]:::done --> D["系统提示<br/>第 6、10、11 章"]:::done --> E["循环<br/>第 3、7 章"]:::done --> F["工具过关<br/>第 13 到 17 章"]:::on --> G["准备停下<br/>第 18 章"]:::dim
+  G -- 没达成：followUp --> E
+--- 没有工具调用了，循环调用 `getFollowUp`，触发 `before_settle`，目标扩展运行 `node test.js`。通过则结束；不通过就返回 `followUp`，回到循环。
+flowchart LR
+  A["加载扩展<br/>第 9 章"]:::done --> B["设定目标<br/>第 18 章"]:::done --> C["提问前<br/>第 13、16 章"]:::done --> D["系统提示<br/>第 6、10、11 章"]:::done --> E["循环<br/>第 3、7 章"]:::done --> F["工具过关<br/>第 13 到 17 章"]:::done --> G["准备停下<br/>第 18 章"]:::on
+  G -- 没达成：followUp --> E
+:::
+
+::: steps 一个工具调用要过的关
+--- 第 3 轮，模型想执行 `rm -rf build`。`beforeToolCall` 按加载顺序逐个问各扩展的 `tool_call` 处理函数，**第一个返回 `block` 的就结束**。先轮到钩子扩展。
+flowchart LR
+  CALL["Bash：rm -rf build"]:::on --> H{"钩子<br/>第 13 章"}:::dim --> P{"权限<br/>第 14 章"}:::dim --> SB["沙箱<br/>第 15 章"]:::dim --> EX["执行工具"]:::dim --> POST["结果给模型"]:::dim
+  H -- "exit 2：block" --> B1["错误结果<br/>交给模型"]:::dim
+  P -- "deny 或 ask" --> B1
+--- 钩子扩展把 `bash` 翻译成 `Bash` 交给 `block-dangerous.sh`，脚本 `exit 2`：`interpret` 得到 `deny`，处理函数返回 `block`。权限和沙箱都没轮到，错误结果（“禁止执行破坏性命令”）交给模型。
+flowchart LR
+  CALL["Bash：rm -rf build"]:::done --> H{"钩子<br/>第 13 章"}:::on --> P{"权限<br/>第 14 章"}:::dim --> SB["沙箱<br/>第 15 章"]:::dim --> EX["执行工具"]:::dim --> POST["结果给模型"]:::dim
+  H -- "exit 2：block" --> B1["错误结果<br/>交给模型"]:::on
+  P -- "deny 或 ask" --> B1
+--- 第 4 轮，模型想读 `.env`。同样先过钩子：`protect-env.mjs` 拒绝。即使钩子放行，权限扩展里的 `Read(.env)` deny 规则也会拦下它：两层各管一层。
+flowchart LR
+  CALL["Read：.env"]:::done --> H{"钩子<br/>第 13 章"}:::on --> P{"权限<br/>第 14 章"}:::dim --> SB["沙箱<br/>第 15 章"]:::dim --> EX["执行工具"]:::dim --> POST["结果给模型"]:::dim
+  H -- "exit 2：block" --> B1["错误结果<br/>交给模型"]:::on
+  P -- "deny 或 ask" --> B1
+--- 第 5 轮，`node test.js`。钩子扩展没有意见（`verdict` 里没有 `block`），放行到下一个处理函数。
+flowchart LR
+  CALL["Bash：node test.js"]:::done --> H{"钩子<br/>第 13 章"}:::done --> P{"权限<br/>第 14 章"}:::dim --> SB["沙箱<br/>第 15 章"]:::dim --> EX["执行工具"]:::dim --> POST["结果给模型"]:::dim
+  H -- "exit 2：block" --> B1["错误结果<br/>交给模型"]:::dim
+  P -- "deny 或 ask" --> B1
+--- 权限扩展：`decidePermission` 对 Bash 子命令逐个看，`node test.js` 匹配 allow 规则 `Bash(node *)`，返回 allow，不弹窗，也不会因为没有界面而拒绝。
+flowchart LR
+  CALL["Bash：node test.js"]:::done --> H{"钩子<br/>第 13 章"}:::done --> P{"权限<br/>第 14 章"}:::on --> SB["沙箱<br/>第 15 章"]:::dim --> EX["执行工具"]:::dim --> POST["结果给模型"]:::dim
+  H -- "exit 2：block" --> B1["错误结果<br/>交给模型"]:::dim
+  P -- "deny 或 ask" --> B1
+--- 最后一个是沙箱扩展：`wrapCommand` 把 `event.input.command` 改写成 `sandbox-exec … /bin/bash -c 'node test.js'`。它排在最后，权限和钩子才看到原始命令。命令在沙箱里执行，输出 PASS，再经过 `tool_result` 交给模型。
+flowchart LR
+  CALL["Bash：node test.js"]:::done --> H{"钩子<br/>第 13 章"}:::done --> P{"权限<br/>第 14 章"}:::done --> SB["沙箱<br/>第 15 章"]:::on --> EX["执行工具"]:::on --> POST["结果给模型"]:::on
+  H -- "exit 2：block" --> B1["错误结果<br/>交给模型"]:::dim
+  P -- "deny 或 ask" --> B1
+:::
+
+上面三道关，在 mox 里是三个扩展挂在**同一个** `tool_call` 事件上，按加载顺序依次运行。并排看它们的处理函数：
+
+::: tabs
+@@ 钩子
+@code extensions/hooks/mox.ts#L41-L52
+翻译成 Claude Code 的工具名，运行外部脚本；`block` 就拦下，`updatedInput` 就地改写参数。
+@@ 权限
+@code extensions/permissions/mox.ts#L15-L26
+`decidePermission` 的结果：allow 放行，deny 拦下，ask 在没有界面时按拒绝处理。
+@@ 沙箱
+@code extensions/sandbox/mox.ts#L33-L39
+不判断放行与否，只把 `command` 改写成沙箱命令，所以必须最后加载。
+:::
+
 ## 组合时才暴露的问题
 
 每个部件单独测试都没问题，装在一起时却会冲突。这门课的实验里实际遇到过的：

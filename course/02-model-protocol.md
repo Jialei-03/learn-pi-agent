@@ -53,13 +53,16 @@ build: mox/src/providers —— Anthropic 与 OpenAI 两个流式适配器，加
 
 内部的 4 条消息，翻译成 Anthropic 是 3 条（两条结果合并了），翻译成 OpenAI 是 5 条（多了一条 system）。两个适配器各自负责这些差异，循环完全不需要知道。
 
-Anthropic 那边最容易写错的就是工具结果的位置：它要求 `tool_result` **紧跟在**发出对应 `tool_use` 的那条 assistant 消息之后。mox 的做法是把连续的工具结果合并进同一条 user 消息：
+Anthropic 那边最容易写错的就是工具结果的位置：它要求 `tool_result` **紧跟在**发出对应 `tool_use` 的那条 assistant 消息之后。mox 的做法是把连续的工具结果合并进同一条 user 消息。Pi 做的是同一件事，注释里还记下了这么做的另一个原因——有些第三方的 Anthropic 兼容端点只接受这种形式：
 
+::: tabs
+@@ mox
 @code mox/src/providers/anthropic.ts#toAnthropicMessages hl=30-34
-
-Pi 做的是同一件事，注释里还记下了这么做的另一个原因——有些第三方的 Anthropic 兼容端点只接受这种形式：
-
+连续的 `toolResult` 合并进同一条 user 消息。
+@@ Pi
 @pi packages/ai/src/api/anthropic-messages.ts#L1497-L1521
+同样合并，并且在注释里写明了兼容第三方端点的原因。
+:::
 
 ::: insight “兼容”从来不是完全兼容
 很多服务商声称“兼容 OpenAI 格式”或“兼容 Anthropic 格式”，但细节各有出入：有的不接受 `content: null`，有的要求工具结果必须合并，有的不认识某些字段。Pi 的 `openai-completions.ts` 里有一个函数专门根据服务商名字和地址推断兼容性设置。生产级的模型层，有相当一部分代码是在处理这些“兼容但不完全兼容”的情况。
@@ -153,6 +156,105 @@ mox 的 Anthropic 适配器按服务端给的 `index` 记录“正在生成的�
 
 @code mox/src/providers/anthropic.ts#parseAnthropicStream collapse=true
 
+::: steps Anthropic 的流式事件怎样拼成一条消息
+--- `message_start` 到达：适配器只记下输入 token 数，`content` 还是空数组。此时没有任何可以执行的东西。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端 SSE
+  participant A as 适配器
+  participant M as AssistantMessage
+  rect rgb(255, 230, 213)
+    S->>A: message_start
+    Note over M: content 为空
+  end
+--- 文字块：`content_block_start` 让适配器往 `content` 里推一个空的 text 块，并在 `open` 表里按服务端的 `index` 登记；两个 `text_delta` 依次拼接到这个块上。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端 SSE
+  participant A as 适配器
+  participant M as AssistantMessage
+  S->>A: message_start
+  Note over M: content 为空
+  rect rgb(255, 230, 213)
+    S->>A: block_start #0 text
+    S->>A: text_delta ×2
+    A->>M: text = 我先看看入口文件。
+  end
+--- 工具调用块：`block_start #1 tool_use` 让适配器推入一个 `toolCall`，名字是 `read_file`，`arguments` 先是空对象，另外开一个字符串攒参数。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端 SSE
+  participant A as 适配器
+  participant M as AssistantMessage
+  S->>A: message_start
+  Note over M: content 为空
+  S->>A: block_start #0 text
+  S->>A: text_delta ×2
+  A->>M: text = 我先看看入口文件。
+  rect rgb(255, 230, 213)
+    S->>A: block_start #1 tool_use
+    A->>M: toolCall read_file，arguments 为空
+  end
+--- `input_json_delta` 到达三次，片段只是 JSON 文本，适配器把它们拼进字符串，并用 `previewJson` 补齐括号生成预览给界面看。`arguments` **仍然是空对象**。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端 SSE
+  participant A as 适配器
+  participant M as AssistantMessage
+  S->>A: message_start
+  Note over M: content 为空
+  S->>A: block_start #0 text
+  S->>A: text_delta ×2
+  A->>M: text = 我先看看入口文件。
+  S->>A: block_start #1 tool_use
+  A->>M: toolCall read_file，arguments 为空
+  rect rgb(255, 230, 213)
+    S->>A: input_json_delta ×3
+    Note over A: 攒下 JSON 文本，只生成预览
+  end
+--- `content_block_stop #1`：块结束，才对完整的参数文本做最终解析，`arguments` 变成 `{ path: src/cli.ts }`，发出 `toolcall_end`。**从这一刻起才可以执行。**
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端 SSE
+  participant A as 适配器
+  participant M as AssistantMessage
+  S->>A: message_start
+  Note over M: content 为空
+  S->>A: block_start #0 text
+  S->>A: text_delta ×2
+  A->>M: text = 我先看看入口文件。
+  S->>A: block_start #1 tool_use
+  A->>M: toolCall read_file，arguments 为空
+  S->>A: input_json_delta ×3
+  Note over A: 攒下 JSON 文本，只生成预览
+  rect rgb(255, 230, 213)
+    S->>A: block_stop #1
+    A->>M: arguments = 解析后的对象
+  end
+--- `message_delta` 带来停止原因 `tool_use`，被归一化为 `toolUse`，同时记下原始值和输出 token 数；循环最后拿到的是一条完整的消息。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端 SSE
+  participant A as 适配器
+  participant M as AssistantMessage
+  S->>A: message_start
+  Note over M: content 为空
+  S->>A: block_start #0 text
+  S->>A: text_delta ×2
+  A->>M: text = 我先看看入口文件。
+  S->>A: block_start #1 tool_use
+  A->>M: toolCall read_file，arguments 为空
+  S->>A: input_json_delta ×3
+  Note over A: 攒下 JSON 文本，只生成预览
+  S->>A: block_stop #1
+  A->>M: arguments = 解析后的对象
+  rect rgb(255, 230, 213)
+    S->>A: message_delta stop_reason=tool_use
+    A->>M: stopReason = toolUse
+    Note over M: 发出 done 事件
+  end
+:::
+
 运行实验，观察事件是怎样一个个到达的：
 
 @lab node labs/ch02/replay.ts --events
@@ -210,6 +312,57 @@ OpenAI 兼容适配器面对的服务商五花八门，它选择把未知值映�
 实验让假服务在发送到一半时断开连接：
 
 @lab node labs/ch02/cut.ts
+
+::: steps 流在半路断开时适配器怎么判断
+--- 流开始时一切正常：适配器收到一段文字，以及工具调用的前半截参数，消息里已经有“看起来还挺完整”的内容。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端
+  participant A as 适配器
+  participant L as 循环
+  rect rgb(255, 230, 213)
+    S->>A: 文字块 + 工具调用开头
+    Note over A: 参数只攒到 {"pa
+  end
+--- 连接在这里断开：没有 `content_block_stop`，也**没有 `message_delta`**，所以没有任何停止原因。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端
+  participant A as 适配器
+  participant L as 循环
+  S->>A: 文字块 + 工具调用开头
+  Note over A: 参数只攒到 {"pa
+  rect rgb(255, 230, 213)
+    S--x A: 连接断开
+  end
+--- `for await` 因为流结束而退出。mox 检查 `rawStopReason` 是否存在；Pi 则检查停止原因是否还是初始值 `pending`。两边都判定为失败，已收到的内容原样保留。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端
+  participant A as 适配器
+  participant L as 循环
+  S->>A: 文字块 + 工具调用开头
+  Note over A: 参数只攒到 {"pa
+  S--x A: 连接断开
+  rect rgb(255, 230, 213)
+    Note over A: 没有收到停止原因
+    A->>L: 返回消息 stopReason = error
+  end
+--- 循环只需要处理一种返回值：看到 `error`，直接结束运行，**不执行其中的工具调用**；用户看到的是明确的错误，而不是一句没头没尾的话。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant S as 服务端
+  participant A as 适配器
+  participant L as 循环
+  S->>A: 文字块 + 工具调用开头
+  Note over A: 参数只攒到 {"pa
+  S--x A: 连接断开
+  Note over A: 没有收到停止原因
+  A->>L: 返回消息 stopReason = error
+  rect rgb(255, 230, 213)
+    Note over L: 按 stopReason 分支<br/>error：结束运行
+  end
+:::
 
 两个实现都正确地报告了错误，只是发现问题的位置不同：mox 在流结束后检查“有没有收到停止原因”；Pi 在解析最后一个不完整的事件时就失败了。
 

@@ -116,6 +116,17 @@ SDK 形状的字节数随回复长度平方增长，线上形状线性增长。�
 
 @lab node labs/ch19/json.ts
 
+线上的事件形状，Pi 的 `toJsonEvent` 和 mox 的 `toWireEvent` 对照：
+
+::: tabs
+@@ Pi
+@pi packages/coding-agent/src/modes/json-event.ts#L40-L61
+只处理 `message_update`：去掉累计快照，保留 `usage` 和增量；其他事件原样输出。
+@@ mox
+@code mox/src/rpc.ts#toWireEvent
+只挑出外部关心的七种事件，`text_delta` 平铺；内部事件的形状改了，协议不受影响。
+:::
+
 还有一点：`agent_end` 只表示一次底层运行结束，之后还可能有自动重试、压缩后重试、排队的追加任务；`agent_settled` 才表示 Pi 不会再自己继续。mox 也在最后发一个。
 
 ## RPC：一条 stdout，三类记录
@@ -188,6 +199,17 @@ Pi 的 RPC 服务端读到一行，就交给 `handleInputLine`：
 
 所以 `prompt` 的响应只说“收下了”：运行已开始（`started`）、排进队列（`queued`），或被扩展命令直接处理（`handled`，没有运行，别等 `agent_settled`）。做完看 `agent_settled`。
 
+`prompt` 命令的处理，Pi 的 RPC 服务端和 mox 的 `startRpc` 并排看：
+
+::: tabs
+@@ Pi
+@pi packages/coding-agent/src/modes/rpc/rpc-mode.ts#L394-L429
+`void session.prompt(…)`，响应由 `preflightResult` 回调写出；运行中必须带 `streamingBehavior`。
+@@ mox
+@code mox/src/rpc.ts#L48-L57
+用 `busy` 标志在“收下”的那一刻置位；运行中的 `prompt` 一律作为插话排队（`queued`），否则 `started` 并开始运行。
+:::
+
 让真实的 Pi 在运行 bash 时同时收到三条命令，看响应按什么顺序回来：
 
 @lab node labs/ch19/wire.ts
@@ -197,6 +219,57 @@ Pi 的 RPC 服务端读到一行，就交给 `handleInputLine`：
 - 事件没有 id，只有 `bash_execution_update` 例外：它是 bash 的流式输出，得告诉客户端属于哪条命令。
 - 扩展里的 `console.log` 出现在 stderr。所有记录经 `writeRawStdout` 排进同一条写队列，一条写完才写下一条，不会在一行中间交错。
 - mox 的命令都是同步处理的，响应顺序碰巧等于发送顺序，但协议不保证。最后一行是 mox 的一个真实 bug：`isRunning()` 要等 `execute` 里创建了 `AbortController` 才为真，背靠背的两条 `prompt` 都得到 `started`，开出两个并发的运行，往同一个会话里交错写消息。现在 `startRpc` 用 `busy` 标志在“收下”那一刻就置位。
+
+::: steps RPC 的一次往返：三条命令同时在途
+--- 客户端发出 `prompt`，id 是 `p`。服务端的读循环 `void handleInputLine(line)`：**不 await**，这一行立刻开始处理。
+sequenceDiagram
+  participant C as 客户端 RpcClient
+  participant S as RPC 服务端
+  participant A as AgentSession
+  C->>S: prompt id=p
+--- `prompt` 命令调用 `session.prompt`，并且不等运行。响应由 `preflightResult` 回调在预检通过时写出：`started` 只说“收下了”，运行还没做完。
+sequenceDiagram
+  participant C as 客户端 RpcClient
+  participant S as RPC 服务端
+  participant A as AgentSession
+  C->>S: prompt id=p
+  S-->>C: response p started（preflightResult 回调写出）
+  S-)A: void session.prompt(…)，不等运行
+--- 响应排在 `agent_start` 之前：先收下，再开始。事件没有 id，只是会话里发生的事。
+sequenceDiagram
+  participant C as 客户端 RpcClient
+  participant S as RPC 服务端
+  participant A as AgentSession
+  S-->>C: response p started（preflightResult 回调写出）
+  S-)A: void session.prompt(…)，不等运行
+  A-->>C: agent_start 事件（没有 id）
+  A-->>C: tool_execution_start 事件，bash 开始跑
+--- 运行还在进行时，客户端连发三条命令：`bash`（id=b，要跑 0.4 秒）、`get_state`（s）、`get_messages`（m）。每条先在 `pendingRequests` 登记，再写 stdin。
+sequenceDiagram
+  participant C as 客户端 RpcClient
+  participant S as RPC 服务端
+  participant A as AgentSession
+  A-->>C: tool_execution_start 事件，bash 开始跑
+  C->>S: bash id=b（要跑 0.4 秒）
+  C->>S: get_state id=s
+  C->>S: get_messages id=m
+--- 读循环不等任何运行，也不等上一条命令：快命令先答。`get_state` 和 `get_messages` 的响应先到，id 分别是 `s` 和 `m`。
+sequenceDiagram
+  participant C as 客户端 RpcClient
+  participant S as RPC 服务端
+  participant A as AgentSession
+  C->>S: get_messages id=m
+  S-->>C: response s（get_state）
+  S-->>C: response m（get_messages）
+--- 最慢的 `bash` 最后才回复。发送顺序 b、s、m，到达顺序是 s、m、b：响应不按发送顺序回来，所以客户端必须按 id 认领。运行结束后，`agent_end` 和 `agent_settled` 事件才表示 Pi 不会再自己继续。
+sequenceDiagram
+  participant C as 客户端 RpcClient
+  participant S as RPC 服务端
+  participant A as AgentSession
+  S-->>C: response m（get_messages）
+  S-->>C: response b（bash，最后到）
+  A-->>C: agent_end 与 agent_settled 事件
+:::
 
 ### 客户端：按 id 认领
 
@@ -214,6 +287,44 @@ id 是客户端自己的单调计数（`req_1`、`req_2`……）。每条命令
 - **否则一律当事件**分发给所有监听器。推论：没有 id 的响应（`parse` 错误），以及超时后才到的响应，都会以“事件”的身份出现在监听器里。
 - 分发前先复制监听器数组，监听器在回调里取消订阅，不会让后面的监听器漏事件。
 - 整个函数包在一个 `try/catch` 里：非 JSON 的行被忽略，**监听器抛出的异常也被吞掉，排在它后面的监听器收不到这个事件**。
+
+::: steps 客户端怎样认领一行输出
+--- 客户端读到 stdout 的一行，交给 `handleLine`。这一行是 `get_state` 的响应，id 是 `s`，调用方此刻正在 `await` 对应的 Promise。
+flowchart LR
+  IN["stdout 的一行<br/>get_state 的响应：id=s，type=response"]:::on --> P{"JSON.parse<br/>成功？"}:::dim
+  P -- 否 --> IGN["catch：忽略这一行"]:::dim
+  P -- 是 --> R{"type 是 response<br/>且 id 在 pendingRequests？"}:::dim
+  R -- 是 --> CL["认领：delete 登记<br/>pending.resolve(data)"]:::dim
+  R -- 否 --> EV["当作事件<br/>复制监听器数组，逐个调用"]:::dim
+--- 先 `JSON.parse`。整个函数包在 `try/catch` 里，所以解析失败的行（比如别人写的日志）会被静默忽略，不会让客户端崩溃。
+flowchart LR
+  IN["stdout 的一行<br/>get_state 的响应：id=s，type=response"]:::done --> P{"JSON.parse<br/>成功？"}:::on
+  P -- 否 --> IGN["catch：忽略这一行"]:::dim
+  P -- 是 --> R{"type 是 response<br/>且 id 在 pendingRequests？"}:::dim
+  R -- 是 --> CL["认领：delete 登记<br/>pending.resolve(data)"]:::dim
+  R -- 否 --> EV["当作事件<br/>复制监听器数组，逐个调用"]:::dim
+--- 检查 `type === "response"`、有 id，且 `pendingRequests.has(id)`。三个条件都成立：删掉登记项，`resolve` 调用方的 Promise，`return`，不再当事件分发。这就是“按 id 认领”。
+flowchart LR
+  IN["stdout 的一行<br/>get_state 的响应：id=s，type=response"]:::done --> P{"JSON.parse<br/>成功？"}:::done
+  P -- 否 --> IGN["catch：忽略这一行"]:::dim
+  P -- 是 --> R{"type 是 response<br/>且 id 在 pendingRequests？"}:::done
+  R -- 是 --> CL["认领：delete 登记<br/>pending.resolve(data)"]:::on
+  R -- 否 --> EV["当作事件<br/>复制监听器数组，逐个调用"]:::dim
+--- 下一行是 `agent_start`：不是响应，直接落到“事件”分支。`handleLine` 先复制监听器数组再逐个调用，监听器在回调里取消订阅也不会让后面的漏事件。
+flowchart LR
+  IN["stdout 的一行<br/>agent_start 事件：只有 type，没有 id"]:::on --> P{"JSON.parse<br/>成功？"}:::done
+  P -- 否 --> IGN["catch：忽略这一行"]:::dim
+  P -- 是 --> R{"type 是 response<br/>且 id 在 pendingRequests？"}:::done
+  R -- 是 --> CL["认领：delete 登记<br/>pending.resolve(data)"]:::dim
+  R -- 否 --> EV["当作事件<br/>复制监听器数组，逐个调用"]:::on
+--- 再看一种：服务端写坏命令时回的 `parse` 失败响应，**没有 id**。它不满足认领条件，也走到事件分支，以“事件”的身份出现在监听器里（超时之后才到的响应也是这样）。监听器如果抛异常，被外层 `catch` 吞掉，排在它后面的监听器收不到这一条。
+flowchart LR
+  IN["stdout 的一行<br/>parse 失败响应：type=response，没有 id"]:::on --> P{"JSON.parse<br/>成功？"}:::done
+  P -- 否 --> IGN["catch：忽略这一行"]:::dim
+  P -- 是 --> R{"type 是 response<br/>且 id 在 pendingRequests？"}:::done
+  R -- 是 --> CL["认领：delete 登记<br/>pending.resolve(data)"]:::dim
+  R -- 否 --> EV["当作事件<br/>复制监听器数组，逐个调用"]:::on
+:::
 
 子进程崩溃时：
 

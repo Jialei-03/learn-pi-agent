@@ -79,6 +79,105 @@ Claude Code 的文档把它称为 **agentic loop**：收集上下文、采取行
 </figure>
 
 
+::: steps 一句提问如何变成三次请求
+--- 用户问了一句话。`runAgent` 只有两条消息：`system` 和 `user`，历史里还没有任何工具结果。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant A as 你的程序 runAgent
+  participant M as 模型 API
+  rect rgb(255, 230, 213)
+    U->>A: 这个项目是做什么的？
+    Note over A: messages：system、user（2 条）
+  end
+--- **第 1 次请求**（第 67 行）：把这 2 条完整地发给模型。模型的回复是一个工具请求 `list_dir`，所以第 69 行 `!reply.tool_calls?.length` 的判断不成立，循环继续。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant A as 你的程序 runAgent
+  participant M as 模型 API
+  U->>A: 这个项目是做什么的？
+  Note over A: messages：system、user（2 条）
+  rect rgb(255, 230, 213)
+    A->>M: 请求 1：2 条消息
+    M-->>A: tool_calls：list_dir(path=.)
+    Note over A: 回复进入历史（第 68 行）：3 条
+  end
+--- **执行并放回历史。** 第 70～73 行：由我们的 `handlers.list_dir` 真正读目录，结果以 `role: tool` 加 `tool_call_id` 追加进历史，现在 4 条。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant A as 你的程序 runAgent
+  participant M as 模型 API
+  U->>A: 这个项目是做什么的？
+  Note over A: messages：system、user（2 条）
+  A->>M: 请求 1：2 条消息
+  M-->>A: tool_calls：list_dir(path=.)
+  Note over A: 回复进入历史（第 68 行）：3 条
+  rect rgb(255, 230, 213)
+    A->>A: handlers.list_dir 读目录
+    Note over A: 追加 tool 结果：4 条
+  end
+--- **第 2 次请求**：发送的是 4 条，不是只发新增的那条，因为 API 不保存状态。模型看到目录里有 README，请求 `read_file`。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant A as 你的程序 runAgent
+  participant M as 模型 API
+  U->>A: 这个项目是做什么的？
+  Note over A: messages：system、user（2 条）
+  A->>M: 请求 1：2 条消息
+  M-->>A: tool_calls：list_dir(path=.)
+  Note over A: 回复进入历史（第 68 行）：3 条
+  A->>A: handlers.list_dir 读目录
+  Note over A: 追加 tool 结果：4 条
+  rect rgb(255, 230, 213)
+    A->>M: 请求 2：4 条消息
+    M-->>A: tool_calls：read_file(path=README.md)
+  end
+--- 再执行一次，再放回一次：回复和读文件的结果各追加一条，历史长到 6 条。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant A as 你的程序 runAgent
+  participant M as 模型 API
+  U->>A: 这个项目是做什么的？
+  Note over A: messages：system、user（2 条）
+  A->>M: 请求 1：2 条消息
+  M-->>A: tool_calls：list_dir(path=.)
+  Note over A: 回复进入历史（第 68 行）：3 条
+  A->>A: handlers.list_dir 读目录
+  Note over A: 追加 tool 结果：4 条
+  A->>M: 请求 2：4 条消息
+  M-->>A: tool_calls：read_file(path=README.md)
+  rect rgb(255, 230, 213)
+    A->>A: handlers.read_file 读 README
+    Note over A: 追加回复和 tool 结果：6 条
+  end
+--- **第 3 次请求**发送 6 条，其中 2 条是模型自己说过的话。这次回复里没有 `tool_calls`，第 69 行 `return`，循环结束：一句提问，三次请求。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant A as 你的程序 runAgent
+  participant M as 模型 API
+  U->>A: 这个项目是做什么的？
+  Note over A: messages：system、user（2 条）
+  A->>M: 请求 1：2 条消息
+  M-->>A: tool_calls：list_dir(path=.)
+  Note over A: 回复进入历史（第 68 行）：3 条
+  A->>A: handlers.list_dir 读目录
+  Note over A: 追加 tool 结果：4 条
+  A->>M: 请求 2：4 条消息
+  M-->>A: tool_calls：read_file(path=README.md)
+  A->>A: handlers.read_file 读 README
+  Note over A: 追加回复和 tool 结果：6 条
+  rect rgb(255, 230, 213)
+    A->>M: 请求 3：6 条消息
+    M-->>A: 文字回答，没有 tool_calls
+    A-->>U: 回答用户
+  end
+:::
+
 `MAX_TURNS` 是一个保护钱包的安全阀。第 3 章会解释为什么“最多跑几轮”不应该写死在循环里。
 
 ## 跑起来
@@ -162,7 +261,14 @@ mox 第一版把三件事写在一个文件里：工具、调用模型、循环�
 
 **工具**在产品层定义。下面是 Pi 的 `read` 工具的参数格式，和 mox 的 `read_file` 几乎一样，只是多了 `offset` 和 `limit`，用来分段读大文件：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/tools/read.ts#L13-L17
+参数格式多了 `offset` 和 `limit`，用来分段读大文件。
+@@ mox
+@code mox/stage-01/agent.ts#L24-L31
+`read_file` 只有一个 `path`；`description` 只有一句话。
+:::
 
 它的说明文字比 mox 长得多，明确告诉模型输出会被截断、遇到大文件该怎么分段读：
 

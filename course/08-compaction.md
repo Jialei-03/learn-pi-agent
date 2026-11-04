@@ -21,7 +21,13 @@ build: mox/src/compaction.ts —— 切点、序列化、摘要、增量压缩�
 
 Pi 的触发条件只有一行：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/compaction/compaction.ts#L267-L270
+@@ mox
+@code mox/src/compaction.ts#shouldCompact
+同一个条件：上下文大于“窗口减预留”。
+:::
 
 **上下文 > 窗口 − 预留**。预留空间默认是 16384 个 token，留给模型的回答，也留给压缩本身。为什么要留这么多？因为压缩要在“还没撑爆”的时候做：一旦请求真的超过了窗口，服务商会直接拒绝，而你需要一次额外的模型调用才能写出摘要。
 
@@ -39,7 +45,106 @@ Pi 的触发条件只有一行：
 
 压缩要决定一个“切点”：切点之前的交给模型总结，切点之后的原样保留。Pi 从最新的消息往回累加 token，攒够 `keepRecentTokens`（默认 20000）就停：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/compaction/compaction.ts#findCutPoint collapse=true
+@@ mox
+@code mox/src/compaction.ts#findCutPoint
+同样从最新往回累加；`cutPoints` 排除工具结果，不是 user 的切点标记为 split turn。
+:::
+
+::: steps findCutPoint 怎样从最新往回找到切点
+--- `findCutPoint` 从**最新**的消息往回累加估算 token，攒够 `keepRecentTokens`（默认 20000）就停。先从最后一条 asst 开始数。
+flowchart TB
+  subgraph T1["第 1 轮"]
+    direction LR
+    M1["user"]:::dim --> M2["call"]:::dim --> M3["result"]:::dim --> M4["asst"]:::dim
+  end
+  subgraph T2["第 2 轮"]
+    direction LR
+    M5["user"]:::dim --> M6["call"]:::dim --> M7["result"]:::dim --> M8["asst"]:::dim
+  end
+  subgraph T3["第 3 轮"]
+    direction LR
+    M9["user"]:::dim --> M10["asst"]:::on
+  end
+  T1 --> T2 --> T3
+--- 再往回：第 3 轮的 user、第 2 轮的 asst 也算进来，累计还没攒够。绿色是已经计入保留额度的消息。
+flowchart TB
+  subgraph T1["第 1 轮"]
+    direction LR
+    M1["user"]:::dim --> M2["call"]:::dim --> M3["result"]:::dim --> M4["asst"]:::dim
+  end
+  subgraph T2["第 2 轮"]
+    direction LR
+    M5["user"]:::dim --> M6["call"]:::dim --> M7["result"]:::dim --> M8["asst"]:::on
+  end
+  subgraph T3["第 3 轮"]
+    direction LR
+    M9["user"]:::done --> M10["asst"]:::done
+  end
+  T1 --> T2 --> T3
+--- 加上第 2 轮的 `result`，累计终于 ≥ 额度，这就是“候选切点” `i`。
+flowchart TB
+  subgraph T1["第 1 轮"]
+    direction LR
+    M1["user"]:::dim --> M2["call"]:::dim --> M3["result"]:::dim --> M4["asst"]:::dim
+  end
+  subgraph T2["第 2 轮"]
+    direction LR
+    M5["user"]:::dim --> M6["call"]:::dim --> M7["result"]:::on --> M8["asst"]:::done
+  end
+  subgraph T3["第 3 轮"]
+    direction LR
+    M9["user"]:::done --> M10["asst"]:::done
+  end
+  T1 --> T2 --> T3
+--- 但 `result` **不是合法切点**：`cutPoints` 里排除了所有工具结果。`cutPoints.find(c => c >= i)` 向后顺延到第一条合法消息，也就是它后面的 asst。
+flowchart TB
+  subgraph T1["第 1 轮"]
+    direction LR
+    M1["user"]:::dim --> M2["call"]:::dim --> M3["result"]:::dim --> M4["asst"]:::dim
+  end
+  subgraph T2["第 2 轮"]
+    direction LR
+    M5["user"]:::dim --> M6["call"]:::dim --> M7["result"]:::dim --> M8["asst"]:::on
+  end
+  subgraph T3["第 3 轮"]
+    direction LR
+    M9["user"]:::done --> M10["asst"]:::done
+  end
+  T1 --> T2 --> T3
+--- 切点定在这条 asst：它和后面的 M9、M10 原样保留；M1～M7 交给模型总结（灰色）。保留部分里没有任何一条是“没有调用的结果”。
+flowchart TB
+  subgraph T1["第 1 轮"]
+    direction LR
+    M1["user"]:::dim --> M2["call"]:::dim --> M3["result"]:::dim --> M4["asst"]:::dim
+  end
+  subgraph T2["第 2 轮"]
+    direction LR
+    M5["user"]:::dim --> M6["call"]:::dim --> M7["result"]:::dim --> M8["asst"]:::done
+  end
+  subgraph T3["第 3 轮"]
+    direction LR
+    M9["user"]:::done --> M10["asst"]:::done
+  end
+  T1 --> T2 --> T3
+--- 切点不是 user 消息，说明第 2 轮被切成了两半（split turn）：这一轮从 M5 开始，M5～M7 是被切开那一轮的前半段（橙色）。Pi 为它单独写一份摘要，mox 把它们并进同一份。
+flowchart TB
+  subgraph T1["第 1 轮"]
+    direction LR
+    M1["user"]:::dim --> M2["call"]:::dim --> M3["result"]:::dim --> M4["asst"]:::dim
+  end
+  subgraph T2["第 2 轮"]
+    direction LR
+    M5["user"]:::on --> M6["call"]:::on --> M7["result"]:::on --> M8["asst"]:::done
+  end
+  subgraph T3["第 3 轮"]
+    direction LR
+    M9["user"]:::done --> M10["asst"]:::done
+  end
+  T1 --> T2 --> T3
+:::
 
 关键规则在合法切点的定义里：
 
@@ -123,7 +228,82 @@ Pi 的触发条件只有一行：
 
 压缩记录写进会话后，构建上下文时会用“摘要 + 从 `firstKeptEntryId` 开始的消息 + 压缩之后的消息”代替完整路径：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/session-manager.ts#buildContextEntries
+@@ mox
+@code mox/src/session.ts#L135-L144
+摘要消息、从 `firstKeptId` 起保留的消息、压缩之后的消息，三段拼起来。
+:::
+
+::: steps 压缩记录怎样改变发给模型的上下文
+--- 压缩之前，发给模型的就是整条路径。文件里是 M1～M10；下面一行是压缩之后才会出现的上下文，现在还是灰色。
+flowchart TB
+  subgraph FILE["会话文件（只追加）"]
+    direction LR
+    Fold["M1–M7<br/>已被总结"]:::done --> K["M8–M10<br/>保留"]:::done --> C["compaction<br/>摘要 + firstKeptId"]:::dim --> N1["新消息 N1"]:::dim
+  end
+  subgraph CTX["发给模型的上下文"]
+    direction LR
+    SYS["system"]:::dim --> SUM["摘要<br/>（user 消息）"]:::dim --> X1["M8–M10"]:::dim --> X2["N1"]:::dim
+  end
+  FILE --> CTX
+--- 摘要生成成功后，**只追加一条 `compaction` 记录**：里面有摘要正文和 `firstKeptId`（M8 的 id）。M1～M10 一条都没少。
+flowchart TB
+  subgraph FILE["会话文件（只追加）"]
+    direction LR
+    Fold["M1–M7<br/>已被总结"]:::done --> K["M8–M10<br/>保留"]:::done --> C["compaction<br/>摘要 + firstKeptId"]:::on --> N1["新消息 N1"]:::dim
+  end
+  subgraph CTX["发给模型的上下文"]
+    direction LR
+    SYS["system"]:::dim --> SUM["摘要<br/>（user 消息）"]:::dim --> X1["M8–M10"]:::dim --> X2["N1"]:::dim
+  end
+  FILE --> CTX
+--- 压缩之后用户又发来新消息 N1，同样追加在 compaction 记录后面。
+flowchart TB
+  subgraph FILE["会话文件（只追加）"]
+    direction LR
+    Fold["M1–M7<br/>已被总结"]:::done --> K["M8–M10<br/>保留"]:::done --> C["compaction<br/>摘要 + firstKeptId"]:::done --> N1["新消息 N1"]:::on
+  end
+  subgraph CTX["发给模型的上下文"]
+    direction LR
+    SYS["system"]:::dim --> SUM["摘要<br/>（user 消息）"]:::dim --> X1["M8–M10"]:::dim --> X2["N1"]:::dim
+  end
+  FILE --> CTX
+--- 构建上下文时先在路径上找**最后一条** `compaction`：它的摘要变成一条 user 消息，放在开头，前面加说明“之前的对话已被压缩”。
+flowchart TB
+  subgraph FILE["会话文件（只追加）"]
+    direction LR
+    Fold["M1–M7<br/>已被总结"]:::done --> K["M8–M10<br/>保留"]:::done --> C["compaction<br/>摘要 + firstKeptId"]:::on --> N1["新消息 N1"]:::done
+  end
+  subgraph CTX["发给模型的上下文"]
+    direction LR
+    SYS["system"]:::done --> SUM["摘要<br/>（user 消息）"]:::on --> X1["M8–M10"]:::dim --> X2["N1"]:::dim
+  end
+  FILE --> CTX
+--- 接着是从 `firstKeptId` 开始、到 compaction 之前的消息，也就是 M8～M10，原样保留。M1～M7 不再发送，但仍在文件里。
+flowchart TB
+  subgraph FILE["会话文件（只追加）"]
+    direction LR
+    Fold["M1–M7<br/>已被总结"]:::done --> K["M8–M10<br/>保留"]:::on --> C["compaction<br/>摘要 + firstKeptId"]:::done --> N1["新消息 N1"]:::done
+  end
+  subgraph CTX["发给模型的上下文"]
+    direction LR
+    SYS["system"]:::done --> SUM["摘要<br/>（user 消息）"]:::done --> X1["M8–M10"]:::on --> X2["N1"]:::dim
+  end
+  FILE --> CTX
+--- 最后接上 compaction 之后的 N1。这个前缀和压缩前完全不同，**提示缓存全部失效**，这是压缩不可避免的代价。
+flowchart TB
+  subgraph FILE["会话文件（只追加）"]
+    direction LR
+    Fold["M1–M7<br/>已被总结"]:::done --> K["M8–M10<br/>保留"]:::done --> C["compaction<br/>摘要 + firstKeptId"]:::done --> N1["新消息 N1"]:::on
+  end
+  subgraph CTX["发给模型的上下文"]
+    direction LR
+    SYS["system"]:::done --> SUM["摘要<br/>（user 消息）"]:::done --> X1["M8–M10"]:::done --> X2["N1"]:::on
+  end
+  FILE --> CTX
+:::
 
 摘要以一条用户消息的形式出现在开头，前面加上说明：
 

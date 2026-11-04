@@ -136,6 +136,17 @@ MCP 工具不用翻译：Pi 和 Claude Code 用的都是 `mcp__服务器__工具
 
 扩展把钩子给出的原因作为一条消息追加，返回 `continue: true`，模型就会带着这个原因继续工作。
 
+同一个 Stop 钩子，Pi 和 mox 的接法并排看：
+
+::: tabs
+@@ Pi
+@code extensions/hooks/index.ts#L108-L117
+把原因追加成一条 `custom_message`，返回 `continue: true`，让 Pi 再跑一轮。
+@@ mox
+@code extensions/hooks/mox.ts#L65-L72
+mox 的 `before_settle` 返回 `followUp`，内核把它当作下一条用户消息再跑一轮；上一条助手消息要自己从 `event.messages` 里找。
+:::
+
 ### 实验
 
 一份 Claude Code 格式的钩子配置（`labs/fixtures/hooks/` 下的七个脚本），分别装进 Pi 和 mox，用同一个脚本模型执行：
@@ -151,10 +162,119 @@ MCP 工具不用翻译：Pi 和 Claude Code 用的都是 `mcp__服务器__工具
 5. 模型说“都处理好了”，`Stop` 钩子不让它停：没提到测试。模型补跑测试，第二次说完成时，`stop_hook_active` 为真，钩子放行。
 6. 带着密码的提示被 `UserPromptSubmit` 钩子拦下，根本没有发给模型。
 
+::: steps PreToolUse 改写参数：一次 deploy 调用的来回
+--- 模型要执行 `./deploy.sh production`。工具执行前，Agent 循环触发 `tool_call` 事件，hooks 扩展的处理函数先翻译：`toClaudeTool` 把 `bash` 换成 Claude Code 脚本期待的 `Bash`。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as 钩子脚本
+  participant T as bash 工具
+  L->>X: tool_call bash deploy.sh
+  Note over X: toClaudeTool：bash 变 Bash
+--- `run('PreToolUse')` 经 `runHooks` 按 `matcher` 找到匹配的钩子（这里是 `dry-run-deploy.mjs`），把 `tool_name`、`tool_input` 作为 JSON 写进它的 stdin。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as 钩子脚本
+  participant T as bash 工具
+  L->>X: tool_call bash deploy.sh
+  Note over X: toClaudeTool：bash 变 Bash
+  X->>H: stdin：tool_name、tool_input
+--- 脚本发现命令以 `./deploy.sh` 开头且没有 `--dry-run`，在 stdout 输出一段 JSON：`permissionDecision: allow`，`updatedInput` 里的命令加了 `--dry-run`，再附一句 `additionalContext`。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as 钩子脚本
+  participant T as bash 工具
+  X->>H: stdin：tool_name、tool_input
+  H-->>X: allow + updatedInput + context
+--- `interpret` 合并结果：`v.permission` 是 `allow`，`updatedInput` 记下，`additionalContext` 进 `v.context`；扩展把 context 按 `toolCallId` 存进 `toolContext`，留给 PostToolUse。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as 钩子脚本
+  participant T as bash 工具
+  H-->>X: allow + updatedInput + context
+  Note over X: interpret 合并；context 按 id 暂存
+--- 没有 `block`，于是处理函数走到改写分支：`fromClaudeInput` 翻译回 Pi 的参数，先清空再 `Object.assign` 到 `event.input`，不返回 `block`，循环放行。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as 钩子脚本
+  participant T as bash 工具
+  Note over X: interpret 合并；context 按 id 暂存
+  Note over X: fromClaudeInput 就地改 input
+  X-->>L: 放行
+--- 工具执行的是改写后的命令，模型却不知道。随后 `tool_result` 事件触发 PostToolUse，扩展把暂存的 context 以 `hook-context` 标签附在结果末尾，模型这才知道发生了什么。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as 钩子脚本
+  participant T as bash 工具
+  L->>T: deploy.sh production --dry-run
+  T-->>L: 部署（dry-run）输出
+  L->>X: tool_result
+  X-->>L: 结果末尾附 hook-context
+:::
+
 最后是 mox 的结果：同一份配置，每一步都与 Pi 一致。mox 版本的扩展在 `extensions/hooks/mox.ts`，为此 mox 的扩展 API 增加了两样东西：`tool_result` 事件带上了 `toolCall`（并行调用时，靠它把 `PreToolUse` 留下的信息对应到正确的结果上），以及 `before_settle` 事件（对应 Pi 的 `agent_before_settle`，第 18 章还会用到）。
 
 ::: warn Stop 钩子与无限循环
 一个总是返回 `block` 的 Stop 钩子会让 Agent 永远停不下来。协议的解决办法是 `stop_hook_active`：这一轮本来就是 Stop 钩子要求的，它就为真。钩子应该检查它，必要时放行。更稳妥的钩子会自己记录次数，或者检查真实的状态（测试结果文件、git 状态），而不是只看模型说了什么——模型完全可以在没跑测试的情况下写出“测试通过”。
+:::
+
+::: steps Stop 钩子：不让模型说完就走
+--- 模型说“都处理好了”，没有工具调用。循环准备结束这次运行，先触发 `agent_before_settle`，它是结束前最后一个决策点。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as Stop 钩子
+  M->>L: 都处理好了（无工具调用）
+  L->>X: agent_before_settle
+--- 扩展 `run('Stop')`，把 `stop_hook_active`（此刻为假）和上一条助手消息的文字交给钩子。这段文字是 `message_end` 事件里记下的 `lastAssistantText`。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as Stop 钩子
+  L->>X: agent_before_settle
+  X->>H: Stop：active 为假
+--- 钩子检查：没有 `stop_hook_active`，回复里也没有“测试通过”，于是输出 `decision: block` 和原因。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as Stop 钩子
+  X->>H: Stop：active 为假
+  H-->>X: block：先运行 npm test
+--- `interpret` 把 `block` 记进 verdict。扩展把 `stopHookActive` 置为真——让钩子知道下一轮是它要求的。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as Stop 钩子
+  H-->>X: block：先运行 npm test
+  Note over X: stopHookActive 置为真
+--- 处理函数把 “Stop 钩子：…” 作为 `custom_message` 追加进 `entries`，返回 `continue: true`。运行没有结束，模型带着这条消息再来一轮。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as Stop 钩子
+  Note over X: stopHookActive 置为真
+  X-->>L: 追加消息，continue
+--- 模型运行 `echo "12 passed"`，再次宣布“测试通过（12 passed）”，第二次触发 `agent_before_settle`。这次 `stop_hook_active` 为真，而且回复里有“测试通过”，钩子不再输出，`block` 为空，处理函数直接返回，运行结束。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant X as hooks 扩展
+  participant H as Stop 钩子
+  M->>L: 跑 echo，再说测试通过
+  L->>X: agent_before_settle（第 2 次）
+  X->>H: Stop：active 为真
+  H-->>X: 无输出，放行
+  X-->>L: 放行，运行结束
 :::
 
 ## 失败语义：钩子坏了怎么办

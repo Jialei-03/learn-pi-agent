@@ -102,9 +102,128 @@ build: 跑通课程环境
 5. **模型要求读文件。** 回复里有一个 `read` 工具调用，循环通过 [`executeToolCalls()`](https://github.com/earendil-works/pi/blob/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/agent/src/agent-loop.ts#L518) 执行它，把结果追加到上下文，再回到第 3 步。
 6. **结果原路返回。** 循环的每一步都发出事件（`message_start`、`tool_execution_end`、`turn_end`……）。`AgentSession` 订阅这些事件：界面据此实时刷新，消息完成时[写进会话文件](https://github.com/earendil-works/pi/blob/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/coding-agent/src/core/agent-session.ts#L1181)。
 
+::: steps 一次回车从界面走到模型再走回来
+--- **产品层接住输入。** `AgentSession.prompt()` 先检查这是不是 `/命令`，再展开提示模板，把文字包装成一条 user 消息，交给循环层的 `agent.prompt()`。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 界面
+  participant S as AgentSession
+  participant L as runLoop
+  participant P as packages/ai
+  participant H as 模型 API
+  rect rgb(255, 230, 213)
+    U->>S: 回车：README 讲了什么？
+    Note over S: 不是 /命令<br/>展开提示模板<br/>包成 user 消息
+    S->>L: agent.prompt()
+  end
+--- **循环层准备一次运行。** `Agent.prompt()` 创建取消信号、标记“正在运行”，再调用 `runAgentLoop()`，后者把一切交给 `runLoop()`。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 界面
+  participant S as AgentSession
+  participant L as runLoop
+  participant P as packages/ai
+  participant H as 模型 API
+  U->>S: 回车：README 讲了什么？
+  Note over S: 不是 /命令<br/>展开提示模板<br/>包成 user 消息
+  S->>L: agent.prompt()
+  rect rgb(255, 230, 213)
+    Note over L: 创建取消信号<br/>标记正在运行
+    L->>L: runAgentLoop<br/>进入 runLoop
+  end
+--- **循环开始转。** `runLoop` 把上下文交给 `streamAssistantResponse()`，它调用模型层的流式函数；Anthropic 适配器把统一格式的消息翻译成请求体，发出 HTTP 请求。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 界面
+  participant S as AgentSession
+  participant L as runLoop
+  participant P as packages/ai
+  participant H as 模型 API
+  U->>S: 回车：README 讲了什么？
+  Note over S: 不是 /命令<br/>展开提示模板<br/>包成 user 消息
+  S->>L: agent.prompt()
+  Note over L: 创建取消信号<br/>标记正在运行
+  L->>L: runAgentLoop<br/>进入 runLoop
+  rect rgb(255, 230, 213)
+    L->>P: streamSimple
+    P->>H: 翻译成请求体<br/>发出 HTTP
+  end
+--- **模型要求读文件。** 返回的 SSE 流被适配器组装回统一格式；这条助手消息里有一个 `read` 工具调用。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 界面
+  participant S as AgentSession
+  participant L as runLoop
+  participant P as packages/ai
+  participant H as 模型 API
+  U->>S: 回车：README 讲了什么？
+  Note over S: 不是 /命令<br/>展开提示模板<br/>包成 user 消息
+  S->>L: agent.prompt()
+  Note over L: 创建取消信号<br/>标记正在运行
+  L->>L: runAgentLoop<br/>进入 runLoop
+  L->>P: streamSimple
+  P->>H: 翻译成请求体<br/>发出 HTTP
+  rect rgb(255, 230, 213)
+    H-->>P: SSE 流
+    P-->>L: 助手消息<br/>含 read 调用
+  end
+--- **执行工具，再转一圈。** `executeToolCalls()` 执行 `read`，结果追加到上下文，然后回到上一步再请求一次；这次回复只有文字，循环结束。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 界面
+  participant S as AgentSession
+  participant L as runLoop
+  participant P as packages/ai
+  participant H as 模型 API
+  U->>S: 回车：README 讲了什么？
+  Note over S: 不是 /命令<br/>展开提示模板<br/>包成 user 消息
+  S->>L: agent.prompt()
+  Note over L: 创建取消信号<br/>标记正在运行
+  L->>L: runAgentLoop<br/>进入 runLoop
+  L->>P: streamSimple
+  P->>H: 翻译成请求体<br/>发出 HTTP
+  H-->>P: SSE 流
+  P-->>L: 助手消息<br/>含 read 调用
+  rect rgb(255, 230, 213)
+    L->>L: executeToolCalls<br/>执行 read
+    Note over L: 结果进上下文<br/>回到第 3 步
+  end
+--- **结果原路返回。** 每一步循环都发出事件；`AgentSession` 订阅它们：界面据此实时刷新，消息完成时写进会话文件。循环自己不保存任何东西。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 界面
+  participant S as AgentSession
+  participant L as runLoop
+  participant P as packages/ai
+  participant H as 模型 API
+  U->>S: 回车：README 讲了什么？
+  Note over S: 不是 /命令<br/>展开提示模板<br/>包成 user 消息
+  S->>L: agent.prompt()
+  Note over L: 创建取消信号<br/>标记正在运行
+  L->>L: runAgentLoop<br/>进入 runLoop
+  L->>P: streamSimple
+  P->>H: 翻译成请求体<br/>发出 HTTP
+  H-->>P: SSE 流
+  P-->>L: 助手消息<br/>含 read 调用
+  L->>L: executeToolCalls<br/>执行 read
+  Note over L: 结果进上下文<br/>回到第 3 步
+  rect rgb(255, 230, 213)
+    L-->>S: message_end<br/>tool_execution_end<br/>turn_end …
+    S-->>U: 刷新界面
+    Note over S: 写入会话文件
+  end
+:::
+
 第 2 步进入循环层的入口很短，值得先看一眼：
 
+::: tabs
+@@ Pi
 @pi packages/agent/src/agent-loop.ts#runAgentLoop
+把新消息拼到已有上下文后面，发出开始事件，交给 `runLoop`。
+@@ mox
+@code mox/src/loop.ts#L49-L67
+mox 没有单独的入口函数：`prompts` 在这里变成 `pending`，由内层循环推进历史，同样不负责保存。
+:::
 
 它做的事情只有三件：把新消息拼到已有上下文后面，发出“开始”事件，然后把一切交给 `runLoop`。注意它不保存任何东西——保存是第 6 步产品层订阅事件时做的。**循环只负责“转”，不负责“记”。**
 

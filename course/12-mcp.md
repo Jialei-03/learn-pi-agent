@@ -79,6 +79,57 @@ MCP 建立在 **JSON-RPC 2.0** 之上。消息只有三种：
 
 **进度。** 客户端在请求的 `_meta.progressToken` 里放一个令牌，服务器就可以在处理过程中发 `notifications/progress` 通知。
 
+::: steps 一次连接：握手、列工具、调用、进度
+--- `McpClient.connect()` 先启动传输，然后用 `request('initialize')` 发出请求 #1，带上协议版本 `2025-11-25`、空的能力表和客户端身份。
+sequenceDiagram
+  participant A as Agent 循环
+  participant C as McpClient
+  participant S as MCP 服务器
+  C->>S: initialize 请求 #1（协议版本 能力 身份）
+--- 服务器回复。`connect()` 检查 `protocolVersion` 是否在 `SUPPORTED_VERSIONS` 里，不在就关闭并报错；然后记下 `serverInfo`、`capabilities` 和 `instructions`。
+sequenceDiagram
+  participant A as Agent 循环
+  participant C as McpClient
+  participant S as MCP 服务器
+  C->>S: initialize 请求 #1（协议版本 能力 身份）
+  S-->>C: 响应 #1（选定的版本 tools.listChanged instructions）
+--- 握手最后一步是**通知**：没有 `id`，不需要回复。发完 `notifications/initialized`，才能发别的请求。
+sequenceDiagram
+  participant A as Agent 循环
+  participant C as McpClient
+  participant S as MCP 服务器
+  C->>S: initialize 请求 #1（协议版本 能力 身份）
+  S-->>C: 响应 #1（选定的版本 tools.listChanged instructions）
+  C->>S: notifications/initialized 通知
+--- `listTools()` 发出 `tools/list`。响应里如果带 `nextCursor`，就沿着游标继续取；游标重复说明服务器有 bug，直接报错，免得死循环。
+sequenceDiagram
+  participant A as Agent 循环
+  participant C as McpClient
+  participant S as MCP 服务器
+  C->>S: notifications/initialized 通知
+  A->>C: listTools()
+  C->>S: tools/list 请求 #2
+  S-->>C: 响应 #2（8 个工具）
+--- 调用：`callTool` 就是 `request('tools/call', { name, arguments })`。响应按 `id` 找到等待中的请求，交还给调用方；工具失败是结果里的 `isError`，不是 JSON-RPC 的 `error`。
+sequenceDiagram
+  participant A as Agent 循环
+  participant C as McpClient
+  participant S as MCP 服务器
+  S-->>C: 响应 #2（8 个工具）
+  A->>C: callTool(search_issues)
+  C->>S: tools/call 请求 #3
+  S-->>C: 响应 #3（content + structuredContent）
+--- 带进度的调用：只要传了 `onProgress`，`request` 就在 `_meta.progressToken` 里放令牌（mox 直接用请求 id）。服务器发 `notifications/progress`，客户端的 `handle` 按令牌找到请求，重置超时并回调；最后的响应才结束请求。
+sequenceDiagram
+  participant A as Agent 循环
+  participant C as McpClient
+  participant S as MCP 服务器
+  C->>S: tools/call #4（_meta.progressToken = 4）
+  S-->>C: notifications/progress（数到 1）
+  S-->>C: notifications/progress（数到 2）
+  S-->>C: 响应 #4（数完了：2）
+:::
+
 ::: predict 服务器代码里有一句 console.log("starting...")，会发生什么？
 ???
 stdout 是协议通道。这一行不是 JSON，客户端解析失败。好的客户端只报告这一行的错误，继续处理后面的消息（下一节的实验 ④）；差的客户端可能直接断开连接。这是写 MCP 服务器最常见的错误：**日志必须写到 stderr**。客户端通常会保留 stderr 的最后一段，连接失败时，原因多半就在里面。
@@ -97,6 +148,66 @@ stdout 是协议通道。这一行不是 JSON，客户端解析失败。好的�
 **② ③ 取消。** 超时或用户按下 Ctrl+C 时，客户端本地立刻让请求失败，同时给服务器发一条 `notifications/cancelled`。实验里服务器的 stderr 证明它收到了，停止了计数——否则服务器会继续在后台白白干活。规范规定 `initialize` 不能取消；取消之后才到达的响应，直接丢弃：
 
 @pi packages/mcp/src/client.ts#L561-L575
+
+::: steps 超时重置与取消：一个请求的两种结局
+--- `request` 为 #4 登记一个 `Pending`，并立刻 `armTimeout`：400ms 内没有任何动静，就按超时处理。因为传了 `onProgress`，请求带着进度令牌发出。
+sequenceDiagram
+  participant U as 用户
+  participant C as McpClient
+  participant S as MCP 服务器
+  U->>C: callTool(slow_count, signal, timeoutMs 400, onProgress)
+  C->>S: tools/call #4（带 progressToken）
+--- 服务器报告进度。`handle` 的第③分支认出 `notifications/progress`，按令牌找到 `Pending`，再次 `armTimeout`——计时从头开始，所以总共 750ms 的任务能在 400ms 超时下跑完（实验 ①）。
+sequenceDiagram
+  participant U as 用户
+  participant C as McpClient
+  participant S as MCP 服务器
+  C->>S: tools/call #4（带 progressToken）
+  S-->>C: notifications/progress
+  Note over C: armTimeout：计时从头开始
+--- 另一种结局：用户在中途 abort。`request` 在 `signal` 上挂了监听，触发 `cancel(id, …, '用户取消')`。
+sequenceDiagram
+  participant U as 用户
+  participant C as McpClient
+  participant S as MCP 服务器
+  C->>S: tools/call #4（带 progressToken）
+  U->>C: abort()
+--- `cancel` 先把 `Pending` 删除、清理定时器，再 `reject`：调用方立刻拿到“已取消”，不等服务器。
+sequenceDiagram
+  participant U as 用户
+  participant C as McpClient
+  participant S as MCP 服务器
+  C->>S: tools/call #4（带 progressToken）
+  U->>C: abort()
+  Note over C: cancel：pending 删除，本地立刻 reject
+--- 然后，只要被取消的请求不是 `initialize`，就发 `notifications/cancelled` 通知服务器停手；实验里服务器的 stderr 证明它收到了。超时走的是同一个 `cancel`，只是原因写成“超时”。
+sequenceDiagram
+  participant U as 用户
+  participant C as McpClient
+  participant S as MCP 服务器
+  U->>C: abort()
+  Note over C: cancel：pending 删除，本地立刻 reject
+  C->>S: notifications/cancelled（requestId 4）
+--- 服务器如果还是把响应发回来了，`handle` 的第①分支在 `pending` 里找不到这个 id，直接 `return`。迟到的响应不会影响任何人。
+sequenceDiagram
+  participant U as 用户
+  participant C as McpClient
+  participant S as MCP 服务器
+  C->>S: notifications/cancelled（requestId 4）
+  S-->>C: 迟到的响应 #4
+  Note over C: handle：pending 里找不到，直接丢弃
+:::
+
+同一件事——“超时或取消时，本地立刻失败并通知服务器”——Pi 和 mox 的写法：
+
+::: tabs
+@@ Pi
+@pi packages/mcp/src/client.ts#cancelPending
+`notifyServer` 由请求是否可取消决定；发送失败交给 `emitError`。
+@@ mox
+@code mox/src/mcp/client.ts#cancel
+原因 `reason` 为空（比如连接断开）时不发通知；`initialize` 不发。
+:::
 
 **④ 日志污染。** 一行坏数据只报告错误，不断开连接，后续调用照常进行。stdio 传输按**字节**寻找换行符，而不是先把数据块转成字符串——一个汉字的 UTF-8 编码可能被拆在两个数据块里，这和第 2 章解析 SSE 时遇到的问题一样：
 
@@ -126,9 +237,16 @@ mox 的实现分成两层，传输层只管进程和分帧：
 
 在 Pi 里，MCP 支持本身就是一个**内置扩展**，用的正是第 9 章的扩展 API：连上服务器后 `pi.registerTool` 注册工具，`before_agent_start` 往系统提示里加小节，`tool_call` 在调用前等待服务器就绪。内核里没有任何 MCP 专用的逻辑。
 
-每个 MCP 工具被包装成一个普通的工具定义：
+每个 MCP 工具被包装成一个普通的工具定义，切换标签对照 Pi 和 mox 的写法：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/extensions/mcp/tools.ts#L312-L351
+除了名字、描述、参数，还带着暴露方式、命名空间、注解和渲染函数。
+@@ mox
+@code mox/src/mcp/tools.ts#toAgentTool
+只保留四件事：名字、描述、整理后的参数 schema、`execute`；进度回调变成 `onUpdate`。
+:::
 
 ### 名字
 

@@ -1,5 +1,10 @@
 // 页面模板。所有页面共用同一套外壳：顶栏、课程目录、正文、本页目录。
 import { PI, chapters, parts, type ChapterInfo, type PartInfo } from '../course/syllabus.ts';
+import { bookSidebar, bookToc } from './book.mjs';
+
+/** 每章带编号的小节（构建时先渲染全部章节，再生成页面），供左侧目录展开。 */
+let SECTIONS = new Map<string, { level: number; id: string; text: string; num?: string }[]>();
+export function setSections(map: typeof SECTIONS) { SECTIONS = map; }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const num = (n: number) => String(n).padStart(2, '0');
@@ -12,7 +17,7 @@ export function moxMark(size = 28) {
 export interface PageMeta {
   chapter: ChapterInfo & { part: PartInfo };
   frontmatter: Record<string, string | string[]>;
-  headings: { level: number; id: string; text: string }[];
+  headings: { level: number; id: string; text: string; num?: string }[];
 }
 
 function head(title: string, description: string, base: string) {
@@ -33,6 +38,7 @@ function topbar(base: string) {
   return `<header class="topbar">
   <button class="icon-btn nav-toggle" type="button" aria-label="打开课程目录"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
   <a class="brand" href="${base}index.html"><img class="product-icon" src="${base}static/product-icon.svg" width="30" height="30" alt="Pi 原始图标"><span class="brand-name">Learn Pi Agent</span></a>
+  <span class="topbar-title" aria-hidden="true"></span>
   <div class="topbar-actions">
     <button class="search-btn" type="button" data-search-open><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>搜索课程</span><kbd>⌘K</kbd></button>
     <a class="top-link" href="${base}interview.html">面试题库</a>
@@ -45,17 +51,12 @@ function topbar(base: string) {
 }
 
 function sidebar(base: string, current?: string) {
-  const groups = parts.map(part => `<div class="nav-part">
-    <div class="nav-part-title">${esc(part.title)}</div>
-    <ol>${part.chapters.map(c => {
-      const ready = c.status === 'ready';
-      const cls = [c.slug === current ? 'current' : '', ready ? '' : 'planned'].filter(Boolean).join(' ');
-      const inner = `<span class="nav-num">${num(c.n)}</span><span class="nav-title">${esc(c.title.split('：')[0])}</span>`;
-      return `<li class="${cls}">${ready ? `<a href="${base}chapters/${c.slug}.html"${c.slug === current ? ' aria-current="page"' : ''}>${inner}</a>` : `<span class="nav-disabled" title="编写中">${inner}</span>`}</li>`;
-    }).join('')}</ol>
-  </div>`).join('');
-  return `<nav class="sidebar" aria-label="课程目录"><div class="sidebar-inner">${groups}
-  <p class="nav-pin">源码基准 <a href="${PI.repo}/tree/${PI.commit}" target="_blank" rel="noopener">Pi ${PI.version}</a></p></div></nav>`;
+  const footer = `<p class="nav-pin">源码基准 <a href="${PI.repo}/tree/${PI.commit}" target="_blank" rel="noopener">Pi ${PI.version}</a></p>`;
+  return bookSidebar({
+    parts: parts.map(p => ({ title: p.title, chapters: p.chapters.filter(c => c.status === 'ready') })),
+    sections: SECTIONS, current, footer,
+    href: (slug: string, id?: string) => `${base}chapters/${slug}.html${id ? '#' + id : ''}`,
+  });
 }
 
 function searchDialog() {
@@ -95,14 +96,13 @@ export function layout(meta: PageMeta, content: string) {
     fm.time ? `<span>约 ${esc(String(fm.time).replace(/^约\s*/, ''))}</span>` : '',
     fm.prereq ? `<span>前置：${esc(String(fm.prereq))}</span>` : '',
   ].filter(Boolean).join('');
-  const toc = headings.length
-    ? `<aside class="toc" aria-label="本页目录"><div class="toc-inner"><div class="toc-title">本页内容</div><ol>${headings.map(h => `<li class="lvl-${h.level}"><a href="#${h.id}">${esc(h.text)}</a></li>`).join('')}</ol></div></aside>`
-    : '';
+  const toc = bookToc(headings);
   const pager = `<nav class="pager">${prev ? `<a class="prev" href="${prev.slug}.html"><small>← 上一章</small><span>${esc(prev.title)}</span></a>` : '<span></span>'}${next ? `<a class="next" href="${next.slug}.html"><small>下一章 →</small><span>${esc(next.title)}</span></a>` : '<span></span>'}</nav>`;
   const main = `<article class="chapter">
 <header class="chapter-head">
   <p class="eyebrow">第 ${num(chapter.n)} 章<span>·</span>${esc(chapter.part.title)}${chapter.extend ? '<span>·</span>扩展章节' : ''}</p>
-  <h1>${esc(chapter.title)}</h1>
+  <a class="edit-page" href="${REPO}/blob/main/course/${chapter.slug}.md" target="_blank" rel="noopener" title="在 GitHub 上查看本章源文件" aria-label="在 GitHub 上查看本章源文件"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+  <h1><span class="h1-num">${chapter.n}</span>${esc(chapter.title)}</h1>
   <p class="lede">${esc(chapter.summary)}</p>
   ${fm.motto ? `<p class="motto">${esc(String(fm.motto))}</p>` : ''}
   ${learn.length ? `<div class="objectives"><p class="objectives-title">本章目标</p><ul>${learn.map(l => `<li>${esc(l)}</li>`).join('')}</ul>${fm.build ? `<p class="objectives-build"><span>动手产出</span>${esc(String(fm.build))}</p>` : ''}</div>` : ''}

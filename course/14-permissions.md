@@ -89,6 +89,51 @@ Pi 默认不审批任何工具调用。它的立场是：盯着对话记录、�
 
 @code extensions/permissions/rules.ts#stripWrappers
 
+::: steps decideBash 判断 npm run build && rm -rf /
+--- 模型要执行的是一整条复合命令。`decidePermission` 发现工具是 Bash，转给 `decideBash`。单看开头是 `npm run`，会被 `Bash(npm run *)` 放行；规则引擎不能这样看。
+flowchart LR
+  C["npm run build && rm -rf /"]:::on --> SP[splitCommand]:::dim
+  SP --> S1["npm run build"]:::dim --> M1{"命中 deny？"}:::dim
+  SP --> S2["rm -rf /"]:::dim --> M2{"命中 deny？"}:::dim
+  M2 -- Bash(rm *) --> OUT["deny"]:::dim
+  OUT --> BLK["tool_call block"]:::dim
+--- `splitCommand` 按 `&&` 拆成两个子命令（引号里的不算，`$(…)` 里的也会拿出来）。`ok` 为真，说明这条命令能可靠解析。
+flowchart LR
+  C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::on
+  SP --> S1["npm run build"]:::dim --> M1{"命中 deny？"}:::dim
+  SP --> S2["rm -rf /"]:::dim --> M2{"命中 deny？"}:::dim
+  M2 -- Bash(rm *) --> OUT["deny"]:::dim
+  OUT --> BLK["tool_call block"]:::dim
+--- 先过 deny：对每个子命令 `stripWrappers(sub, false)` 去掉包装命令和**所有**环境变量赋值，再逐条规则匹配。`npm run build` 没有命中任何 deny 规则。
+flowchart LR
+  C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::done
+  SP --> S1["npm run build"]:::on --> M1{"命中 deny？"}:::on
+  SP --> S2["rm -rf /"]:::dim --> M2{"命中 deny？"}:::dim
+  M2 -- Bash(rm *) --> OUT["deny"]:::dim
+  OUT --> BLK["tool_call block"]:::dim
+--- 第二个子命令 `rm -rf /` 命中 `Bash(rm *)`。任何一个子命令命中 deny，整条命令就是 deny，函数在这里直接返回，不再看 allow。
+flowchart LR
+  C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::done
+  SP --> S1["npm run build"]:::done --> M1{"命中 deny？"}:::done
+  SP --> S2["rm -rf /"]:::on --> M2{"命中 deny？"}:::on
+  M2 -- Bash(rm *) --> OUT["deny"]:::dim
+  OUT --> BLK["tool_call block"]:::dim
+--- 返回 `deny`，原因是“被规则 Bash(rm *) 禁止：rm -rf /”。注意 `Bash(npm run *)` 的 allow 规则根本没机会出场：deny → ask → allow，第一个匹配的组说了算。
+flowchart LR
+  C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::done
+  SP --> S1["npm run build"]:::done --> M1{"命中 deny？"}:::done
+  SP --> S2["rm -rf /"]:::done --> M2{"命中 deny？"}:::done
+  M2 -- Bash(rm *) --> OUT["deny"]:::on
+  OUT --> BLK["tool_call block"]:::dim
+--- 扩展的 `tool_call` 处理函数拿到 `deny`，返回 `block: true`，原因带上“权限：”前缀交给模型；整个过程没有询问用户。
+flowchart LR
+  C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::done
+  SP --> S1["npm run build"]:::done --> M1{"命中 deny？"}:::done
+  SP --> S2["rm -rf /"]:::done --> M2{"命中 deny？"}:::done
+  M2 -- Bash(rm *) --> OUT["deny"]:::done
+  OUT --> BLK["tool_call block"]:::on
+:::
+
 ### 只读命令
 
 `ls`、`cat`、`grep`、`git status` 这类命令不改变任何东西，没必要每次都问。但“只读”要小心定义：`find` 带上 `-delete` 或 `-exec` 就不是只读的；`git` 只有 `status`、`log`、`diff` 等几个子命令是；任何带输出重定向的命令（`ls > files.txt`）都在写文件。
@@ -145,9 +190,68 @@ Claude Code 的文档也明确说了，deny 规则拦的是“模型通常会写
 
 @lab node labs/ch14/session.ts
 
+::: steps 「本会话都允许」：第二次就不再问了
+--- 脚本模型发出 `edit src/app.ts`。`tool_call` 处理函数调用 `decidePermission`：没有 deny/ask/allow 规则命中，工作目录内的修改在 default 模式下是 `ask`。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as 权限扩展
+  participant U as 用户
+  L->>X: tool_call（edit src/app.ts）
+  Note over X: decidePermission：没有规则命中，default 模式下改文件是 ask
+--- 返回的不是 allow 也不是 deny，而且有界面（`ctx.hasUI`），于是扩展用 `ctx.ui.select` 弹出三选一。没有界面的话，这里就直接 `block` 了。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as 权限扩展
+  participant U as 用户
+  L->>X: tool_call（edit src/app.ts）
+  Note over X: decidePermission：没有规则命中，default 模式下改文件是 ask
+  X->>U: ctx.ui.select：允许一次 本会话都允许 拒绝
+--- 用户选“本会话都允许”。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as 权限扩展
+  participant U as 用户
+  X->>U: ctx.ui.select：允许一次 本会话都允许 拒绝
+  U-->>X: 本会话都允许
+--- 扩展不是放开整个 Edit 工具，而是 `suggestRules` 为这次调用生成规则：文件修改是 `Edit(/**)`，基准是工作目录，只覆盖目录内。规则存进 `sessionRules`，这次调用放行。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as 权限扩展
+  participant U as 用户
+  U-->>X: 本会话都允许
+  Note over X: suggestRules 给出 Edit(/**)，parseRule 后放进 sessionRules
+  X-->>L: 返回 undefined，放行
+--- 接着模型调用 `write src/util.ts`。`context(ctx)` 每次都重新拼 `[...rules, ...sessionRules]`，会话规则已经在里面了。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as 权限扩展
+  participant U as 用户
+  X-->>L: 返回 undefined，放行
+  L->>X: tool_call（write src/util.ts）
+--- `decidePermission` 里 `Edit` 的路径规则同样适用于 `Write`，命中 allow，不再弹窗。`cat .env` 则不同：deny 规则命中后直接 `block`，连选择的机会都不给用户。
+sequenceDiagram
+  participant L as Agent 循环
+  participant X as 权限扩展
+  participant U as 用户
+  L->>X: tool_call（write src/util.ts）
+  Note over X: context 合并 rules 与 sessionRules，Edit 规则也管 Write，命中 allow
+  X-->>L: 放行，没有弹窗
+:::
+
 几个细节：`npm run build` 匹配 allow 规则，没有弹窗；批准第一次 `edit` 时选了“本会话都允许”，紧接着的 `write` 就不再询问；`cat .env` 直接被拒绝，根本没有询问用户——deny 规则不给用户“点错”的机会。
 
 mox 版本（`extensions/permissions/mox.ts`）需要一个让用户做选择的通道，所以 mox 的扩展上下文增加了 `select`：交互模式下，它把问题打印出来，把用户输入的下一行当作答案；`-p` 模式下没有 `select`，扩展按“没人能确认”处理。
+
+同一个 `tool_call` 闸门，Pi 和 mox 的版本对照（规则判断共用 `rules.ts`，区别只在“怎么问人”）：
+
+::: tabs
+@@ Pi
+@code extensions/permissions/index.ts#L41-L56
+通过 `ctx.hasUI` 判断有没有界面，`ctx.ui.select` 提问；规则每次由 `context(ctx)` 重新拼出，还带着 `readOnlyTools` 和 `additionalDirectories`。
+@@ mox
+@code extensions/permissions/mox.ts#L15-L26
+`ctx.select` 只在交互模式下存在，没有它就等于没有界面；其余几行与 Pi 版逐行对应。
+:::
 
 ### 和钩子的关系
 

@@ -35,6 +35,72 @@ Claude Code 对应的功能是计划模式、TodoWrite 工具和检查点（`/re
 - 整个过程只有一个对话框，就是批准计划的那个。批准之后的 `edit` 没有再问：批准时选的是“自动接受编辑”，权限扩展随之切到了 `acceptEdits`。
 - `exit_plan_mode` 只在计划模式里出现在模型的工具列表里，批准之后就消失了。
 
+::: steps 计划模式：从 /plan 到批准后的第一次 edit
+--- 用户输入 `/plan`。`setActive(true)` 做三件事：把 `exit_plan_mode` 加进模型能看到的工具列表、`appendEntry` 把开关记进会话、发出 `permissions:set-mode`。权限扩展切到 `plan`。
+sequenceDiagram
+  participant U as 用户
+  participant L as Agent 循环
+  participant PM as 计划扩展
+  participant PE as 权限扩展
+  U->>PM: /plan
+  Note over PM: setActive(true)：加工具，记开关
+  PM->>PE: permissions:set-mode plan
+--- 模型试着 `edit`。计划模式的 `tool_call` 闸门调用 `decidePermission(…, mode: 'plan')`，结果不是 allow，于是返回 `block`，原因里提醒“请先调用 exit_plan_mode”。权限扩展同在 plan 模式，也不会先弹框，所以用户什么都没看到。
+sequenceDiagram
+  participant U as 用户
+  participant L as Agent 循环
+  participant PM as 计划扩展
+  participant PE as 权限扩展
+  PM->>PE: permissions:set-mode plan
+  L->>PM: tool_call edit src/cli.ts
+  PM-->>L: block：计划模式只能读
+--- 只读调研不受影响：bash 命令同样交给 `decidePermission`，规则引擎认定是只读，放行。
+sequenceDiagram
+  participant U as 用户
+  participant L as Agent 循环
+  participant PM as 计划扩展
+  participant PE as 权限扩展
+  PM-->>L: block：计划模式只能读
+  L->>PM: tool_call bash（只读）
+  PM-->>L: 放行：只读
+--- 计划写好了，模型调用 `exit_plan_mode`，参数 `plan` 就是计划。这个工具在 `ALWAYS_ALLOWED` 里，不会被闸门拦；声明了 `readOnlyHint`，权限扩展也放行。审批发生在这次工具调用**之内**。
+sequenceDiagram
+  participant U as 用户
+  participant L as Agent 循环
+  participant PM as 计划扩展
+  participant PE as 权限扩展
+  PM-->>L: 放行：只读
+  L->>PM: exit_plan_mode（计划全文）
+  PM->>U: ui.select：批准计划吗？
+--- 用户在整个过程中唯一的一次选择：批准并自动接受编辑。如果选“不批准”，`ctx.ui.input` 收集意见，作为工具结果交还，模型继续规划。
+sequenceDiagram
+  participant U as 用户
+  participant L as Agent 循环
+  participant PM as 计划扩展
+  participant PE as 权限扩展
+  PM->>U: ui.select：批准计划吗？
+  U-->>PM: 批准，并自动接受编辑
+--- 批准的善后：`setActive(false)` 关掉计划模式并移除工具，再发 `permissions:set-mode acceptEdits`；工具结果告诉模型“现在可以修改文件了”。
+sequenceDiagram
+  participant U as 用户
+  participant L as Agent 循环
+  participant PM as 计划扩展
+  participant PE as 权限扩展
+  U-->>PM: 批准，并自动接受编辑
+  Note over PM: setActive(false)：移除工具
+  PM->>PE: permissions:set-mode acceptEdits
+  PM-->>L: 结果：用户批准了计划
+--- 同一个 `edit` 现在畅通无阻：计划模式的闸门第一行就因为 `active` 为假而返回，权限扩展已在 `acceptEdits`，工作目录内的修改自动接受。
+sequenceDiagram
+  participant U as 用户
+  participant L as Agent 循环
+  participant PM as 计划扩展
+  participant PE as 权限扩展
+  PM-->>L: 结果：用户批准了计划
+  L->>PM: tool_call edit src/cli.ts
+  PM-->>L: 放行，不弹框
+:::
+
 <figure class="diagram">
 <svg viewBox="0 0 720 270" role="img" aria-label="计划模式的状态流转">
 <defs><marker id="a16" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--ink-2)"/></marker><marker id="a16o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--accent)"/></marker></defs>
@@ -74,6 +140,17 @@ Claude Code 对应的功能是计划模式、TodoWrite 工具和检查点（`/re
 - **批准，并自动接受编辑**：退出计划模式，同时把权限切到 `acceptEdits`；
 - **批准，编辑逐个确认**；
 - **不批准**：输入修改意见，作为工具结果交给模型，继续规划。
+
+同一个问题——模型怎样把“计划”交出来——两种写法对照：
+
+::: tabs
+@@ Pi 官方示例
+@pi packages/coding-agent/examples/extensions/plan-mode/utils.ts#extractTodoItems
+从回答文本里找 `Plan:` 标题和编号列表，每一行都在猜模型的格式。
+@@ 本章扩展
+@code extensions/plan-mode/index.ts#L30-L50
+计划是 `exit_plan_mode` 的参数；审批在工具调用之内完成，选择结果就是工具的返回值。
+:::
 
 ### 只读怎么保证
 
@@ -216,6 +293,67 @@ Pi 的示例是一个不到 60 行的扩展：
 @code extensions/checkpoint/index.ts#createCheckpointExtension collapse=true hl=26-34,47-53
 
 恢复对话用的是 `ctx.navigateTree`：把当前位置移到那条检查点记录，后面的对话留在旧分支上，新的对话从这里长出来——这正是第 7 章的会话树。
+
+::: steps 检查点与 /rewind：拍快照，再原路退回
+--- 用户提问。检查点扩展在 `input` 事件里（斜杠命令和扩展自己发出的消息除外），在 Agent 动手之前调用 `store.snapshot`。
+sequenceDiagram
+  participant U as 用户
+  participant X as 检查点扩展
+  participant S as 影子仓库
+  participant T as 会话树
+  U->>X: 提问 1（input 事件）
+  X->>S: snapshot：add -A + commit
+--- 快照是影子仓库里的一个提交：`--git-dir` 指向 Agent 的数据目录，`--work-tree` 指向项目，`add -A` 加 `commit --allow-empty`。即使这次没有变化，也有自己的 commit。
+sequenceDiagram
+  participant U as 用户
+  participant X as 检查点扩展
+  participant S as 影子仓库
+  participant T as 会话树
+  X->>S: snapshot：add -A + commit
+  S-->>X: commit A
+  X->>T: appendEntry 记下 commit A
+--- commit 记进会话（`appendEntry('checkpoint', …)`），所以会话恢复后检查点还在。随后模型用 `edit`、`bash`、新建文件改了代码，第二次提问又拍了一张，还删了一个文件。
+sequenceDiagram
+  participant U as 用户
+  participant X as 检查点扩展
+  participant S as 影子仓库
+  participant T as 会话树
+  X->>T: appendEntry 记下 commit A
+  Note over X,S: 改文件；提问 2 拍快照 B 后删一个文件
+--- 用户输入 `/rewind`：扩展沿当前分支找出所有 `checkpoint` 记录，让用户选回到哪一次提问之前、恢复什么。
+sequenceDiagram
+  participant U as 用户
+  participant X as 检查点扩展
+  participant S as 影子仓库
+  participant T as 会话树
+  Note over X,S: 改文件；提问 2 拍快照 B 后删一个文件
+  U->>X: /rewind，选检查点 1
+--- `restore` 的第一件事是**给当前状态再拍一张**（backup），然后用 `changes` 算出两张快照的差异，用来生成“恢复 / 还原 / 删除”的提示。
+sequenceDiagram
+  participant U as 用户
+  participant X as 检查点扩展
+  participant S as 影子仓库
+  participant T as 会话树
+  U->>X: /rewind，选检查点 1
+  X->>S: restore(A)：先拍 backup
+--- `git read-tree -u --reset`：快照里有的文件写回去，之后新建的文件删掉，被忽略的不动。这是实验里 `src/list.ts` 能被删掉的原因。
+sequenceDiagram
+  participant U as 用户
+  participant X as 检查点扩展
+  participant S as 影子仓库
+  participant T as 会话树
+  X->>S: restore(A)：先拍 backup
+  X->>S: changes 算差异，read-tree --reset A
+  S-->>X: 工作目录回到 A
+--- 代码恢复完，backup 也记成一条检查点，`/rewind` 本身因此可以撤销。最后 `ctx.navigateTree` 把位置移到那条检查点记录，对话回到提问之前，新的对话从这里长出新分支。
+sequenceDiagram
+  participant U as 用户
+  participant X as 检查点扩展
+  participant S as 影子仓库
+  participant T as 会话树
+  S-->>X: 工作目录回到 A
+  X->>T: 记 backup；navigateTree 回到 A
+:::
 
 下面的实验里，第一次提问让模型用三种方式改文件（`edit` 工具改的、`bash` 追加的、新建的文件），第二次提问删掉一个文件，然后 `/rewind` 回到第一次提问之前。最后还跑了一次 Pi 示例用的 `git stash create` 做对照：
 

@@ -45,6 +45,60 @@ build: extensions/background、extensions/goal（Pi 与 mox 两个版本），�
 
 第 0.4 秒，模型启动构建、看了一眼进度，告诉用户“结束时会收到通知”，这次运行结束。第 1.0 秒，构建完成，通知唤醒了 Agent，模型根据最后的输出继续工作。中间这 0.6 秒没有任何模型请求。
 
+::: steps 后台命令：启动、看一眼、等通知
+--- 模型调用 `bash_background`。扩展让 `BackgroundJobs` 启动进程，**立即**返回编号 #1，不等命令结束，这次工具调用几乎没有耗时。
+sequenceDiagram
+  participant U as 用户
+  participant M as 模型
+  participant X as 后台扩展
+  participant J as BackgroundJobs
+  M->>X: bash_background(构建)
+  X->>J: jobs.start(command)
+  X-->>M: 已启动 #1（立即返回）
+--- 模型想看看进度，调用 `bash_output`。`jobs.read` 只返回自上次查看以来的新输出，模型只为新增的部分付 token。
+sequenceDiagram
+  participant U as 用户
+  participant M as 模型
+  participant X as 后台扩展
+  participant J as BackgroundJobs
+  X-->>M: 已启动 #1（立即返回）
+  M->>X: bash_output(1)
+  X-->>M: 只返回新输出
+--- 模型知道结束时会有通知，不再轮询：告诉用户“构建在后台进行”，这次运行结束。到 0.4 秒，Agent 空闲，没有任何模型请求在进行。
+sequenceDiagram
+  participant U as 用户
+  participant M as 模型
+  participant X as 后台扩展
+  participant J as BackgroundJobs
+  X-->>M: 只返回新输出
+  M-->>U: 构建进行中，结束会通知
+  Note over M,U: 运行结束，Agent 空闲
+--- 到 1.0 秒构建完成。`BackgroundJobs` 调用 `jobs.onExit`；扩展先检查会话有没有关闭（`closed`），再读出最后的输出。
+sequenceDiagram
+  participant U as 用户
+  participant M as 模型
+  participant X as 后台扩展
+  participant J as BackgroundJobs
+  Note over M,U: 运行结束，Agent 空闲
+  J-->>X: onExit（1.0 秒，退出码 0）
+--- 扩展用 `pi.sendMessage` 发一条消息，选项是 `deliverAs: 'followUp'` 加 `triggerTurn: true`。Agent 正在工作就排在当前任务之后；空闲就像这里一样，开始新的一轮。
+sequenceDiagram
+  participant U as 用户
+  participant M as 模型
+  participant X as 后台扩展
+  participant J as BackgroundJobs
+  J-->>X: onExit（1.0 秒，退出码 0）
+  X->>M: sendMessage：#1 已退出
+--- 通知唤醒了 Agent，模型看到退出码和最后的输出，继续工作。从 0.4 到 1.0 秒这段时间，没有消耗一次模型请求。
+sequenceDiagram
+  participant U as 用户
+  participant M as 模型
+  participant X as 后台扩展
+  participant J as BackgroundJobs
+  X->>M: sendMessage：#1 已退出
+  M-->>U: 构建成功，可以继续部署了
+:::
+
 mox 版本（`extensions/background/mox.ts`）提供同样的三个工具，但 mox 的扩展不能主动开始新的一轮，命令结束时只在终端提示。
 
 ## 目标循环：做完才停
@@ -67,6 +121,17 @@ mox 版本（`extensions/background/mox.ts`）提供同样的三个工具，但 
 
 @pi packages/coding-agent/docs/extensions.md#L665-L689
 
+同一个“准备停下时检查”的处理函数，Pi 和 mox 的对照：
+
+::: tabs
+@@ Pi
+@code extensions/goal/index.ts#L23-L33
+返回 `entries` 加 `continue: true`：把失败信息追加成一条自定义消息，再跑一轮。
+@@ mox
+@code extensions/goal/mox.ts#L18-L24
+返回 `followUp`：内核把这段文字当作下一条用户消息。`evaluate` 完全共用 `goal.ts`。
+:::
+
 ### 两道刹车
 
 一个永远不满足的目标会让 Agent 一直跑下去，烧掉大量 token。所以要有刹车：
@@ -79,6 +144,69 @@ mox 版本（`extensions/background/mox.ts`）提供同样的三个工具，但 
 第一个场景：模型先是嘴上说“已经修好了”，检查失败，测试的输出（`add(2, 3) = -1，期望 5`）被交回给它；第二轮它真的改了代码，检查通过。第二个场景：模型一直声称修好了却什么都没改，第二轮就被原地打转检测拦下。
 
 这种“把同一个目标反复喂给 Agent，直到客观的检查通过”的做法，社区里常被叫作 Ralph loop。它的前提是有一个**可靠的、可以自动运行的检查**——测试、类型检查、lint。目标越难自动验证（“把界面做得好看一点”），这个模式就越不适用。
+
+::: steps 目标循环：嘴上说完成不算，检查通过才算
+--- `/goal "node test.js" 修好 add 函数` 之后，模型第一轮什么文件都没改，就说“已经修好了”，准备停下。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant G as 目标扩展
+  participant C as node test.js
+  M-->>L: 已经修好了（没改文件）
+--- 这是 `agent_before_settle`：运行真正结束前的最后一个决策点。目标扩展的处理函数调用 `evaluate`。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant G as 目标扩展
+  participant C as node test.js
+  M-->>L: 已经修好了（没改文件）
+  L->>G: agent_before_settle
+  G->>C: evaluate 运行检查
+--- `runCheck` 在工作目录里跑检查命令，退出码不是 0，输出里写着 `add(2, 3) = -1，期望 5`。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant G as 目标扩展
+  participant C as node test.js
+  G->>C: evaluate 运行检查
+  C-->>G: 失败：add(2, 3) = -1
+--- `evaluate` 检查两道刹车：`goal.round` 加一，没超过轮数上限；`fingerprint` 对比上一轮的指纹——这是第一次失败，还没有可比较的，于是记下当前指纹，返回 `continue`。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant G as 目标扩展
+  participant C as node test.js
+  C-->>G: 失败：add(2, 3) = -1
+  Note over G: round 加一，记下指纹
+--- 处理函数把失败信息（检查输出的最后 15 行以内）作为 `custom_message` 追加，返回 `continue: true`，模型被告知“只说完成了不算数”，继续一轮。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant G as 目标扩展
+  participant C as node test.js
+  Note over G: round 加一，记下指纹
+  G-->>L: 追加消息，continue
+  M->>L: edit：减号改加号
+--- 第二轮模型真的改了代码，再次准备停下，第二次 `agent_before_settle`。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant G as 目标扩展
+  participant C as node test.js
+  M->>L: edit：减号改加号
+  M-->>L: 这次真的修好了
+  L->>G: agent_before_settle（第二次）
+--- 检查命令退出码为 0，`evaluate` 返回 `done`，扩展清掉目标，通知“目标达成”，运行结束。如果模型这一轮仍然什么都没改，指纹和上一轮相同，`evaluate` 会返回 `stop`，交给人。
+sequenceDiagram
+  participant M as 模型
+  participant L as Agent 循环
+  participant G as 目标扩展
+  participant C as node test.js
+  L->>G: agent_before_settle（第二次）
+  G->>C: runCheck
+  C-->>G: 退出码 0
+  G-->>L: done，运行结束
+:::
 
 ## 崩溃之后
 
@@ -172,6 +300,45 @@ Pi 的 `durable` 包（实验性）是一个从头为“随时可能断”设计
 <figcaption>一个工具调用的三次提交。意图提交之前崩溃，工具肯定没开始；两次提交之间崩溃，效果可能已经发生，只有双方都声明过重放安全的才重跑。</figcaption>
 </figure>
 
+::: steps 一个工具调用的三次提交，崩在哪里都有去处
+--- 模型一次回复里发出工具调用。第一次提交，`appendAssistant` 写助手消息、`createToolTask` 为每个调用建任务（阶段 `call`），两者在**同一个** `runtime.commit` 里：消息在，任务就在。
+flowchart LR
+  A["助手消息"]:::done --> C1["提交 ①<br/>消息+任务"]:::on --> K["call 阶段"]:::dim --> C2["提交 ②<br/>意图"]:::dim --> E["执行"]:::dim --> C3["提交 ③<br/>结果+终态"]:::dim
+  K -.崩溃.-> R1["崩在位置 ①<br/>仍是 call，从头来"]:::dim
+  E -.崩溃.-> R2["崩在位置 ② ③<br/>阶段是 execute"]:::dim
+  R2 --> R3["恢复函数：safe 且 safe 重跑<br/>否则写 interrupted"]:::dim
+--- 任务进入 `call` 阶段：解析工具、校验参数、运行 `beforeTool` 钩子。这一段还没有任何外部效果。如果进程在这里被杀（位置 ①），存储里的阶段仍是 `call`，重启后从头再走一遍；工具肯定没开始，代价只是钩子可能多跑一次。
+flowchart LR
+  A["助手消息"]:::done --> C1["提交 ①<br/>消息+任务"]:::done --> K["call 阶段"]:::on --> C2["提交 ②<br/>意图"]:::dim --> E["执行"]:::dim --> C3["提交 ③<br/>结果+终态"]:::dim
+  K -.崩溃.-> R1["崩在位置 ①<br/>仍是 call，从头来"]:::on
+  E -.崩溃.-> R2["崩在位置 ② ③<br/>阶段是 execute"]:::dim
+  R2 --> R3["恢复函数：safe 且 safe 重跑<br/>否则写 interrupted"]:::dim
+--- 第二次提交是三明治的上半片：检查点写入 `final`（最终参数）、`replay`（当时声明的重放策略，默认 `unsafe`）和状态 `running`，阶段变成 `execute`。这次提交成功，才执行工具。
+flowchart LR
+  A["助手消息"]:::done --> C1["提交 ①<br/>消息+任务"]:::done --> K["call 阶段"]:::done --> C2["提交 ②<br/>意图"]:::on --> E["执行"]:::dim --> C3["提交 ③<br/>结果+终态"]:::dim
+  K -.崩溃.-> R1["崩在位置 ①<br/>仍是 call，从头来"]:::dim
+  E -.崩溃.-> R2["崩在位置 ② ③<br/>阶段是 execute"]:::dim
+  R2 --> R3["恢复函数：safe 且 safe 重跑<br/>否则写 interrupted"]:::dim
+--- 工具执行（`tool.ts` 第 199 行）。位置 ② 是意图刚提交、工具刚要开始，位置 ③ 是工具已跑完、结果还没来得及写。两种崩溃留下的存储状态一模一样：阶段是 `execute`，没有终态。
+flowchart LR
+  A["助手消息"]:::done --> C1["提交 ①<br/>消息+任务"]:::done --> K["call 阶段"]:::done --> C2["提交 ②<br/>意图"]:::done --> E["执行"]:::on --> C3["提交 ③<br/>结果+终态"]:::dim
+  K -.崩溃.-> R1["崩在位置 ①<br/>仍是 call，从头来"]:::dim
+  E -.崩溃.-> R2["崩在位置 ② ③<br/>阶段是 execute"]:::on
+  R2 --> R3["恢复函数：safe 且 safe 重跑<br/>否则写 interrupted"]:::dim
+--- 重启后进入 `execute` 的恢复函数。先看重启计数 `cutOffTooOften`，再比较**存下来的**策略与**现在注册的**策略：两边都是 `safe` 才用存下来的参数重跑；否则写一条 `interrupted` 结果，“可能已经部分执行”，交给模型查证。
+flowchart LR
+  A["助手消息"]:::done --> C1["提交 ①<br/>消息+任务"]:::done --> K["call 阶段"]:::done --> C2["提交 ②<br/>意图"]:::done --> E["执行"]:::done --> C3["提交 ③<br/>结果+终态"]:::dim
+  K -.崩溃.-> R1["崩在位置 ①<br/>仍是 call，从头来"]:::dim
+  E -.崩溃.-> R2["崩在位置 ② ③<br/>阶段是 execute"]:::done
+  R2 --> R3["恢复函数：safe 且 safe 重跑<br/>否则写 interrupted"]:::on
+--- 第三次提交是下半片：`appendToolResult` 把结果写进对话，同一个回调返回终态 `terminal`。结果条目和任务终态要么都在、要么都不在，所以不会出现“结果已经在对话里，任务却还是 running”。
+flowchart LR
+  A["助手消息"]:::done --> C1["提交 ①<br/>消息+任务"]:::done --> K["call 阶段"]:::done --> C2["提交 ②<br/>意图"]:::done --> E["执行"]:::done --> C3["提交 ③<br/>结果+终态"]:::on
+  K -.崩溃.-> R1["崩在位置 ①<br/>仍是 call，从头来"]:::dim
+  E -.崩溃.-> R2["崩在位置 ② ③<br/>阶段是 execute"]:::done
+  R2 --> R3["恢复函数：safe 且 safe 重跑<br/>否则写 interrupted"]:::done
+:::
+
 ### 提交 ①：助手消息和工具任务一起写入
 
 mox 靠“最后一条助手消息里，有没有对应的结果”来推断哪些调用没做完。Pi 不推断：助手消息写入的**同一次提交**里，每个工具调用都建好了自己的任务记录。
@@ -202,6 +369,17 @@ mox 靠“最后一条助手消息里，有没有对应的结果”来推断哪�
 @pi packages/durable/test/harness-tools-recovery.test.ts#L109-L134 hl=122-124,126,129-131
 
 重新打开后，存储里的检查点正是 `{ phase: "execute", arguments: {}, replay: "unsafe" }`；工具一共只运行了 1 次（`state.runs`）；模型收到的结果是崩溃前已提交的输出 `run 1`，加上那句“was interrupted and may have partially run”。mox 的 `INTERRUPTED` 做的是同一件事，只是没有那半截输出。
+
+同一件事——“重启后，没有结果的工具调用怎么处理”——Pi 的 durable 和 mox 的写法对照：
+
+::: tabs
+@@ Pi durable
+@pi packages/durable/src/harness/tool.ts#L202-L227
+重启时有任务记录：阶段、存下来的参数和策略。重放要求存下的策略和现在注册的策略都是 `safe`，并且用存下的参数。
+@@ mox
+@code mox/src/resume.ts#settleInterrupted
+只有“最后一条助手消息里有哪些调用没有结果”这一条线索，所以只能看当前工具的 `replaySafe`；不安全的写 `INTERRUPTED`。
+:::
 
 ### 提交 ③：结果和终态一起写入
 

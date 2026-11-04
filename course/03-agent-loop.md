@@ -172,6 +172,104 @@ Pi 其实有两道关。第一道在提供商层：一个工具调用结束时�
 
 所以它们进两个不同的队列，在不同的位置被取出：插话在**每一轮结束后**取，下一次请求就能看到；追加任务在**内层循环退出后**才取。
 
+::: steps 插话与追加任务分别在哪一次请求出现
+--- 运行开始：上下文里只有用户的任务 U。**第 1 次请求**发给模型，它要求读 README。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant Q as 用户（两个队列）
+  participant L as runLoop
+  participant M as 模型
+  participant T as read_file
+  rect rgb(255, 230, 213)
+    L->>M: 请求 1：看到 U
+    M-->>L: 调用 read_file
+  end
+--- 工具执行期间，用户同时输入了两句话：S（“只用一句话回答”，纠正方向）进**插话队列**，F（“再列出 src 目录”，新任务）进**追加任务队列**。两个队列都还没有被读取。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant Q as 用户（两个队列）
+  participant L as runLoop
+  participant M as 模型
+  participant T as read_file
+  L->>M: 请求 1：看到 U
+  M-->>L: 调用 read_file
+  rect rgb(255, 230, 213)
+    L->>T: 执行 read_file
+    Q->>Q: S 进插话队列，F 进追加队列
+  end
+--- 每轮结束时，循环先问 `finishTurn`，再调用 `getSteering()` 取走 S，放进 `pending`。F 没有动。因为有工具结果和插话，内层循环条件成立，进入下一轮。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant Q as 用户（两个队列）
+  participant L as runLoop
+  participant M as 模型
+  participant T as read_file
+  L->>M: 请求 1：看到 U
+  M-->>L: 调用 read_file
+  L->>T: 执行 read_file
+  Q->>Q: S 进插话队列，F 进追加队列
+  rect rgb(255, 230, 213)
+    T-->>L: 工具结果
+    L->>Q: getSteering() 取走 S
+  end
+--- 下一轮开头，`pending` 里的 S 先被推进上下文，紧跟在工具结果后面。**第 2 次请求**里模型看到 U 和 S，于是只用一句话回答，没有再调用工具。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant Q as 用户（两个队列）
+  participant L as runLoop
+  participant M as 模型
+  participant T as read_file
+  L->>M: 请求 1：看到 U
+  M-->>L: 调用 read_file
+  L->>T: 执行 read_file
+  Q->>Q: S 进插话队列，F 进追加队列
+  T-->>L: 工具结果
+  L->>Q: getSteering() 取走 S
+  rect rgb(255, 230, 213)
+    L->>M: 请求 2：看到 U、S
+    M-->>L: 一句话回答，没有工具调用
+  end
+--- 这一轮既没有工具结果，插话队列也空了，**内层循环退出**。本该结束的这一刻，外层才调用 `getFollowUp()` 取走 F，作为 `pending` 回到内层。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant Q as 用户（两个队列）
+  participant L as runLoop
+  participant M as 模型
+  participant T as read_file
+  L->>M: 请求 1：看到 U
+  M-->>L: 调用 read_file
+  L->>T: 执行 read_file
+  Q->>Q: S 进插话队列，F 进追加队列
+  T-->>L: 工具结果
+  L->>Q: getSteering() 取走 S
+  L->>M: 请求 2：看到 U、S
+  M-->>L: 一句话回答，没有工具调用
+  rect rgb(255, 230, 213)
+    L->>Q: getFollowUp() 取走 F
+  end
+--- **第 3 次请求**里模型看到 U、S、F，回答完毕。这次追加队列也是空的，外层循环 `return end('done')`。S 在第 2 次请求出现，F 在第 3 次出现，和实验输出一致。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant Q as 用户（两个队列）
+  participant L as runLoop
+  participant M as 模型
+  participant T as read_file
+  L->>M: 请求 1：看到 U
+  M-->>L: 调用 read_file
+  L->>T: 执行 read_file
+  Q->>Q: S 进插话队列，F 进追加队列
+  T-->>L: 工具结果
+  L->>Q: getSteering() 取走 S
+  L->>M: 请求 2：看到 U、S
+  M-->>L: 一句话回答，没有工具调用
+  L->>Q: getFollowUp() 取走 F
+  rect rgb(255, 230, 213)
+    L->>M: 请求 3：看到 U、S、F
+    M-->>L: 回答 F
+    Note over L: 两个队列都空，运行结束
+  end
+:::
+
 这个实验让用户在工具执行期间同时插话（S）和追加任务（F），模型每次回复都报告它看到了哪些用户消息：
 
 @lab node labs/ch03/queues.ts
@@ -204,11 +302,25 @@ Claude Code 的官方文档描述了完全相同的行为：在 Claude 工作时
 
 **④⑤ 每轮结束时的决策顺序**：先问宿主，再取插话；工具结果或插话已经足以引出下一轮时，清除“额外继续”标记：
 
+::: tabs
+@@ Pi
 @pi packages/agent/src/agent-loop.ts#L295-L308
+先问宿主，再取插话；已经会有下一轮时清除“额外继续”。
+@@ mox
+@code mox/src/loop.ts#L98-L105
+同样的顺序：`finishTurn` 的决定、`getSteering`、清除 `explicitContinuation`。
+:::
 
 **⑤ 外层的收尾**：先取追加任务，再处理宿主要求的“额外继续”，都没有才结束：
 
+::: tabs
+@@ Pi
 @pi packages/agent/src/agent-loop.ts#L310-L327
+先取追加任务，再处理“额外继续”，都没有才退出循环。
+@@ mox
+@code mox/src/loop.ts#L107-L117
+外层的收尾：`getFollowUp`、`explicitContinuation`，最后 `end('done')`。
+:::
 
 | 编号 | mox | Pi |
 | --- | --- | --- |
@@ -259,6 +371,64 @@ Pi 的做法是**每次运行一个 `AbortController`**。运行开始时创建�
 同一个 `signal` 被传给模型的流式请求、每一个工具、以及钩子。模型流收到信号后中断 HTTP 连接，回复的停止原因变成 `aborted`，循环按 ① 的规则结束。工具这一侧，`bash` 工具在信号触发时杀掉**整个进程树**，而不只是 shell 本身——否则 `npm test` 启动的子进程会继续在后台运行：
 
 @pi packages/coding-agent/src/core/tools/bash.ts#L124-L143
+
+::: steps 按下 Esc 之后：信号传到哪里，谁会停下
+--- 运行开始时创建一个 `AbortController`，**同一个 signal** 会传给模型的流式请求和每一个工具。模型回复了一个 `long_task` 调用，工具开始执行，需要 2 秒。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant L as runLoop
+  participant T as 工具（2 秒）
+  participant M as 模型
+  rect rgb(255, 230, 213)
+    L->>T: execute(args, signal)
+    Note over T: 预计 2000ms 后完成
+  end
+--- 100 毫秒时用户按下 Esc：宿主调用 `abort()`。信号只是一个**通知**，此刻工具仍在运行，循环没有办法强行打断它。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant L as runLoop
+  participant T as 工具（2 秒）
+  participant M as 模型
+  L->>T: execute(args, signal)
+  Note over T: 预计 2000ms 后完成
+  rect rgb(255, 230, 213)
+    U->>L: Esc → abort()
+    L-->>T: signal 触发
+  end
+--- **监听信号的工具**收到通知后清掉计时器、抛出“已取消”，约 100ms 就返回错误结果；**不理会信号的工具**对通知视而不见，跑满 2 秒，结果显示成功。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant L as runLoop
+  participant T as 工具（2 秒）
+  participant M as 模型
+  L->>T: execute(args, signal)
+  Note over T: 预计 2000ms 后完成
+  U->>L: Esc → abort()
+  L-->>T: signal 触发
+  rect rgb(255, 230, 213)
+    T-->>L: 监听：100ms 返回错误<br/>不监听：2000ms 返回成功
+  end
+--- 工具一返回，循环带着结果再请求一次模型。此时信号已经是 aborted，模型流立刻以 `aborted` 结束，按 ① 的规则，运行以 `aborted` 收场。取消是协作式的：循环能做的只是把信号传到每一个地方。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant L as runLoop
+  participant T as 工具（2 秒）
+  participant M as 模型
+  L->>T: execute(args, signal)
+  Note over T: 预计 2000ms 后完成
+  U->>L: Esc → abort()
+  L-->>T: signal 触发
+  T-->>L: 监听：100ms 返回错误<br/>不监听：2000ms 返回成功
+  rect rgb(255, 230, 213)
+    L->>M: 请求（signal 已 aborted）
+    M-->>L: stopReason = aborted
+    Note over L: 结束运行
+  end
+:::
 
 但信号只是一个**通知**。JavaScript 没有办法强行中断一段正在运行的代码，工具必须自己监听信号并提前退出。这个实验让模型调用一个需要 2 秒的工具，用户在 100 毫秒时取消，对比一个监听信号的工具和一个不理会信号的工具：
 

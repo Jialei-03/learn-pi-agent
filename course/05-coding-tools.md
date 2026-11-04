@@ -113,6 +113,75 @@ Pi 匹配修改内容的核心函数：
 
 @code mox/src/coding/edit.ts#applyEdits
 
+::: steps 一次 edit 怎样把直引号匹配到弯引号
+--- 文件里是 `title = “Mox”` 和 `note = ‘保留’`（弯引号），模型给的 `oldText` 是 `title = "Mox"`（直引号）。第一关：每段 `oldText` 都不能为空。
+flowchart TB
+  subgraph P1["找到位置"]
+    direction LR
+    V1["① oldText<br/>非空"]:::on --> V2["② 精确<br/>匹配"]:::dim --> V3["③ 归一化<br/>后匹配"]:::dim --> V4["④ 唯一"]:::dim
+  end
+  subgraph P2["应用并写回"]
+    direction LR
+    V5["⑤ 不重叠"]:::dim --> V6["⑥ 覆盖<br/>涉及的行"]:::dim --> V7["⑦ 内容<br/>有变化"]:::dim --> W["写回磁盘"]:::dim
+  end
+  P1 --> P2
+--- 第二关：`base.includes(oldText)` 失败，字节不一样。`applyEdits` 不是报错，而是把 `fuzzy` 置为真，整体改用**归一化后的文本**去匹配。
+flowchart TB
+  subgraph P1["找到位置"]
+    direction LR
+    V1["① oldText<br/>非空"]:::done --> V2["② 精确<br/>匹配"]:::on --> V3["③ 归一化<br/>后匹配"]:::dim --> V4["④ 唯一"]:::dim
+  end
+  subgraph P2["应用并写回"]
+    direction LR
+    V5["⑤ 不重叠"]:::dim --> V6["⑥ 覆盖<br/>涉及的行"]:::dim --> V7["⑦ 内容<br/>有变化"]:::dim --> W["写回磁盘"]:::dim
+  end
+  P1 --> P2
+--- 第三关：弯引号归一化成直引号后，`indexOf` 命中第 1 行，记下位置和长度。
+flowchart TB
+  subgraph P1["找到位置"]
+    direction LR
+    V1["① oldText<br/>非空"]:::done --> V2["② 精确<br/>匹配"]:::done --> V3["③ 归一化<br/>后匹配"]:::on --> V4["④ 唯一"]:::dim
+  end
+  subgraph P2["应用并写回"]
+    direction LR
+    V5["⑤ 不重叠"]:::dim --> V6["⑥ 覆盖<br/>涉及的行"]:::dim --> V7["⑦ 内容<br/>有变化"]:::dim --> W["写回磁盘"]:::dim
+  end
+  P1 --> P2
+--- 第四、五关：归一化文本里 `oldText` 恰好出现一次，才算唯一；多段修改按位置排序后，前一段的结尾不能越过后一段的开头。这里只有一段，都通过。
+flowchart TB
+  subgraph P1["找到位置"]
+    direction LR
+    V1["① oldText<br/>非空"]:::done --> V2["② 精确<br/>匹配"]:::done --> V3["③ 归一化<br/>后匹配"]:::done --> V4["④ 唯一"]:::on
+  end
+  subgraph P2["应用并写回"]
+    direction LR
+    V5["⑤ 不重叠"]:::on --> V6["⑥ 覆盖<br/>涉及的行"]:::dim --> V7["⑦ 内容<br/>有变化"]:::dim --> W["写回磁盘"]:::dim
+  end
+  P1 --> P2
+--- 第六关：归一化不改变行数，所以可以按行覆盖回原文：只替换命中的第 1 行，第 2 行的 `‘保留’` 仍是原始字节，不会被顺手改成直引号。
+flowchart TB
+  subgraph P1["找到位置"]
+    direction LR
+    V1["① oldText<br/>非空"]:::done --> V2["② 精确<br/>匹配"]:::done --> V3["③ 归一化<br/>后匹配"]:::done --> V4["④ 唯一"]:::done
+  end
+  subgraph P2["应用并写回"]
+    direction LR
+    V5["⑤ 不重叠"]:::done --> V6["⑥ 覆盖<br/>涉及的行"]:::on --> V7["⑦ 内容<br/>有变化"]:::dim --> W["写回磁盘"]:::dim
+  end
+  P1 --> P2
+--- 最后一关：替换后的内容和原文相同就抛错，否则写回磁盘（BOM 和 Windows 换行在这之后还原）。
+flowchart TB
+  subgraph P1["找到位置"]
+    direction LR
+    V1["① oldText<br/>非空"]:::done --> V2["② 精确<br/>匹配"]:::done --> V3["③ 归一化<br/>后匹配"]:::done --> V4["④ 唯一"]:::done
+  end
+  subgraph P2["应用并写回"]
+    direction LR
+    V5["⑤ 不重叠"]:::done --> V6["⑥ 覆盖<br/>涉及的行"]:::done --> V7["⑦ 内容<br/>有变化"]:::on --> W["写回磁盘"]:::on
+  end
+  P1 --> P2
+:::
+
 对比实验覆盖了八种情形：
 
 @lab node labs/ch05/edit.ts
@@ -135,13 +204,71 @@ Pi 匹配修改内容的核心函数：
 
 @lab node labs/ch05/bash.ts | md
 
+::: steps 超时之后怎样杀掉整个进程树
+--- `spawn` 时带上 `detached: true`，让 bash 成为一个**新进程组的组长**。命令里在后台又启动了一个 `sleep`，它和 bash 在同一个进程组里。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant T as bash 工具
+  participant B as bash 进程<br/>（新进程组组长）
+  participant C as 后台 sleep
+  rect rgb(255, 230, 213)
+    T->>B: spawn(detached)
+    B->>C: 后台启动 sleep
+  end
+--- 超时计时器到点：置 `timedOut = true`，调用 `onAbort`，也就是 `killTree(child.pid)`。用户按 Esc 取消时走的是同一个函数。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant T as bash 工具
+  participant B as bash 进程<br/>（新进程组组长）
+  participant C as 后台 sleep
+  T->>B: spawn(detached)
+  B->>C: 后台启动 sleep
+  rect rgb(255, 230, 213)
+    Note over T: 计时器到点<br/>timedOut = true
+  end
+--- `process.kill(-pid, "SIGKILL")`：pid 前面的负号指向**整个进程组**，bash 和它启动的 sleep 一起被杀。朴素实现只杀 bash，sleep 就成了孤儿。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant T as bash 工具
+  participant B as bash 进程<br/>（新进程组组长）
+  participant C as 后台 sleep
+  T->>B: spawn(detached)
+  B->>C: 后台启动 sleep
+  Note over T: 计时器到点<br/>timedOut = true
+  rect rgb(255, 230, 213)
+    T-)B: kill(-pid)
+    T-)C: 同一信号送达整个组
+  end
+--- `close` 事件触发：清掉计时器，截断输出（保留结尾，必要时存临时文件），因为 `timedOut` 为真，用“命令超时”拒绝，结果作为错误交回模型。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant T as bash 工具
+  participant B as bash 进程<br/>（新进程组组长）
+  participant C as 后台 sleep
+  T->>B: spawn(detached)
+  B->>C: 后台启动 sleep
+  Note over T: 计时器到点<br/>timedOut = true
+  T-)B: kill(-pid)
+  T-)C: 同一信号送达整个组
+  rect rgb(255, 230, 213)
+    B-->>T: close
+    Note over T: reject：命令超时
+  end
+:::
+
 “朴素实现”只杀了 `bash` 本身，它启动的两个 `sleep` 变成孤儿进程继续运行——在真实场景里，这可能是一个占着端口的开发服务器，或者一个还在写文件的测试进程。mox 和 Pi 都杀干净了。
 
 **第二，输出要截断，但不能丢。** 前面已经看到，保留结尾，完整输出存进临时文件。
 
 **第三，非零退出码就是失败。** 命令“执行成功”和命令“成功了”是两回事。`npm test` 正常结束但有测试失败时，退出码非零，结果应该标记为错误：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/tools/bash.ts#L383-L407
+@@ mox
+@code mox/src/coding/bash.ts#L55-L59
+同样的判断顺序：先看取消和超时，再看退出码，非零就是 `isError`。
+:::
 
 注意这里的返回值同时带有 `content`（给模型的文字）和 `structuredContent`（给程序的结构化数据：完整输出、是否截断、退出码、耗时）。第 4 章说过，给模型的要精炼，给程序的要完整。
 

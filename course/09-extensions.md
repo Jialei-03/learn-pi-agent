@@ -71,7 +71,107 @@ Pi 的 `examples/extensions/` 目录里有七十多个示例，从贪吃蛇游�
 
 `tool_call` 事件的分发代码很直白：依次执行，遇到第一个 `block` 立即返回：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/extensions/runner.ts#emitToolCall
+@@ mox
+@code mox/src/extensions.ts#L134-L141
+`toolHooks().beforeToolCall`：按顺序调用，遇到第一个 `block` 立即返回，没有 try/catch。
+:::
+
+::: steps 六个扩展怎样处理三次工具调用
+--- 第一个调用 `shell("npm test")`。`tool_call` 事件按加载顺序先到扩展 A：它**就地修改** `input.command`，把 `npm` 换成 `pnpm`。后面的处理函数看到的已经是改过的值。
+flowchart TB
+  subgraph P1["tool_call：执行之前"]
+    direction LR
+    A["A 就地改写<br/>npm → pnpm"]:::on --> B["B 闸门<br/>拦 publish"]:::dim --> E["E 闸门<br/>处理 deploy"]:::dim
+    B -.->|block| ERR["isError 结果<br/>工具不执行"]:::dim
+    E -.->|抛异常| ERR
+  end
+  subgraph P2["执行与 tool_result：执行之后"]
+    direction LR
+    X["执行工具"]:::dim --> C["C 追加一句"]:::dim --> D["D 隐去令牌"]:::dim --> R["toolResult"]:::dim
+  end
+  P1 --> P2
+--- 扩展 B 是闸门，检查命令里有没有 `publish`，没有，放行；扩展 E 只管 `deploy`，对 `shell` 没有意见。（C、D 订阅的是 `tool_result`，此刻还不会被调用。）
+flowchart TB
+  subgraph P1["tool_call：执行之前"]
+    direction LR
+    A["A 就地改写<br/>npm → pnpm"]:::done --> B["B 闸门<br/>拦 publish"]:::on --> E["E 闸门<br/>处理 deploy"]:::on
+    B -.->|block| ERR["isError 结果<br/>工具不执行"]:::dim
+    E -.->|抛异常| ERR
+  end
+  subgraph P2["执行与 tool_result：执行之后"]
+    direction LR
+    X["执行工具"]:::dim --> C["C 追加一句"]:::dim --> D["D 隐去令牌"]:::dim --> R["toolResult"]:::dim
+  end
+  P1 --> P2
+--- 没有人拦下，工具开始执行。真正运行的是 `pnpm test`，而会话里模型的调用仍然是 `npm test`：改的是复制出来的参数。
+flowchart TB
+  subgraph P1["tool_call：执行之前"]
+    direction LR
+    A["A 就地改写<br/>npm → pnpm"]:::done --> B["B 闸门<br/>拦 publish"]:::done --> E["E 闸门<br/>处理 deploy"]:::done
+    B -.->|block| ERR["isError 结果<br/>工具不执行"]:::dim
+    E -.->|抛异常| ERR
+  end
+  subgraph P2["执行与 tool_result：执行之后"]
+    direction LR
+    X["执行工具"]:::on --> C["C 追加一句"]:::dim --> D["D 隐去令牌"]:::dim --> R["toolResult"]:::dim
+  end
+  P1 --> P2
+--- `afterToolCall` 依次调用 `tool_result` 的处理函数，每个收到的都是前一个返回的结果。C 先在末尾追加“（C 看过了）”。
+flowchart TB
+  subgraph P1["tool_call：执行之前"]
+    direction LR
+    A["A 就地改写<br/>npm → pnpm"]:::done --> B["B 闸门<br/>拦 publish"]:::done --> E["E 闸门<br/>处理 deploy"]:::done
+    B -.->|block| ERR["isError 结果<br/>工具不执行"]:::dim
+    E -.->|抛异常| ERR
+  end
+  subgraph P2["执行与 tool_result：执行之后"]
+    direction LR
+    X["执行工具"]:::done --> C["C 追加一句"]:::on --> D["D 隐去令牌"]:::dim --> R["toolResult"]:::dim
+  end
+  P1 --> P2
+--- D 收到的是 C 改过的版本，把令牌 `ghp_…` 替换成 `ghp_***`，最后的 `toolResult` 里就没有原文了。这是**链式变换**。
+flowchart TB
+  subgraph P1["tool_call：执行之前"]
+    direction LR
+    A["A 就地改写<br/>npm → pnpm"]:::done --> B["B 闸门<br/>拦 publish"]:::done --> E["E 闸门<br/>处理 deploy"]:::done
+    B -.->|block| ERR["isError 结果<br/>工具不执行"]:::dim
+    E -.->|抛异常| ERR
+  end
+  subgraph P2["执行与 tool_result：执行之后"]
+    direction LR
+    X["执行工具"]:::done --> C["C 追加一句"]:::done --> D["D 隐去令牌"]:::on --> R["toolResult"]:::on
+  end
+  P1 --> P2
+--- 第二个调用 `shell("npm publish")`：A 照样改成 `pnpm publish`，B 发现含 `publish`，返回 `{ block: true }`。`beforeToolCall` 遇到第一个 `block` 立即返回，E 和工具都不再运行：这是**闸门**。
+flowchart TB
+  subgraph P1["tool_call：执行之前"]
+    direction LR
+    A["A 就地改写<br/>npm → pnpm"]:::done --> B["B 闸门<br/>拦 publish"]:::on --> E["E 闸门<br/>处理 deploy"]:::dim
+    B -.->|block| ERR["isError 结果<br/>工具不执行"]:::on
+    E -.->|抛异常| ERR
+  end
+  subgraph P2["执行与 tool_result：执行之后"]
+    direction LR
+    X["执行工具"]:::dim --> C["C 追加一句"]:::dim --> D["D 隐去令牌"]:::dim --> R["toolResult"]:::dim
+  end
+  P1 --> P2
+--- 第三个调用 `deploy`：扩展 E 处理时抛了异常。`tool_call` 的分发**没有 try/catch**，异常传给工具流水线，变成一条错误结果，`deploy` 没有执行：出错时默认拒绝（fail closed）。
+flowchart TB
+  subgraph P1["tool_call：执行之前"]
+    direction LR
+    A["A 就地改写<br/>npm → pnpm"]:::done --> B["B 闸门<br/>拦 publish"]:::done --> E["E 闸门<br/>处理 deploy"]:::on
+    B -.->|block| ERR["isError 结果<br/>工具不执行"]:::on
+    E -.->|抛异常| ERR
+  end
+  subgraph P2["执行与 tool_result：执行之后"]
+    direction LR
+    X["执行工具"]:::dim --> C["C 追加一句"]:::dim --> D["D 隐去令牌"]:::dim --> R["toolResult"]:::dim
+  end
+  P1 --> P2
+:::
 
 这个实验用六个扩展同时作用于三次工具调用，分别在 mox 和 Pi 里运行：
 
@@ -133,7 +233,14 @@ Pi 没有内置的网页抓取工具。查阅最新的文档、看一个报错�
 
 Pi 扩展只做两件事：注册工具，并在 `tool_call` 上做同样的检查，让被拒绝的调用在界面上显示为“被拦下”而不是“执行失败”：
 
+::: tabs
+@@ Pi
 @code extensions/web-fetch/index.ts#createWebFetchExtension
+`pi.registerTool` 注册工具，`pi.on('tool_call')` 做同一个检查。
+@@ mox
+@code extensions/web-fetch/mox.ts#createWebFetchMoxExtension
+同样的两件事，只是注册接口换成 `MoxExtensionAPI`，核心逻辑共用 `fetch.ts`。
+:::
 
 ### SSRF：Agent 替攻击者访问内网
 
@@ -154,6 +261,79 @@ Pi 扩展只做两件事：注册工具，并在 `tool_call` 上做同样的检�
 还剩一个时间差：`checkUrl` 解析过一次域名，真正发请求时 HTTP 客户端会**再解析一次**。攻击者控制的域名可以第一次返回公网 IP，第二次返回 `127.0.0.1`——这叫 DNS rebinding。所以 `webFetch` 不用全局的 `fetch`，而是用 `node:http` 发请求，并给它一个自己的 `lookup`：连接前解析出的每个地址都要再过一遍 `isPrivateAddress`，检查的就是实际要连接的那个地址。
 
 @code extensions/web-fetch/fetch.ts#guardedLookup
+
+::: steps 一次 302 重定向到元数据地址是怎样被拦下的
+--- 模型想抓一个公网链接。执行之前，扩展挂在 `tool_call` 上的处理函数先调用 `checkUrl`：只允许 http(s)，域名白名单，再把域名**解析成 IP** 判断是不是内网地址。这里是公网地址，放行。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant M as 模型
+  participant W as web_fetch
+  participant S as 公网站点
+  participant X as 内网 169.254.169.254
+  rect rgb(255, 230, 213)
+    M->>W: web_fetch(公网/redirect)
+    Note over W: tool_call → checkUrl：公网，放行
+  end
+--- `webFetch` 开头再检查一次，然后发请求。请求用的是自己的 `lookup`（`guardedLookup`）：连接前解析出的每个地址都要再过 `isPrivateAddress`，防止 DNS rebinding。这次仍是公网，连接成功。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant M as 模型
+  participant W as web_fetch
+  participant S as 公网站点
+  participant X as 内网 169.254.169.254
+  M->>W: web_fetch(公网/redirect)
+  Note over W: tool_call → checkUrl：公网，放行
+  rect rgb(255, 230, 213)
+    W->>S: GET /redirect
+    Note over W: guardedLookup：公网，放行
+  end
+--- 站点回了一个 302，`Location` 指向云实例元数据地址。`get` 不自动跟随重定向，只把响应交回来。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant M as 模型
+  participant W as web_fetch
+  participant S as 公网站点
+  participant X as 内网 169.254.169.254
+  M->>W: web_fetch(公网/redirect)
+  Note over W: tool_call → checkUrl：公网，放行
+  W->>S: GET /redirect
+  Note over W: guardedLookup：公网，放行
+  rect rgb(255, 230, 213)
+    S-->>W: 302 Location: http://169.254.169.254/…
+  end
+--- `webFetch` 取出新地址，**对它重新调用 `checkUrl`**：解析出的 IP 落在 `BLOCKED` 的 169.254.0.0/16 里，返回拒绝原因。每一跳都要重新检查。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant M as 模型
+  participant W as web_fetch
+  participant S as 公网站点
+  participant X as 内网 169.254.169.254
+  M->>W: web_fetch(公网/redirect)
+  Note over W: tool_call → checkUrl：公网，放行
+  W->>S: GET /redirect
+  Note over W: guardedLookup：公网，放行
+  S-->>W: 302 Location: http://169.254.169.254/…
+  rect rgb(255, 230, 213)
+    Note over W: checkUrl(新地址)<br/>命中内网地址段
+  end
+--- 抛出“重定向被拒绝：拒绝访问内网地址”，从头到尾**没有向内网发出任何请求**。错误作为结果交回模型。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant M as 模型
+  participant W as web_fetch
+  participant S as 公网站点
+  participant X as 内网 169.254.169.254
+  M->>W: web_fetch(公网/redirect)
+  Note over W: tool_call → checkUrl：公网，放行
+  W->>S: GET /redirect
+  Note over W: guardedLookup：公网，放行
+  S-->>W: 302 Location: http://169.254.169.254/…
+  Note over W: checkUrl(新地址)<br/>命中内网地址段
+  rect rgb(255, 230, 213)
+    W--x X: 不会发出请求
+    W-->>M: 错误：重定向被拒绝
+  end
+:::
 
 实验在本地起一个测试网站，让模型依次抓取文档页、直接访问元数据地址、访问一个会重定向到元数据地址的链接：
 

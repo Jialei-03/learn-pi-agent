@@ -106,6 +106,59 @@ Skill 的核心思想叫**渐进式披露**（progressive disclosure）：信息
 
 目录只有几百个字符。正文在第 2 次请求前才进入上下文，参考资料在第 3 次请求前才进入；没用到的 Skill，正文一个字都没进来。
 
+::: steps 一次请求里，Skill 的三层依次进入上下文
+--- 会话启动时，`formatSkillsForPrompt` 把两个 Skill 的名字、描述和位置写进系统提示。用户说“帮我写 v1.2.0 的发布说明”，第 1 次请求发给模型：此刻上下文里只有目录。
+sequenceDiagram
+  participant U as 用户
+  participant P as Pi 会话
+  participant M as 模型
+  participant F as 文件系统
+  U->>P: 帮我写 v1.2.0 的发布说明
+  P->>M: 请求 1（系统提示 = 目录）
+--- 模型对照描述，判断任务和 release-notes 相符，发出 `read(SKILL.md)`。Pi 没有专门的 Skill 工具，走的就是第 5 章那个普通的 read。
+sequenceDiagram
+  participant U as 用户
+  participant P as Pi 会话
+  participant M as 模型
+  participant F as 文件系统
+  U->>P: 帮我写 v1.2.0 的发布说明
+  P->>M: 请求 1（系统提示 = 目录）
+  M->>P: read SKILL.md
+  P->>F: 读取文件
+--- 正文作为工具结果进入上下文，第 2 次请求才第一次带上它。此时 `references/style.md` 和另一个 Skill 的正文仍然不在。
+sequenceDiagram
+  participant U as 用户
+  participant P as Pi 会话
+  participant M as 模型
+  participant F as 文件系统
+  U->>P: 帮我写 v1.2.0 的发布说明
+  P->>M: 请求 1（系统提示 = 目录）
+  M->>P: read SKILL.md
+  P->>F: 读取文件
+  F-->>P: SKILL.md 正文
+  P->>M: 请求 2（多了正文）
+--- 正文第 2 步写着“按 references/style.md 的规范分组”，模型再 read 一次。第三层（附带文件）也是用到了才读。
+sequenceDiagram
+  participant U as 用户
+  participant P as Pi 会话
+  participant M as 模型
+  participant F as 文件系统
+  P->>M: 请求 2（多了正文）
+  M->>P: read references/style.md
+  P->>F: 读取文件
+  F-->>P: 规范全文
+  P->>M: 请求 3（多了规范）
+--- 第 3 次请求，模型直接写出发布说明，回合结束。没被读取的 Skill 和文件，一个字符都没有进入上下文。
+sequenceDiagram
+  participant U as 用户
+  participant P as Pi 会话
+  participant M as 模型
+  participant F as 文件系统
+  P->>M: 请求 3（目录 + 正文 + 规范）
+  M-->>P: 发布说明（纯文本，无工具调用）
+  P-->>U: 显示结果
+:::
+
 ::: predict 描述写成“处理发布相关的事情”会怎样？
 ???
 模型只能根据描述判断要不要读取一个 Skill，描述就是它的“路由规则”。“处理发布相关的事情”太模糊：用户说“写个 changelog”时，模型未必能把它和这个 Skill 联系起来；用户问“发布流水线为什么挂了”时，又可能误读进来。好的描述同时写清**做什么**和**什么时候用**，并包含用户可能用到的说法：“根据 git 提交记录写发布说明。用户要求写 changelog、发布说明、版本说明时使用。”Pi 的文档专门举了一个反例：“Helps with PDFs”。
@@ -143,6 +196,24 @@ Pi 从几个位置寻找 Skill：用户目录 `~/.pi/agent/skills/`、项目目�
 @pi packages/coding-agent/src/core/agent-session.ts#L2150-L2155
 
 先展开 Skill，再展开提示模板。这段代码之前，扩展的 `input` 事件（第 9 章）已经处理过输入，所以扩展看到的是用户输入的原文 `/skill:...`，可以在展开之前拦截或改写它。
+
+::: steps /skill:db-migration 是怎样变成一条用户消息的
+--- 用户输入 `/skill:db-migration 检查 migrations/0042.sql`。输入先交给扩展的 `input` 事件，扩展看到的还是原文。
+flowchart LR
+  I["/skill:db-migration 检查 0042.sql"]:::on --> X[扩展 input 事件]:::dim --> S["_expandSkillCommand"]:::dim --> T[expandPromptTemplate]:::dim --> U[作为用户消息发出]:::dim
+--- 扩展没有拦截，放行原文。这一步之后才轮到 Pi 自己的展开。
+flowchart LR
+  I["/skill:db-migration 检查 0042.sql"]:::done --> X[扩展 input 事件]:::on --> S["_expandSkillCommand"]:::dim --> T[expandPromptTemplate]:::dim --> U[作为用户消息发出]:::dim
+--- `_expandSkillCommand` 以 `/skill:` 开头判断，按第一个空格切出名字和参数，在已加载的 Skill 里找到 `db-migration`（找不到就原样放行）。读文件、去掉元信息，正文包进 `<skill name location>`，参数接在后面。
+flowchart LR
+  I["/skill:db-migration 检查 0042.sql"]:::done --> X[扩展 input 事件]:::done --> S["_expandSkillCommand"]:::on --> T[expandPromptTemplate]:::dim --> U[作为用户消息发出]:::dim
+--- 再交给 `expandPromptTemplate`：文本已经以 `<skill` 开头，不以 `/` 开头，函数第一行就原样返回。顺序是先 Skill、后模板。
+flowchart LR
+  I["/skill:db-migration 检查 0042.sql"]:::done --> X[扩展 input 事件]:::done --> S["_expandSkillCommand"]:::done --> T[expandPromptTemplate]:::on --> U[作为用户消息发出]:::dim
+--- 展开后的整段文字就是一条普通的用户消息，写进会话文件。这个 Skill 标了 `disable-model-invocation`，它不在目录里，这是唯一的触发路径。
+flowchart LR
+  I["/skill:db-migration 检查 0042.sql"]:::done --> X[扩展 input 事件]:::done --> S["_expandSkillCommand"]:::done --> T[expandPromptTemplate]:::done --> U[作为用户消息发出]:::on
+:::
 
 ::: insight 展开后的 Skill 是一条普通的用户消息
 它会被写进会话文件，也会参与压缩。长任务中途压缩时，摘要可能只剩一句“用户调用了 db-migration”，Skill 的具体步骤就丢了。Claude Code 对此有专门的处理：压缩后重新附上本会话调用过的 Skill（每个最多保留开头 5000 个 token，总共不超过 25000 个，优先保留最近调用的）。Pi 依靠模型在需要时重新读取文件。
@@ -191,6 +262,17 @@ description: 审查暂存区的改动
 用户输入先展开 `/skill:名字`，再展开模板，顺序与 Pi 一致：
 
 @code mox/src/cli.ts#region:expand
+
+同一件事——“把 `/skill:名字 参数` 展开成一条用户消息”——Pi 和 mox 的写法，切换标签对照：
+
+::: tabs
+@@ Pi
+@pi packages/coding-agent/src/core/agent-session.ts#L2232-L2255
+有错误处理：读文件失败时通过扩展的错误通道上报，并返回原文。
+@@ mox
+@code mox/src/skills.ts#expandSkillCommand
+主干相同：找 Skill、去元信息、包进 `<skill>`、参数接在后面；没有读文件失败的处理。
+:::
 
 把本章实验的 `release-notes` 目录复制到 `~/.mox/skills/` 下，用真实模型试试“帮我写这个版本的发布说明”，观察它是否先 `read` 了 `SKILL.md`。
 

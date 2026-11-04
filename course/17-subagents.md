@@ -82,15 +82,164 @@ mox 的做法是在同一个进程里再跑一次第 3 章的 `runLoop`，只是
 | 共享 | 要通过参数传配置；钩子、权限扩展要在子进程里重新加载 | 直接共享模型客户端、钩子、权限规则 |
 | 观察 | 解析事件流 | 直接订阅事件 |
 
+::: steps 一次委派：任务说明进去，结论出来
+--- 父 Agent 调用 `agent` 工具，参数是子 Agent 的名字和 `task`。工具的描述已经提醒过：子 Agent 看不到这段对话，task 必须写清背景和要返回什么。
+sequenceDiagram
+  participant F as 父 Agent
+  participant A as agent 工具
+  participant S as 子 Agent
+  participant T as 工具
+  F->>A: agent(explore, task)
+--- `execute` 先做检查：有没有任务、超没超过 `MAX_TASKS`、名字是不是已定义的。任何一项不满足，直接返回 `isError` 的结果，不启动任何循环。
+sequenceDiagram
+  participant F as 父 Agent
+  participant A as agent 工具
+  participant S as 子 Agent
+  participant T as 工具
+  F->>A: agent(explore, task)
+  Note over A: execute：校验 jobs
+--- `runSubagent` 在同一个进程里调用 `runLoop`：历史是**空数组**，唯一的消息就是 task。父 Agent 的 `signal` 和 `hooks` 也一起传了进去。
+sequenceDiagram
+  participant F as 父 Agent
+  participant A as agent 工具
+  participant S as 子 Agent
+  participant T as 工具
+  Note over A: execute：校验 jobs
+  A->>S: runLoop([], [task])
+--- 工具集在这里确定：`options.tools()` 里去掉 `agent` 本身（所以不能嵌套），再按定义里的 `tools` 筛选（explore 只剩 `read`、`bash`）。系统提示换成定义里的，末尾补上工作目录和工具名。
+sequenceDiagram
+  participant F as 父 Agent
+  participant A as agent 工具
+  participant S as 子 Agent
+  participant T as 工具
+  A->>S: runLoop([], [task])
+  Note over S: 去掉 agent 工具，按 def.tools 筛选
+--- 子 Agent 自己多轮读文件、跑命令。每次工具调用都经过父 Agent 同一组 `hooks`，权限规则照样生效；读到的内容只进子 Agent 的上下文。
+sequenceDiagram
+  participant F as 父 Agent
+  participant A as agent 工具
+  participant S as 子 Agent
+  participant T as 工具
+  Note over S: 去掉 agent 工具，按 def.tools 筛选
+  S->>T: read、bash 多轮
+  T-->>S: 结果只进子 Agent 上下文
+--- 循环结束，`runSubagent` 取最后一条助手消息的文字作为 `output`。中间读过的几万字符不会返回。`agent` 工具把它整理成工具结果，父 Agent 的上下文只增加这一段结论。
+sequenceDiagram
+  participant F as 父 Agent
+  participant A as agent 工具
+  participant S as 子 Agent
+  participant T as 工具
+  T-->>S: 结果只进子 Agent 上下文
+  S-->>A: 最后一条回答
+  A-->>F: 工具结果 = 结论
+--- 另一种结局：用户按 Ctrl+C，父 Agent 的 `signal` 被 abort。它一路传给子循环的模型请求和正在跑的命令；`runSubagent` 发现 `reason` 是 `aborted`，返回 `ok: false`，输出“子 Agent 没有完成（aborted）”。实验里 5 秒的命令 0.3 秒就返回了。
+sequenceDiagram
+  participant F as 父 Agent
+  participant A as agent 工具
+  participant S as 子 Agent
+  participant T as 工具
+  A-->>F: 工具结果 = 结论
+  F-xS: signal.abort
+  S-->>A: ok 为假（aborted）
+:::
+
 ## 并行、取消、权限、嵌套
 
 @lab node labs/ch17/parallel.ts
 
 **并发上限。** 四个任务、最多同时两个，分两波完成；结果按任务顺序排列，不按完成顺序。上限不只是为了省资源：模型服务商有速率限制，八个子 Agent 同时请求，很可能一起收到 429。
 
+::: steps mapWithLimit：四个任务，最多同时两个
+--- `mapWithLimit(items, 2, fn)` 先建好 `results` 数组和共享的计数器 `next = 0`，再启动 `Math.min(limit, items.length)` 个 worker，这里是 2 个。四个任务都还没开始。
+flowchart LR
+  Q["items：#1 #2 #3 #4"]:::on
+  subgraph W1["worker 1"]
+    T1["#1"]:::dim --> T3["#3"]:::dim
+  end
+  subgraph W2["worker 2"]
+    T2["#2"]:::dim --> T4["#4"]:::dim
+  end
+  Q --> W1
+  Q --> W2
+  W1 --> R["results 按下标放回"]:::dim
+  W2 --> R
+--- 每个 worker 循环 `while (next < items.length)`：`const i = next++` 领走一个下标。两个 worker 领到 #1 和 #2，约 0.0 秒同时开始。`next++` 在 `await` 之前同步完成，不会领到同一个任务。
+flowchart LR
+  Q["items：#1 #2 #3 #4"]:::done
+  subgraph W1["worker 1"]
+    T1["#1"]:::on --> T3["#3"]:::dim
+  end
+  subgraph W2["worker 2"]
+    T2["#2"]:::on --> T4["#4"]:::dim
+  end
+  Q --> W1
+  Q --> W2
+  W1 --> R["results 按下标放回"]:::dim
+  W2 --> R
+--- 约 0.4 秒，#1 和 #2 完成，各自写进 `results[i]`。结果按下标放，不按完成先后，所以最后的顺序和任务顺序一致。
+flowchart LR
+  Q["items：#1 #2 #3 #4"]:::done
+  subgraph W1["worker 1"]
+    T1["#1"]:::done --> T3["#3"]:::dim
+  end
+  subgraph W2["worker 2"]
+    T2["#2"]:::done --> T4["#4"]:::dim
+  end
+  Q --> W1
+  Q --> W2
+  W1 --> R["results 按下标放回"]:::dim
+  W2 --> R
+--- worker 回到 `while` 判断，`next` 还没到 4，各自领走 #3 和 #4。同一时刻在运行的始终不超过 2 个，这就是并发上限。
+flowchart LR
+  Q["items：#1 #2 #3 #4"]:::done
+  subgraph W1["worker 1"]
+    T1["#1"]:::done --> T3["#3"]:::on
+  end
+  subgraph W2["worker 2"]
+    T2["#2"]:::done --> T4["#4"]:::on
+  end
+  Q --> W1
+  Q --> W2
+  W1 --> R["results 按下标放回"]:::dim
+  W2 --> R
+--- 约 0.8 秒，#3、#4 完成，`next` 已到 4，两个 worker 都退出循环，`Promise.all` 返回，`results` 里 #1 到 #4 依次排好。
+flowchart LR
+  Q["items：#1 #2 #3 #4"]:::done
+  subgraph W1["worker 1"]
+    T1["#1"]:::done --> T3["#3"]:::done
+  end
+  subgraph W2["worker 2"]
+    T2["#2"]:::done --> T4["#4"]:::done
+  end
+  Q --> W1
+  Q --> W2
+  W1 --> R["results 按下标放回"]:::on
+  W2 --> R
+:::
+
+Pi 的示例和 mox 写了几乎一样的“共享计数器加 worker”：
+
+::: tabs
+@@ Pi
+@pi packages/coding-agent/examples/extensions/subagent/index.ts#mapWithConcurrencyLimit
+空列表直接返回，并发数至少为 1；worker 领不到下标就 `return`。
+@@ mox
 @code mox/src/subagent.ts#mapWithLimit
+少了空列表和下限的保护，写法更短：`next < items.length` 当循环条件。
+:::
 
 **取消。** 父 Agent 的 `AbortSignal` 传给每个子 Agent 的循环，再传给模型请求和工具（第 3、5 章）。用户按下 Ctrl+C，子 Agent 正在跑的命令也会被终止，0.3 秒就返回了。
+
+Pi 的示例怎样把父 Agent 的取消传给子 Agent，和 mox 的做法并排看：
+
+::: tabs
+@@ Pi
+@pi packages/coding-agent/examples/extensions/subagent/index.ts#L408-L418
+`signal` 触发时给子进程发 SIGTERM，5 秒后还没退出就 SIGKILL。
+@@ mox
+@code mox/src/subagent.ts#L79-L84
+`signal` 直接交给子循环的 `runLoop`，由循环把取消传给模型请求和工具；`finishTurn` 另外限制最多 30 轮。
+:::
 
 **权限继承。** 子 Agent 的工具调用经过父 Agent 同一组钩子，第 14 章的权限规则照样生效。没有这一条，子 Agent 就成了绕过权限的后门：模型只要说“让子 Agent 去 rm -rf”就行了。
 

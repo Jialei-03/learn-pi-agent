@@ -72,6 +72,81 @@ mox 的工具接口是同一个设计的精简版：
 <figcaption>任何一道关失败，都会直接产生一条错误结果交回模型，而不是让异常冲出循环。</figcaption>
 </figure>
 
+::: steps 一个写错参数的调用怎样过六道关
+--- 模型发来一个调用：`read_file`，参数 `{ file: "README.md", limit: "20" }`，名字和类型都写错了。
+flowchart TB
+  subgraph P["准备阶段：按调用顺序逐个进行"]
+    direction LR
+    C["toolCall"]:::on --> G1["① 找工具"]:::dim --> G2["② 修正"]:::dim --> G3["③ 校验"]:::dim --> G4["④ 前钩子"]:::dim
+    G3 -.->|失败| E["isError 结果<br/>交回模型"]:::dim
+  end
+  subgraph X["执行阶段：可以并行"]
+    direction LR
+    G5["⑤ 执行"]:::dim --> G6["⑥ 后钩子"]:::dim --> R["toolResult"]:::dim
+  end
+  P --> X
+--- **① 找到工具。** 按名字在工具表里查找，`read_file` 存在，继续。名字不存在的话，到这里就会直接得到一条错误结果。
+flowchart TB
+  subgraph P["准备阶段：按调用顺序逐个进行"]
+    direction LR
+    C["toolCall"]:::done --> G1["① 找工具"]:::on --> G2["② 修正"]:::dim --> G3["③ 校验"]:::dim --> G4["④ 前钩子"]:::dim
+    G3 -.->|失败| E["isError 结果<br/>交回模型"]:::dim
+  end
+  subgraph X["执行阶段：可以并行"]
+    direction LR
+    G5["⑤ 执行"]:::dim --> G6["⑥ 后钩子"]:::dim --> R["toolResult"]:::dim
+  end
+  P --> X
+--- **② 修正。** 先复制一份参数（不能改到历史里那条调用），再交给 `prepareArguments`，然后做类型修正：`limit: "20"` 变成数字 20。意图毫无歧义，不算错误。
+flowchart TB
+  subgraph P["准备阶段：按调用顺序逐个进行"]
+    direction LR
+    C["toolCall"]:::done --> G1["① 找工具"]:::done --> G2["② 修正"]:::on --> G3["③ 校验"]:::dim --> G4["④ 前钩子"]:::dim
+    G3 -.->|失败| E["isError 结果<br/>交回模型"]:::dim
+  end
+  subgraph X["执行阶段：可以并行"]
+    direction LR
+    G5["⑤ 执行"]:::dim --> G6["⑥ 后钩子"]:::dim --> R["toolResult"]:::dim
+  end
+  P --> X
+--- **③ 严格校验失败。** `path` 缺失、`file` 不认识。得到的是一条 `isError` 结果，列出每个问题并附上收到的原始参数；后面三道关都不会走，工具函数没有被调用。
+flowchart TB
+  subgraph P["准备阶段：按调用顺序逐个进行"]
+    direction LR
+    C["toolCall"]:::done --> G1["① 找工具"]:::done --> G2["② 修正"]:::done --> G3["③ 校验"]:::on --> G4["④ 前钩子"]:::dim
+    G3 -.->|失败| E["isError 结果<br/>交回模型"]:::on
+  end
+  subgraph X["执行阶段：可以并行"]
+    direction LR
+    G5["⑤ 执行"]:::dim --> G6["⑥ 后钩子"]:::dim --> R["toolResult"]:::dim
+  end
+  P --> X
+--- 模型把错误信息当作下一轮的输入，第二次改成 `{ path, limit: 20 }`。这次 ①～④ 全部通过：`beforeToolCall` 没有拦下它，**⑤ 执行**真正开始。
+flowchart TB
+  subgraph P["准备阶段：按调用顺序逐个进行"]
+    direction LR
+    C["toolCall"]:::done --> G1["① 找工具"]:::done --> G2["② 修正"]:::done --> G3["③ 校验"]:::done --> G4["④ 前钩子"]:::done
+    G3 -.->|失败| E["isError 结果<br/>交回模型"]:::done
+  end
+  subgraph X["执行阶段：可以并行"]
+    direction LR
+    G5["⑤ 执行"]:::on --> G6["⑥ 后钩子"]:::dim --> R["toolResult"]:::dim
+  end
+  P --> X
+--- **⑥ 执行后。** `afterToolCall` 可以改写结果（比如隐去密钥），最后得到一条正常的 `toolResult`，按调用顺序交回模型。一次请求变成两次，但没有任何异常冲出循环。
+flowchart TB
+  subgraph P["准备阶段：按调用顺序逐个进行"]
+    direction LR
+    C["toolCall"]:::done --> G1["① 找工具"]:::done --> G2["② 修正"]:::done --> G3["③ 校验"]:::done --> G4["④ 前钩子"]:::done
+    G3 -.->|失败| E["isError 结果<br/>交回模型"]:::done
+  end
+  subgraph X["执行阶段：可以并行"]
+    direction LR
+    G5["⑤ 执行"]:::done --> G6["⑥ 后钩子"]:::on --> R["toolResult"]:::on
+  end
+  P --> X
+:::
+
 前四道关在 Pi 里由同一个函数完成：
 
 @pi packages/agent/src/agent-loop.ts#prepareToolCall
@@ -164,7 +239,101 @@ Pi 有一种工具会调用别的工具：`codemode` 让模型写一段 JavaScri
 
 Pi 的并行执行有一个容易被忽略的细节：**准备阶段仍然是按顺序进行的**，只有执行阶段才并行：
 
+::: tabs
+@@ Pi
 @pi packages/agent/src/agent-loop.ts#executeToolCallsParallel collapse=true
+@@ mox
+@code mox/src/tools.ts#L123-L134
+先按顺序 `await prepare`，再把每个执行放进 `pending`，最后 `Promise.all`；结果按 `calls` 的下标排列。
+:::
+
+::: steps 三个并行工具怎样完成、怎样交回
+--- 模型一次请求了三个工具。**准备阶段按调用顺序逐个进行**：每个调用依次过校验和 `beforeToolCall`，因为权限钩子可能要弹窗，三个询问同时弹出会让用户分不清。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant R as runTools
+  participant A as 工具 a（300ms）
+  participant B as 工具 b（100ms）
+  participant C as 工具 c（200ms）
+  rect rgb(255, 230, 213)
+    R->>R: prepare(a)，prepare(b)，prepare(c)
+  end
+--- 准备完成后，三个工具**同时开始执行**，每个执行都是一个还没有结束的 Promise，放进 `pending`。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant R as runTools
+  participant A as 工具 a（300ms）
+  participant B as 工具 b（100ms）
+  participant C as 工具 c（200ms）
+  R->>R: prepare(a)，prepare(b)，prepare(c)
+  rect rgb(255, 230, 213)
+    R->>A: execute
+    R->>B: execute
+    R->>C: execute
+  end
+--- 100ms：b 先完成，发出 `tool_end` 事件，界面可以立刻显示它的进度。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant R as runTools
+  participant A as 工具 a（300ms）
+  participant B as 工具 b（100ms）
+  participant C as 工具 c（200ms）
+  R->>R: prepare(a)，prepare(b)，prepare(c)
+  R->>A: execute
+  R->>B: execute
+  R->>C: execute
+  rect rgb(255, 230, 213)
+    B-->>R: 完成（tool_end）
+  end
+--- 200ms：c 完成。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant R as runTools
+  participant A as 工具 a（300ms）
+  participant B as 工具 b（100ms）
+  participant C as 工具 c（200ms）
+  R->>R: prepare(a)，prepare(b)，prepare(c)
+  R->>A: execute
+  R->>B: execute
+  R->>C: execute
+  B-->>R: 完成（tool_end）
+  rect rgb(255, 230, 213)
+    C-->>R: 完成（tool_end）
+  end
+--- 300ms：a 最后完成。`Promise.all(pending)` 到这时才返回，总耗时约等于最慢的那一个。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant R as runTools
+  participant A as 工具 a（300ms）
+  participant B as 工具 b（100ms）
+  participant C as 工具 c（200ms）
+  R->>R: prepare(a)，prepare(b)，prepare(c)
+  R->>A: execute
+  R->>B: execute
+  R->>C: execute
+  B-->>R: 完成（tool_end）
+  C-->>R: 完成（tool_end）
+  rect rgb(255, 230, 213)
+    A-->>R: 完成（tool_end）
+  end
+--- 完成顺序是 b → c → a，但结果按**调用顺序** a → b → c 放进历史：界面可以按完成顺序显示，历史必须保持稳定。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant R as runTools
+  participant A as 工具 a（300ms）
+  participant B as 工具 b（100ms）
+  participant C as 工具 c（200ms）
+  R->>R: prepare(a)，prepare(b)，prepare(c)
+  R->>A: execute
+  R->>B: execute
+  R->>C: execute
+  B-->>R: 完成（tool_end）
+  C-->>R: 完成（tool_end）
+  A-->>R: 完成（tool_end）
+  rect rgb(255, 230, 213)
+    Note over R: 结果顺序 a、b、c，放回历史
+  end
+:::
 
 为什么不连准备阶段一起并行？因为准备阶段包含 `beforeToolCall`，而权限钩子可能需要弹窗询问用户。三个询问同时弹出来，用户分不清哪个是哪个；按顺序问，才能一次只回答一个。
 
@@ -191,7 +360,13 @@ Pi 的并行执行有一个容易被忽略的细节：**准备阶段仍然是按
 
 只要批次里混着一个普通工具，它的结果模型还没看过，就必须再请求一次。Pi 的判断只有一行：
 
+::: tabs
+@@ Pi
 @pi packages/agent/src/agent-loop.ts#shouldTerminateToolBatch
+@@ mox
+@code mox/src/tools.ts#L136-L138
+同一条规则：先判断长度，再要求 `every` 都是 `terminate`。
+:::
 
 `length > 0` 这个条件不是多余的：JavaScript 里空数组的 `every()` 返回 `true`，没有它，一个空批次会被误判为“全部同意终止”。
 

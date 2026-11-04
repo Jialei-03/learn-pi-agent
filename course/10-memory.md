@@ -99,6 +99,72 @@ A 为什么没有掉？答案在 Pi 处理 `before_agent_start` 的路径上。
 
 下面一站一站走，每一站都能在图里找到。
 
+::: steps 记忆变化怎样变成一条补丁进入请求
+--- `before_agent_start` 的处理函数只做一件事：把 `promptSection()` 的文字赋给 `event.systemPromptOptions.sections.memory`，**不返回任何东西**。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant E as 记忆扩展
+  participant X as emitBeforeAgentStart
+  participant S as AgentSession
+  participant R as 历史与请求
+  rect rgb(255, 230, 213)
+    E->>X: sections.memory = promptSection()
+  end
+--- `emitBeforeAgentStart` 让所有扩展改的是**同一份** `currentOptions`。没有处理函数返回 `systemPrompt`，所以不会走“强制替换整个提示”的那条路。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant E as 记忆扩展
+  participant X as emitBeforeAgentStart
+  participant S as AgentSession
+  participant R as 历史与请求
+  E->>X: sections.memory = promptSection()
+  rect rgb(255, 230, 213)
+    Note over X: 所有扩展改同一个对象<br/>无人返回 systemPrompt
+  end
+--- `buildSystemPromptSections` 把 Pi 自己的小节和扩展的 `sections` 渲染成有序小节，`memory` 排在最后，并套上同名标签 `<memory>`。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant E as 记忆扩展
+  participant X as emitBeforeAgentStart
+  participant S as AgentSession
+  participant R as 历史与请求
+  E->>X: sections.memory = promptSection()
+  Note over X: 所有扩展改同一个对象<br/>无人返回 systemPrompt
+  rect rgb(255, 230, 213)
+    X->>S: 新的小节（memory 在最后）
+  end
+--- `_preparePromptAndToolLoadout` 用 `getCurrentSystemMessage(messages)` 从**历史里重放**出模型此刻看到的小节作“旧的”，再交给 `diffSystemPromptSections`。只有 `memory` 变了，补丁里只有这一项。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant E as 记忆扩展
+  participant X as emitBeforeAgentStart
+  participant S as AgentSession
+  participant R as 历史与请求
+  E->>X: sections.memory = promptSection()
+  Note over X: 所有扩展改同一个对象<br/>无人返回 systemPrompt
+  X->>S: 新的小节（memory 在最后）
+  rect rgb(255, 230, 213)
+    S->>R: 重放历史里的系统消息（旧小节）
+    Note over S: diff：补丁只含 memory
+  end
+--- `_prepareRun` 把补丁插在这次运行起始消息的**最前面**：请求变成“旧历史（原样）、补丁、新的用户输入”。前缀没有任何变化，缓存继续命中。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant E as 记忆扩展
+  participant X as emitBeforeAgentStart
+  participant S as AgentSession
+  participant R as 历史与请求
+  E->>X: sections.memory = promptSection()
+  Note over X: 所有扩展改同一个对象<br/>无人返回 systemPrompt
+  X->>S: 新的小节（memory 在最后）
+  S->>R: 重放历史里的系统消息（旧小节）
+  Note over S: diff：补丁只含 memory
+  rect rgb(255, 230, 213)
+    S->>R: 补丁插在新用户输入之前
+    Note over R: 旧历史一个字节都没动
+  end
+:::
+
 ### ① 所有扩展改的是同一份选项
 
 Pi 在每次运行开始前触发 `before_agent_start`。分发它的函数是 `emitBeforeAgentStart`：
@@ -189,6 +255,75 @@ B 的处理函数返回的是 `event.systemPrompt + 记忆`。第 4 次运行时
 
 51 行靠 `lastPrompt` 判断用户这次说了什么。52～54 行：没说“记住”时，有界面就弹窗问，没有界面（比如 `--print` 模式）就当作没人确认。55 行把两个布尔值交给 `saveFromModel`，由它决定生效还是待确认（下一节）。注意 50 行：如果这个名字已经有一条**已生效**的记忆，弹窗的标题会变成“覆盖长期记忆？”。
 
+::: steps 一条模型发起的保存请求怎样过关
+--- 用户这次只让模型“总结一个网页”，网页的 HTML 注释里藏着一句给 AI 的指令。模型照做，调用了 `save_memory`。
+flowchart TB
+  subgraph P1["模型发起的保存：三道关"]
+    direction LR
+    CALL["模型调用<br/>save_memory"]:::on --> G1["① 用户说了<br/>记住？"]:::dim --> G2["② 弹窗确认？"]:::dim --> G3["③ 覆盖<br/>关卡"]:::dim --> G4["④ 密钥<br/>检查"]:::dim
+  end
+  subgraph P2["落盘与审核"]
+    direction LR
+    P["⑤ 写成<br/>pending"]:::dim -.-> APP["/memory<br/>approve"]:::dim --> IDX["进入索引<br/>MEMORY.md"]:::dim
+  end
+  P1 --> P2
+--- 第一关：`userAskedToRemember(lastPrompt)` 只看**用户这次说了什么**。用户的话里没有“记住”，`explicit` 为假。
+flowchart TB
+  subgraph P1["模型发起的保存：三道关"]
+    direction LR
+    CALL["模型调用<br/>save_memory"]:::done --> G1["① 用户说了<br/>记住？"]:::on --> G2["② 弹窗确认？"]:::dim --> G3["③ 覆盖<br/>关卡"]:::dim --> G4["④ 密钥<br/>检查"]:::dim
+  end
+  subgraph P2["落盘与审核"]
+    direction LR
+    P["⑤ 写成<br/>pending"]:::dim -.-> APP["/memory<br/>approve"]:::dim --> IDX["进入索引<br/>MEMORY.md"]:::dim
+  end
+  P1 --> P2
+--- 第二关：有界面时这里会弹窗问用户；这次是 `--print` 模式，`ctx.hasUI` 为假，直接当作没人确认，`confirmed` 为假。
+flowchart TB
+  subgraph P1["模型发起的保存：三道关"]
+    direction LR
+    CALL["模型调用<br/>save_memory"]:::done --> G1["① 用户说了<br/>记住？"]:::done --> G2["② 弹窗确认？"]:::on --> G3["③ 覆盖<br/>关卡"]:::dim --> G4["④ 密钥<br/>检查"]:::dim
+  end
+  subgraph P2["落盘与审核"]
+    direction LR
+    P["⑤ 写成<br/>pending"]:::dim -.-> APP["/memory<br/>approve"]:::dim --> IDX["进入索引<br/>MEMORY.md"]:::dim
+  end
+  P1 --> P2
+--- 第三关 `saveFromModel`：同名记忆已生效、又没有批准才会抛错。这是一个新名字，通过。第四关 `store.save` 里的 `looksLikeSecret`：内容里没有密钥格式，也通过。
+flowchart TB
+  subgraph P1["模型发起的保存：三道关"]
+    direction LR
+    CALL["模型调用<br/>save_memory"]:::done --> G1["① 用户说了<br/>记住？"]:::done --> G2["② 弹窗确认？"]:::done --> G3["③ 覆盖<br/>关卡"]:::on --> G4["④ 密钥<br/>检查"]:::on
+  end
+  subgraph P2["落盘与审核"]
+    direction LR
+    P["⑤ 写成<br/>pending"]:::dim -.-> APP["/memory<br/>approve"]:::dim --> IDX["进入索引<br/>MEMORY.md"]:::dim
+  end
+  P1 --> P2
+--- 没批准，所以 `status` 是 `pending`，`source` 写着“模型提议，等待用户确认”。`writeIndex` 只收 `active` 的，它**不会进入 MEMORY.md**，也就不会出现在任何会话的系统提示里。
+flowchart TB
+  subgraph P1["模型发起的保存：三道关"]
+    direction LR
+    CALL["模型调用<br/>save_memory"]:::done --> G1["① 用户说了<br/>记住？"]:::done --> G2["② 弹窗确认？"]:::done --> G3["③ 覆盖<br/>关卡"]:::done --> G4["④ 密钥<br/>检查"]:::done
+  end
+  subgraph P2["落盘与审核"]
+    direction LR
+    P["⑤ 写成<br/>pending"]:::on -.-> APP["/memory<br/>approve"]:::dim --> IDX["进入索引<br/>MEMORY.md"]:::dim
+  end
+  P1 --> P2
+--- 用户在 `/memory` 里看到这条记忆和它的来源，决定批准：`/memory approve` 调用 `setStatus(name, 'active')`，来源追加“用户已确认”，索引重写后才收入它。这条路径不经过任何关卡，是用户自己的入口。
+flowchart TB
+  subgraph P1["模型发起的保存：三道关"]
+    direction LR
+    CALL["模型调用<br/>save_memory"]:::done --> G1["① 用户说了<br/>记住？"]:::done --> G2["② 弹窗确认？"]:::done --> G3["③ 覆盖<br/>关卡"]:::done --> G4["④ 密钥<br/>检查"]:::done
+  end
+  subgraph P2["落盘与审核"]
+    direction LR
+    P["⑤ 写成<br/>pending"]:::done -.-> APP["/memory<br/>approve"]:::on --> IDX["进入索引<br/>MEMORY.md"]:::on
+  end
+  P1 --> P2
+:::
+
 下面这个实验用四个独立的 Pi 会话共用一个记忆目录：
 
 @lab node labs/ch10/memory.ts
@@ -252,7 +387,13 @@ mox 版本共用同一个 `store.ts`，所以记忆格式、密钥检查、写�
 
 最后是命令：
 
+::: tabs
+@@ mox
 @code extensions/memory/mox.ts#region:memory-command
+@@ Pi
+@code extensions/memory/index.ts#L80-L90
+同样的三个分支，用 `ctx.ui.notify` 显示。
+:::
 
 和 Pi 版逻辑相同，区别是 mox 的命令直接 `console.log`，Pi 的用 `ctx.ui.notify`。用 `--ext` 加载：`node mox/src/cli.ts --ext extensions/memory/mox.ts`。
 

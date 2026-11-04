@@ -58,11 +58,56 @@ Pi 里对应的代码非常短。追加一条消息时，父节点就是当前�
 
 分叉只是移动叶子：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/session-manager.ts#L1590-L1595
+@@ mox
+@code mox/src/session.ts#L118-L122
+`branch` 只改 `leaf`；之后 `append` 用它做 `parentId`。
+:::
 
 而“当前分支”就是从叶子沿着 `parentId` 一路走回根，再反转：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/session-manager.ts#buildSessionPath
+@@ mox
+@code mox/src/session.ts#L124-L129
+沿 `parentId` 一路走到根，最后 `reverse()`。
+:::
+
+::: steps 回退一步、开出新分支：会话树怎样长出来
+--- 会话是一条链：每条记录的 `parentId` 指向上一条，叶子在 A2（橙色）。
+flowchart LR
+  U1["U1 列文件"]:::done --> A1["A1"]:::done
+  A1 --> U2["U2 用 Python 重写"]:::done --> A2["A2"]:::on
+  A1 --> U2p["U2' 给它加上类型"]:::dim --> A2p["A2'"]:::dim
+--- 用户想回到“重写之前”。这一步**只是移动叶子指针**到 A1（mox 里是 `branch(fromId)`），没有删除任何记录；U2、A2 变灰，是因为它们不在当前路径上，仍然躺在文件里。
+flowchart LR
+  U1["U1 列文件"]:::done --> A1["A1"]:::on
+  A1 --> U2["U2 用 Python 重写"]:::dim --> A2["A2"]:::dim
+  A1 --> U2p["U2' 给它加上类型"]:::dim --> A2p["A2'"]:::dim
+--- 用户发新消息：追加 U2'，它的 `parentId` 是**当前叶子** A1。A1 于是有了两个孩子，这里就是分叉点。
+flowchart LR
+  U1["U1 列文件"]:::done --> A1["A1"]:::done
+  A1 --> U2["U2 用 Python 重写"]:::dim --> A2["A2"]:::dim
+  A1 --> U2p["U2' 给它加上类型"]:::on --> A2p["A2'"]:::dim
+--- 模型的回复 A2' 接在 U2' 后面，叶子移到 A2'。旧分支原样留着，随时可以再回去。
+flowchart LR
+  U1["U1 列文件"]:::done --> A1["A1"]:::done
+  A1 --> U2["U2 用 Python 重写"]:::dim --> A2["A2"]:::dim
+  A1 --> U2p["U2' 给它加上类型"]:::done --> A2p["A2'"]:::on
+--- 发给模型的是**从叶子沿 `parentId` 走回根、再反转**得到的路径（`buildSessionPath`）：U1、A1、U2'、A2'。旧分支的 U2、A2 不会出现在请求里。
+flowchart LR
+  U1["U1 列文件"]:::on --> A1["A1"]:::on
+  A1 --> U2["U2 用 Python 重写"]:::dim --> A2["A2"]:::dim
+  A1 --> U2p["U2' 给它加上类型"]:::on --> A2p["A2'"]:::on
+--- 重新打开文件：叶子指针不需要单独存。新分支的记录一定是最后追加的，文件里的**最后一条就是叶子**，当前分支自然是最后写入的那一支。
+flowchart LR
+  U1["U1 列文件"]:::done --> A1["A1"]:::done
+  A1 --> U2["U2 用 Python 重写"]:::dim --> A2["A2"]:::dim
+  A1 --> U2p["U2' 给它加上类型"]:::done --> A2p["A2'"]:::on
+:::
 
 这个实验在 mox 和 Pi 里分别构造上图的会话：
 
@@ -133,6 +178,64 @@ Pi 没有修改会话文件来“修复”这些问题，而是在**发送前**�
 mox 实现了同样的修复，并在每次请求前调用：
 
 @code mox/src/transcript.ts#repairTranscript
+
+::: steps repairTranscript 怎样给没有结果的调用补一条
+--- 崩溃发生在工具执行完之前：文件里有一条带 `bash` 调用的 assistant 消息，却没有对应的结果；后来用户又发了一条消息。投影还是空的。
+flowchart TB
+  subgraph F["磁盘上的会话（保持不变）"]
+    direction LR
+    S1["user U1"]:::dim --> S2["assistant<br/>调用 bash"]:::dim --> S3["user U2"]:::dim
+  end
+  subgraph P["发给模型的投影"]
+    direction LR
+    P1["user U1"]:::dim --> P2["assistant<br/>调用 bash"]:::dim --> PR["toolResult<br/>没有结果"]:::dim --> P3["user U2"]:::dim
+  end
+  F --> P
+--- `repairTranscript` 从头遍历。第一条是 user，没有待处理的调用，原样放进投影。
+flowchart TB
+  subgraph F["磁盘上的会话（保持不变）"]
+    direction LR
+    S1["user U1"]:::done --> S2["assistant<br/>调用 bash"]:::dim --> S3["user U2"]:::dim
+  end
+  subgraph P["发给模型的投影"]
+    direction LR
+    P1["user U1"]:::on --> P2["assistant<br/>调用 bash"]:::dim --> PR["toolResult<br/>没有结果"]:::dim --> P3["user U2"]:::dim
+  end
+  F --> P
+--- 第二条是 assistant：它的 `stopReason` 是 `toolUse`，不是 `error` 或 `aborted`，所以保留，并把里面的 `bash` 调用记进 `pending`。
+flowchart TB
+  subgraph F["磁盘上的会话（保持不变）"]
+    direction LR
+    S1["user U1"]:::done --> S2["assistant<br/>调用 bash"]:::done --> S3["user U2"]:::dim
+  end
+  subgraph P["发给模型的投影"]
+    direction LR
+    P1["user U1"]:::done --> P2["assistant<br/>调用 bash"]:::on --> PR["toolResult<br/>没有结果"]:::dim --> P3["user U2"]:::dim
+  end
+  F --> P
+--- 第三条是新的 user 消息，它打断了工具流程。先调用 `close()`：`pending` 里的 `bash` 没有被 `answered`，于是**补一条错误结果**，内容是“没有结果（运行在工具完成前中断了）”。
+flowchart TB
+  subgraph F["磁盘上的会话（保持不变）"]
+    direction LR
+    S1["user U1"]:::done --> S2["assistant<br/>调用 bash"]:::done --> S3["user U2"]:::on
+  end
+  subgraph P["发给模型的投影"]
+    direction LR
+    P1["user U1"]:::done --> P2["assistant<br/>调用 bash"]:::done --> PR["toolResult<br/>没有结果"]:::on --> P3["user U2"]:::dim
+  end
+  F --> P
+--- 然后这条 user 消息才放进投影。服务商要求的“每个工具调用后面都有结果”满足了，而磁盘上的会话文件一个字节都没改：存储的是事实，发送的是投影。
+flowchart TB
+  subgraph F["磁盘上的会话（保持不变）"]
+    direction LR
+    S1["user U1"]:::done --> S2["assistant<br/>调用 bash"]:::done --> S3["user U2"]:::done
+  end
+  subgraph P["发给模型的投影"]
+    direction LR
+    P1["user U1"]:::done --> P2["assistant<br/>调用 bash"]:::done --> PR["toolResult<br/>没有结果"]:::done --> P3["user U2"]:::on
+  end
+  F --> P
+:::
 
 对比实验覆盖了这三种情况：
 

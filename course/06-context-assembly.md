@@ -60,11 +60,90 @@ Pi 在每个目录里依次查找这几个名字，取第一个存在的：
 
 在一个多包仓库的子目录里工作时，可能有好几份说明文件：用户全局的偏好、仓库根目录的约定、子项目自己的约定。Pi 从当前目录一路向上找到文件系统根目录，把找到的文件按“从通用到具体”的顺序排列：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/resource-loader.ts#L260-L302
+@@ mox
+@code mox/src/context.ts#discoverContextFiles
+同样先放全局，再从根目录一路到当前目录；用 `unshift` 保证从通用到具体。
+:::
 
 这个实验构造了一个三层的目录结构，分别交给 mox 和 Pi：
 
 @lab node labs/ch06/context-files.ts
+
+::: steps 三层说明文件怎样被发现并排好顺序
+--- 先读用户全局目录：`loadFromDir(globalDir)` 找到 `AGENTS.md`，放进 `files` 的第一位。
+flowchart LR
+  subgraph W["向上查找：先近后远"]
+    direction TB
+    D3["src/<br/>当前目录"]:::dim --> D2["packages/web/<br/>有 CLAUDE.md"]:::dim --> D1["repo/<br/>有 AGENTS.md"]:::dim --> D0["…… 到根目录"]:::dim
+  end
+  G["~/.agent/<br/>AGENTS.md"]:::on
+  subgraph R["拼接结果：从通用到具体"]
+    direction TB
+    R1["① 全局"]:::on --> R2["② repo/AGENTS.md"]:::dim --> R3["③ web/CLAUDE.md"]:::dim
+  end
+  G --> R1
+  D2 -.-> R3
+  D1 -.-> R2
+--- 再从当前目录 `src/` 开始往上走。这里三个文件名（`AGENTS.override.md`、`AGENTS.md`、`CLAUDE.md`）都不存在，什么也不取。
+flowchart LR
+  subgraph W["向上查找：先近后远"]
+    direction TB
+    D3["src/<br/>当前目录"]:::on --> D2["packages/web/<br/>有 CLAUDE.md"]:::dim --> D1["repo/<br/>有 AGENTS.md"]:::dim --> D0["…… 到根目录"]:::dim
+  end
+  G["~/.agent/<br/>AGENTS.md"]:::done
+  subgraph R["拼接结果：从通用到具体"]
+    direction TB
+    R1["① 全局"]:::done --> R2["② repo/AGENTS.md"]:::dim --> R3["③ web/CLAUDE.md"]:::dim
+  end
+  G --> R1
+  D2 -.-> R3
+  D1 -.-> R2
+--- 上一层 `packages/web/`：没有 `AGENTS.md`，但有 `CLAUDE.md`。每个目录只取按顺序第一个存在的文件。它被 `unshift` 进 `ancestors`。
+flowchart LR
+  subgraph W["向上查找：先近后远"]
+    direction TB
+    D3["src/<br/>当前目录"]:::done --> D2["packages/web/<br/>有 CLAUDE.md"]:::on --> D1["repo/<br/>有 AGENTS.md"]:::dim --> D0["…… 到根目录"]:::dim
+  end
+  G["~/.agent/<br/>AGENTS.md"]:::done
+  subgraph R["拼接结果：从通用到具体"]
+    direction TB
+    R1["① 全局"]:::done --> R2["② repo/AGENTS.md"]:::dim --> R3["③ web/CLAUDE.md"]:::on
+  end
+  G --> R1
+  D2 -.-> R3
+  D1 -.-> R2
+--- 再上一层 `repo/` 的 `AGENTS.md`：同样用 `unshift` 放到**最前面**，于是排在 `web/CLAUDE.md` 之前，离当前目录越远的越靠前。
+flowchart LR
+  subgraph W["向上查找：先近后远"]
+    direction TB
+    D3["src/<br/>当前目录"]:::done --> D2["packages/web/<br/>有 CLAUDE.md"]:::done --> D1["repo/<br/>有 AGENTS.md"]:::on --> D0["…… 到根目录"]:::dim
+  end
+  G["~/.agent/<br/>AGENTS.md"]:::done
+  subgraph R["拼接结果：从通用到具体"]
+    direction TB
+    R1["① 全局"]:::done --> R2["② repo/AGENTS.md"]:::on --> R3["③ web/CLAUDE.md"]:::done
+  end
+  G --> R1
+  D2 -.-> R3
+  D1 -.-> R2
+--- 一直走到 `dirname(dir) === dir`（根目录）才停，沿途没有更多文件。最后 `[...files, ...ancestors]`：全局、仓库根、子项目，越靠后越具体。
+flowchart LR
+  subgraph W["向上查找：先近后远"]
+    direction TB
+    D3["src/<br/>当前目录"]:::done --> D2["packages/web/<br/>有 CLAUDE.md"]:::done --> D1["repo/<br/>有 AGENTS.md"]:::done --> D0["…… 到根目录"]:::on
+  end
+  G["~/.agent/<br/>AGENTS.md"]:::done
+  subgraph R["拼接结果：从通用到具体"]
+    direction TB
+    R1["① 全局"]:::done --> R2["② repo/AGENTS.md"]:::done --> R3["③ web/CLAUDE.md"]:::done
+  end
+  G --> R1
+  D2 -.-> R3
+  D1 -.-> R2
+:::
 
 顺序是全局、仓库根、子项目——越靠后越具体。模型读到后面的说明时，自然会把它理解成对前面的细化或覆盖。
 
@@ -131,7 +210,85 @@ Pi 真正发给模型的系统提示是什么样的？这个实验调用 Pi 内�
 
 用户在会话进行中修改了 `AGENTS.md`，或者启用了一个新工具，系统提示必须反映这个变化。Pi 的做法正是策略 D。系统提示以“小节”的形式保存在对话记录里，每次请求前，用当前应有的小节和记录里已有的小节做比较，只生成变化的部分：
 
+::: tabs
+@@ Pi
 @pi packages/coding-agent/src/core/system-prompt.ts#diffSystemPromptSections
+@@ mox
+@code mox/src/context.ts#diffSections
+同样的比较：变了的小节进补丁，消失的小节记为 `null`。
+:::
+
+::: steps 会话中途改了 AGENTS.md，只追加一条补丁
+--- 会话开始：系统提示以**命名小节**的形式存进记录里。前几轮请求的开头完全一样，提示缓存一直命中。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant S as AgentSession
+  participant H as 会话记录
+  participant M as 模型请求
+  rect rgb(255, 230, 213)
+    S->>H: 记录系统提示的各个小节
+    S->>M: 请求（开头不变，缓存命中）
+  end
+--- 会话进行中，用户修改了 `AGENTS.md`。如果这时重写开头的系统提示，下一次请求的缓存会几乎全部失效。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant S as AgentSession
+  participant H as 会话记录
+  participant M as 模型请求
+  S->>H: 记录系统提示的各个小节
+  S->>M: 请求（开头不变，缓存命中）
+  rect rgb(255, 230, 213)
+    U->>S: 修改 AGENTS.md
+  end
+--- 下一次请求之前，`_preparePromptAndToolLoadout` 把“现在应有的小节”和“记录里已有的小节”交给 `diffSystemPromptSections`，只有 `project_context` 变了，补丁里只有这一节。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant S as AgentSession
+  participant H as 会话记录
+  participant M as 模型请求
+  S->>H: 记录系统提示的各个小节
+  S->>M: 请求（开头不变，缓存命中）
+  U->>S: 修改 AGENTS.md
+  rect rgb(255, 230, 213)
+    S->>H: 读取记录里已有的小节
+    Note over S: diffSystemPromptSections<br/>补丁只含 project_context
+  end
+--- 补丁作为一条**新的系统消息追加到历史末尾**。记录开头的系统提示一个字也没动。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant S as AgentSession
+  participant H as 会话记录
+  participant M as 模型请求
+  S->>H: 记录系统提示的各个小节
+  S->>M: 请求（开头不变，缓存命中）
+  U->>S: 修改 AGENTS.md
+  S->>H: 读取记录里已有的小节
+  Note over S: diffSystemPromptSections<br/>补丁只含 project_context
+  rect rgb(255, 230, 213)
+    S->>H: 追加系统消息（补丁）
+  end
+--- 发送时，补丁被渲染成“系统提示的某一节已更新为……”，模型能把它对应到开头的同名小节。前缀和上次相同，缓存继续命中；只有末尾新增的部分按原价计费。
+%%{init: {"sequence":{"width":110,"actorMargin":10,"messageFontSize":14,"noteFontSize":13,"actorFontSize":13,"mirrorActors":false,"boxMargin":6,"messageMargin":28,"noteMargin":6}}}%%
+sequenceDiagram
+  participant U as 用户
+  participant S as AgentSession
+  participant H as 会话记录
+  participant M as 模型请求
+  S->>H: 记录系统提示的各个小节
+  S->>M: 请求（开头不变，缓存命中）
+  U->>S: 修改 AGENTS.md
+  S->>H: 读取记录里已有的小节
+  Note over S: diffSystemPromptSections<br/>补丁只含 project_context
+  S->>H: 追加系统消息（补丁）
+  rect rgb(255, 230, 213)
+    S->>M: 请求：开头不变，末尾多一条更新
+    Note over M: 渲染为“project_context 一节已更新为……”
+  end
+:::
 
 这个“补丁”作为一条新的系统消息追加到历史里：
 
