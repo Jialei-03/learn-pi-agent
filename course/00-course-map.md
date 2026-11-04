@@ -281,11 +281,11 @@ cd learn-pi-agent && npm install
 git clone --branch v1.5.0 https://github.com/earendil-works/pi.git ../pi-v1.5.0
 ```
 
-验证环境：下面这个实验把同一段录制好的网络数据交给 mox 和 Pi 各自的两个适配器，四个实现应该得出一样的结果（第 2 章会详细讲它）。
+最后检查一下环境。这个脚本逐项检查 Node 版本和 Pi 包，最后还会把第 2 章的一个实验真跑一遍：
 
-@lab node labs/ch02/replay.ts
+@lab node labs/ch00/check-env.ts
 
-最后一行显示“是”，环境就没问题。所有实验默认使用脚本模型，**不需要 API Key，也不会产生费用**。想接真实模型时，第 1 章会告诉你怎么配置。
+最后一行显示“环境就绪”就可以开始了。所有实验默认使用脚本模型，**不需要 API Key，也不会产生费用**。想接真实模型时，第 1 章会告诉你怎么配置。
 
 ### 读源码的方法
 
