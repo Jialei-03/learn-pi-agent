@@ -20,7 +20,7 @@ build: mox/src/providers —— Anthropic 与 OpenAI 两个流式适配器，加
 
 下面是 mox 的内部格式。字段名刻意和 Pi 保持一致（`toolCall`、`toolResult`、`stopReason`），这样你读 Pi 源码时会发现自己已经认识这些结构：
 
-@code mox/src/types.ts#L5-L29
+@code mox/src/types.ts#region:messages
 
 和 OpenAI 格式相比，有三处刻意的不同：
 
@@ -30,7 +30,7 @@ build: mox/src/providers —— Anthropic 与 OpenAI 两个流式适配器，加
 
 一个模型在 mox 里就是一个接口：给它 `Context`，它还你一条 `AssistantMessage`。
 
-@code mox/src/types.ts#L41-L46
+@code mox/src/types.ts#region:model
 
 注意注释里的约定：**`stream()` 永远不抛异常。** 本章最后会解释为什么。
 

@@ -38,6 +38,9 @@ type Command = { id?: string; type: string; message?: string };
 export function startRpc(host: RpcHost, write: (record: object) => void, input: NodeJS.ReadableStream = process.stdin): Promise<void> {
   let buffer = Buffer.alloc(0);
   let current: Promise<void> | undefined;
+  // 从“收下 prompt”到“这次运行全部结束”。host.isRunning() 要等 execute 里面创建了 AbortController 才为真，
+  // 中间隔着几个 await：背靠背到达的第二条 prompt 会误以为空闲，开出第二个并发的运行（实验 wire.ts 守着这一点）
+  let busy = false;
   const respond = (cmd: Command, success: boolean, extra: object = {}) => write({ ...(cmd.id ? { id: cmd.id } : {}), type: 'response', command: cmd.type, success, ...extra });
 
   const handle = (cmd: Command) => {
@@ -45,9 +48,11 @@ export function startRpc(host: RpcHost, write: (record: object) => void, input: 
       case 'prompt': {
         if (!cmd.message) return respond(cmd, false, { error: '缺少 message' });
         // 正在运行：作为插话排队（第 3 章）；空闲：开始新的运行
-        if (host.isRunning()) { host.steer(cmd.message); return respond(cmd, true, { data: { disposition: 'queued' } }); }
+        if (busy || host.isRunning()) { host.steer(cmd.message); return respond(cmd, true, { data: { disposition: 'queued' } }); }
+        busy = true;
         respond(cmd, true, { data: { disposition: 'started' } });     // “收下了”，不代表“做完了”：完成看 agent_settled 事件
-        current = host.execute(cmd.message).then(() => write({ type: 'agent_settled' }), error => write({ type: 'error', error: String(error) }));
+        const settle = (record: object) => { busy = false; write(record); };   // 先标记空闲，再通知：客户端收到 agent_settled 后立刻发的下一条 prompt 才会开始新运行
+        current = host.execute(cmd.message).then(() => settle({ type: 'agent_settled' }), error => settle({ type: 'error', error: String(error) }));
         return;
       }
       case 'abort': host.abort(); return respond(cmd, true);

@@ -1,6 +1,7 @@
 // 第 12 章实验：工具太多怎么办？同一个 MCP 服务器，用 direct 和 deferred 两种方式接进 Pi。
 //   node labs/ch12/exposure.ts
 // 真实的 Pi 会话 + Pi 内置的 MCP 扩展和 tool_search 扩展，模型是脚本。看每次请求里模型拿到了哪些工具定义。
+import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -56,6 +57,24 @@ async function run(exposure: 'direct' | 'deferred') {
   }
   session.dispose();
   console.log();
+
+  // 正文引用的数字：direct 第一次请求就带着全部 8 个 MCP 工具；deferred 第一次只有内置工具和 tool_search，
+  // 搜索之后才出现匹配的 3 个工具，并且记在对话末尾
+  const mcpTools = (r: (typeof requests)[number]) => r.tools.filter(t => t.startsWith('mcp__'));
+  if (exposure === 'direct') {
+    assert.equal(requests.length, 2);
+    for (const r of requests) assert.equal(mcpTools(r).length, 8);
+    assert.equal(requests[0].tools.length, 12);
+  } else {
+    assert.equal(requests.length, 3);
+    assert.equal(mcpTools(requests[0]).length, 0);
+    assert.ok(requests[0].tools.includes('tool_search'));
+    assert.equal(requests[0].tools.length, 5);
+    assert.equal(requests[0].section?.split('\n').length, 4, 'mcp_servers 小节：两行标签 + 两行内容');
+    assert.deepEqual(mcpTools(requests[1]), ['mcp__issues__search_issues', 'mcp__issues__create_issue', 'mcp__issues__slow_count']);
+    assert.ok(requests[1].lastToolChange > 0, '加载的工具记在对话末尾，开头不变');
+    assert.deepEqual(requests[2].tools, requests[1].tools);
+  }
 }
 
 await run('direct');

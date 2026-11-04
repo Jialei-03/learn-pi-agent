@@ -1,5 +1,6 @@
 // 第 14 章实验：权限扩展装进一个真实的 Pi 会话。界面是脚本：每次弹出确认框，按预先写好的答案选择。
 //   node labs/ch14/session.ts
+import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -37,6 +38,12 @@ const steps = [
 ];
 
 const outcomes: Record<string, boolean[]> = {};
+// 正文的结论：每一步的放行 / 拒绝（顺序同 steps：read、npm run build、git commit、edit、write、cat .env、python），以及弹出了几次确认框
+const expected: Record<string, { allowed: boolean[]; dialogs: string[] }> = {
+  '有界面：用户逐个确认': { allowed: [true, true, true, true, true, false, false], dialogs: ['git add -A && git commit', 'edit', 'python3'] },
+  '没有界面（比如 pi -p 在 CI 里运行）': { allowed: [true, true, false, false, false, false, false], dialogs: [] },
+  '计划模式': { allowed: [true, false, false, false, false, false, false], dialogs: [] },
+};
 
 async function run(title: string, answers: string[] | undefined, mode?: 'plan') {
   const cwd = project();
@@ -59,6 +66,9 @@ async function run(title: string, answers: string[] | undefined, mode?: 'plan') 
     console.log(`${m.isError ? '✗' : '✓'} ${what}${m.isError ? `\n    ${textOf(m).split('\n')[0]}` : ''}`);
   }
   if (dialogs.length) console.log(`弹出的确认框：\n${dialogs.map(x => `    ${x}`).join('\n')}`);
+  assert.deepEqual(outcomes[title], expected[title].allowed, `${title}：每一步的放行 / 拒绝`);
+  assert.equal(dialogs.length, expected[title].dialogs.length, `${title}：确认框的数量`);
+  expected[title].dialogs.forEach((prefix, i) => assert.ok(dialogs[i].startsWith(prefix), `${title}：第 ${i + 1} 个确认框应该是 ${prefix}，实际是 ${dialogs[i]}`));
   session.dispose();
   console.log();
 }
@@ -84,4 +94,5 @@ for (const [title, answers, mode] of [['有界面：用户逐个确认', ['允�
   const { messages } = await runLoop([], [{ role: 'user', content: '开始' }], { model, systemPrompt: '', tools: createCodingTools(cwd), hooks: host.toolHooks() });
   const mox = messages.filter(m => m.role === 'toolResult').map(m => m.role === 'toolResult' && !m.isError);
   console.log(`${title}：${JSON.stringify(mox) === JSON.stringify(outcomes[title]) ? '每一步的放行 / 拒绝都与 Pi 一致' : `不一致 ${JSON.stringify(mox)}`}`);
+  assert.deepEqual(mox, outcomes[title], `${title}：mox 与 Pi 的决定必须一致`);
 }

@@ -1,6 +1,7 @@
 // 第 8 章实验：完整地压缩一次，看看发给“摘要模型”的是什么，压缩前后上下文差多少。
 //   node labs/ch08/compact.ts
 // 摘要模型用脚本代替（返回固定格式的摘要），重点是观察请求的形状，以及会话文件里留下了什么。
+import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,12 +34,22 @@ const after = session.messages();
 console.log('━━ mox ━━');
 console.log(`压缩前：${before.length} 条消息，约 ${tokens(before)} tokens`);
 console.log(`压缩后：${after.length} 条消息，约 ${tokens(after)} tokens（1 条摘要 + 保留的 ${r1.kept} 条）`);
-console.log(`会话文件：${readFileSync(session.file!, 'utf8').trim().split('\n').length} 行——原始消息一条没删，只多了一条 compaction 记录`);
+const fileLines = readFileSync(session.file!, 'utf8').trim().split('\n').length;
+console.log(`会话文件：${fileLines} 行——原始消息一条没删，只多了一条 compaction 记录`);
+// 正文引用的数字（第 8 章“约 1660 → 475”）：估算方式或切点变了，这里要报错，提醒同步修改正文
+assert.equal(before.length, 16);
+assert.equal(tokens(before), 1660);
+assert.equal(after.length, 6);
+assert.equal(r1.kept, 5);
+assert.equal(tokens(after), 475);
+assert.equal(fileLines, 1 + 16 + 1, '会话文件 = 1 行文件头 + 16 条原始消息 + 1 条 compaction 记录');
 console.log('\n发给摘要模型的请求（节选）：');
 console.log(seenPrompt.split('\n').slice(0, 9).map(l => '  │ ' + l.slice(0, 70)).join('\n'));
 console.log('  │ ……');
 console.log('\n摘要末尾自动附上的文件清单：');
 console.log(r1.summary.split('\n').filter(l => /files>|^src\//.test(l)).map(l => '  │ ' + l).join('\n'));
+assert.ok(r1.summary.includes('<read-files>\nsrc/file1.ts\nsrc/file2.ts\n</read-files>'));
+assert.ok(r1.summary.includes('<modified-files>\nsrc/file3.ts\n</modified-files>'));
 
 // 第二次压缩：上一次的摘要作为 <previous-summary> 传入，要求“合并”而不是重写
 for (let t = 5; t <= 6; t++) {
@@ -47,6 +58,7 @@ for (let t = 5; t <= 6; t++) {
 }
 await compactSession(session, summarizer, { keepRecentTokens: 300 });
 console.log(`\n第二次压缩时，请求里包含上一份摘要：${seenPrompt.includes('<previous-summary>') ? '是' : '否'}`);
+assert.ok(seenPrompt.includes('<previous-summary>'), '第二次压缩要把上一份摘要作为 <previous-summary> 传给模型');
 
 // ── Pi ───────────────────────────────────────────────
 const pi = SessionManager.inMemory('/repo');
@@ -75,3 +87,10 @@ console.log('发给摘要模型的请求（节选）：');
 console.log(piPrompt.split('\n').slice(0, 7).map(l => '  │ ' + l.slice(0, 70)).join('\n'));
 console.log('  │ ……');
 console.log(`摘要末尾的文件清单：${result.summary.match(/<(read|modified)-files>[\s\S]*?<\/\1-files>/g)?.map(s => s.replace(/\n/g, ' ')).join('  ')}`);
+// 正文说“Pi 发了两次摘要请求，因为切点落在了一轮的中间”
+assert.equal(preparation!.messagesToSummarize.length, 8);
+assert.equal(preparation!.turnPrefixMessages.length, 3);
+assert.equal(piRequests.length, 2);
+assert.equal(pi.getBranch().findIndex(e => e.id === result.firstKeptEntryId), 11);
+assert.ok(result.summary.includes('<read-files>\nsrc/file1.ts\nsrc/file2.ts\n</read-files>'));
+assert.ok(result.summary.includes('<modified-files>\nsrc/file3.ts\n</modified-files>'));

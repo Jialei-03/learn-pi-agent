@@ -1,5 +1,6 @@
 // 第 12 章实验：一个能用的 MCP 客户端，要扛住哪些情况？mox 和 Pi 的客户端分别跑同样的六个场景。
 //   node labs/ch12/robust.ts
+import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { McpClient as PiClient, StdioTransport as PiStdio } from '@earendil-works/pi-mcp';
@@ -36,7 +37,8 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const text = (r: any) => r.content.map((c: any) => c.text).join('');
 async function outcome(p: Promise<any>) {
   const start = Date.now();
-  try { return `成功 —— ${text(await p)}`; } catch (e) { return `失败 —— ${(e as Error).message}（${Date.now() - start}ms）`; }
+  try { return `成功 —— ${text(await p)}`; } catch (e) { const ms = Date.now() - start;
+    return `失败 —— ${(e as Error).message}（${ms < 50 ? '立刻' : `约 ${Math.round(ms / 100) * 100}ms`}）`; }
 }
 const serverSaw = (h: Harness) => h.stderr().split('\n').filter(l => l.includes('取消') || l.includes('crash')).map(l => l.replace('[issues] ', '')).join('；') || '（没有记录）';
 
@@ -54,10 +56,10 @@ const scenarios: [string, (connect: typeof mox) => Promise<string[]>][] = [
     await h.close();
     return [r, `服务器：${serverSaw(h)}`];
   }],
-  ['③ 用户中途取消（200ms 后 abort）', async connect => {
+  ['③ 用户中途取消（250ms 后 abort）', async connect => {
     const h = await connect();
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), 200);
+    setTimeout(() => controller.abort(), 250);            // 两次计数（每 100ms 一次）之间，结果才稳定
     const r = await outcome(h.call('slow_count', { to: 10, delayMs: 100 }, { signal: controller.signal }));
     await sleep(200);
     await h.close();
@@ -104,13 +106,33 @@ async function naiveLeak(): Promise<string> {
   try { process.kill(pid, 0); process.kill(pid, 'SIGKILL'); return '服务器退出了，子进程还活着（泄漏了）'; } catch { return '子进程已被清理'; }
 }
 
+/** 正文对六个场景的结论：两个客户端都必须做到 */
+function check(title: string, who: string, lines: string[]) {
+  const [first, second] = lines;
+  const label = `${title.slice(0, 1)} ${who}`;
+  switch (title[0]) {
+    case '①': assert.ok(first.startsWith('成功 —— 数完了：5'), `${label}：有进度就不该超时`); break;
+    case '②': assert.ok(first.startsWith('失败'), `${label}：没有进度，超时`); assert.ok(second.includes('请求 2 被取消'), `${label}：超时后要通知服务器取消`); break;
+    case '③': assert.ok(first.startsWith('失败'), `${label}：用户取消`); assert.ok(second.includes('请求 2 被取消'), `${label}：要通知服务器取消`); break;
+    case '④': assert.ok(first.includes('not valid JSON') || first.includes('无法解析'), `${label}：报告坏数据`); assert.ok(second.includes('成功 —— #43'), `${label}：之后的调用照常`); break;
+    case '⑤': assert.ok(first.includes('立刻'), `${label}：崩溃时立即失败，而不是等满超时`); break;
+    case '⑥': assert.equal(first, '子进程已被清理', `${label}：关闭时清理孙进程`); break;
+  }
+}
+
 for (const [title, run] of scenarios) {
   console.log(title);
   const [m, p] = [await run(mox), await run(pi)];
+  check(title, 'mox', m);
+  check(title, 'Pi', p);
   m.forEach((line, i) => {
     console.log(`  mox：${line}`);
     console.log(`  Pi ：${p[i]}`);
   });
-  if (title.startsWith('⑥')) console.log(`  朴素：${await naiveLeak()}`);
+  if (title.startsWith('⑥')) {
+    const naive = await naiveLeak();
+    console.log(`  朴素：${naive}`);
+    assert.ok(naive.includes('泄漏'), '朴素做法会泄漏子进程');
+  }
   console.log();
 }

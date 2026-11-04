@@ -13,14 +13,16 @@ import { writeFileSync } from 'node:fs';
 const cwd = mkdtempSync(join(tmpdir(), 'ch17-'));
 const tools = createCodingTools(cwd);
 const t0 = Date.now();
-const timeline: string[] = [];
+const timeline: { at: number; kind: '完成' | '开始'; id: string }[] = [];
+// 每个命令 0.4 秒：把时间按 0.4 秒取整，同一时刻先列“完成”再列“开始”（空出的名额才让下一个任务开始），输出每次都一样
+const slot = (ms: number) => (Math.floor(ms / 400) * 0.4).toFixed(1);
 // 子 Agent 的脚本：第一轮跑一个耗时 0.4 秒的命令，第二轮汇报。从任务文字里取出编号
 const childModel = scripted(c => {
   const task = (c.messages[0] as { content: string }).content;
   const id = task.match(/#(\d)/)![1];
   const done = c.messages.some(m => m.role === 'toolResult');
-  if (!done) { timeline.push(`${((Date.now() - t0) / 1000).toFixed(1)}s 开始 #${id}`); return { toolCalls: [{ id: `s${id}`, name: 'bash', arguments: { command: 'sleep 0.4 && echo ok' } }] }; }
-  timeline.push(`${((Date.now() - t0) / 1000).toFixed(1)}s 完成 #${id}`);
+  if (!done) { timeline.push({ at: Date.now() - t0, kind: '开始', id }); return { toolCalls: [{ id: `s${id}`, name: 'bash', arguments: { command: 'sleep 0.4 && echo ok' } }] }; }
+  timeline.push({ at: Date.now() - t0, kind: '完成', id });
   return { text: `#${id} 完成` };
 });
 const tool = (hooks?: any, model = childModel) => createAgentTool({ model, tools: () => tools, agents: BUILTIN_AGENTS, cwd, maxConcurrency: 2, hooks });
@@ -28,8 +30,11 @@ const tasks = [1, 2, 3, 4].map(i => ({ agent: 'general', task: `子任务 #${i}`
 
 console.log('━━ 4 个任务，最多同时 2 个 ━━');
 const r = await tool().execute({ tasks }, { toolCallId: 'p' });
-console.log(timeline.join('\n'));
-console.log(`总耗时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒；交回的结果按任务顺序排列：${(r as any).details.map((d: any) => d.output).join('、')}`);
+console.log(timeline
+  .map(e => ({ ...e, slot: slot(e.at) }))
+  .sort((a, b) => a.slot.localeCompare(b.slot) || (a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind === '完成' ? -1 : 1))
+  .map(e => `约 ${e.slot}s ${e.kind} #${e.id}`).join('\n'));
+console.log(`总耗时约 ${slot(Date.now() - t0)} 秒；交回的结果按任务顺序排列：${(r as any).details.map((d: any) => d.output).join('、')}`);
 
 console.log('\n━━ 父 Agent 取消：子 Agent 一起停下 ━━');
 const controller = new AbortController();

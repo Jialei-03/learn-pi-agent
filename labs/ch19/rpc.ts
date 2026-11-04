@@ -1,4 +1,4 @@
-// 第 19 章实验：用 RPC 控制 mox。父进程是“客户端”，mox 是长期运行的子进程。
+// 第 19 章实验：用 RPC 控制 mox。父进程是“客户端”，mox 是长期运行的子进程。左边的数字是这一行在整个对话里的序号。
 //   node labs/ch19/rpc.ts
 import { spawn } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
@@ -14,8 +14,8 @@ const child = spawn(process.execPath, [join(repo, 'mox/src/cli.ts'), '--mode', '
   env: { ...process.env, HOME: mkdtempSync(join(tmpdir(), 'ch19-home-')), MOX_API: 'scripted', MOX_SCRIPT: join(repo, 'labs/ch19/script.ts') },
   stdio: ['pipe', 'pipe', 'pipe'],
 });
-const t0 = Date.now();
-const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`.padStart(5);
+let step = 0;                                   // 行号而不是时间戳：每次运行的输出完全一样
+const at = () => String(++step).padStart(2);
 const records: any[] = [];
 const waiters: { test: (r: any) => boolean; resolve: (r: any) => void }[] = [];
 let buffer = '';
@@ -27,7 +27,7 @@ child.stdout.on('data', d => {
     buffer = buffer.slice(i + 1);
     const r = JSON.parse(line);
     records.push(r);
-    const brief = r.type === 'response' ? `response ${r.command}${r.id ? ` #${r.id}` : ''} ${r.success ? '✓' : '✗'} ${JSON.stringify(r.data ?? r.error ?? '').slice(0, 90)}`
+    const brief = r.type === 'response' ? `response ${r.command}${r.id ? ` #${r.id}` : ''} ${r.success ? '✓' : '✗'} ${JSON.stringify(r.data ?? r.error ?? '').replace(/"sessionId":"[0-9a-f-]+"/, '"sessionId":"…"').slice(0, 90)}`
       : r.type === 'message_end' ? `message_end（${r.message.role}）`
       : r.type === 'tool_start' ? `tool_start ${r.name} ${JSON.stringify(r.arguments)}`
       : r.type === 'tool_end' ? `tool_end ${JSON.stringify(r.content.trim())}`

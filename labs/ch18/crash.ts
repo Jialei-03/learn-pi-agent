@@ -1,5 +1,6 @@
 // 第 18 章实验：进程在工具执行期间被杀死，重启后怎么继续？
 //   node labs/ch18/crash.ts
+import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,6 +31,11 @@ console.log('━━ 进程被杀之后 ━━');
 console.log(`会话记录：${session.messages().map(m => (m.role === 'assistant' ? `assistant（${m.content.filter(b => b.type === 'toolCall').length} 个工具调用）` : m.role)).join(' → ')}`);
 console.log(`deploy.log：${lines(cwd)} 行——部署命令其实已经执行了，但它的结果没来得及写进会话（同一批的结果要等所有工具执行完才一起写）`);
 
+// 正文的结论：会话里只有三个工具调用、一个结果都没有，可是部署命令已经执行了一次
+assert.deepEqual(session.messages().map(m => m.role), ['user', 'assistant']);
+assert.equal(findInterrupted(session.messages()).length, 3);
+assert.equal(lines(cwd), 1);
+
 // ② 朴素的做法：把没有结果的调用全部重新执行一遍（在项目的副本上试）
 const copy = join(root, 'naive');
 cpSync(cwd, copy, { recursive: true });
@@ -40,6 +46,8 @@ console.log(`\n━━ 朴素做法：全部重新执行 ━━\ndeploy.log：${l
 // ③ mox 的做法：read 重放安全，直接重新执行；两个 bash 写“中断”结果，让模型自己查证
 const tools = createCodingTools(cwd);
 const settled = await settleInterrupted(calls, tools);
+// read 重放安全，重新执行；两个 bash 写“中断”结果
+assert.deepEqual(settled.map(r => r.content === INTERRUPTED), [false, true, true]);
 for (const r of settled) session.appendMessage(r);
 console.log('\n━━ mox 的做法 ━━');
 for (const r of settled) console.log(`${r.toolName}（${calls.find(c => c.id === r.toolCallId)?.id}）：${r.content === INTERRUPTED ? '中断，交给模型查证' : `重放安全，重新执行 → ${r.content.split('\n')[0].slice(0, 30)}…`}`);
@@ -54,4 +62,5 @@ for (const m of messages) {
   if (m.role === 'toolResult') console.log(`  ✓ ${m.content.trim()}`);
 }
 console.log(`deploy.log：${lines(cwd)} 行`);
+assert.equal(lines(cwd), 1, 'mox 的做法：模型查证之后没有重复部署');
 void writeFileSync;

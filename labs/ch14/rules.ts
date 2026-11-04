@@ -1,5 +1,6 @@
 // 第 14 章实验：规则怎么匹配？每一行的“期望”来自 Claude Code 权限文档描述的行为。
 //   node labs/ch14/rules.ts
+import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -66,3 +67,6 @@ for (const [label, tool, input, expected, mode = 'default'] of cases) {
   console.log(`| ${label}${mode !== 'default' ? `（${mode}）` : ''} | ${call.replace(/\|/g, '\\|')} | ${expected} | ${d.behavior === expected ? '✓' : '✗'} ${d.behavior} | ${d.reason.replaceAll(cwd, '.').replace(/\|/g, '\\|')} |`);
 }
 console.log(`\n${pass}/${cases.length} 与期望一致`);
+// 正文说“二十九种情况”，并且每一种都要和 Claude Code 文档描述的行为一致
+assert.equal(cases.length, 29);
+assert.equal(pass, cases.length, '有情况与期望不一致：看上面表格里带 ✗ 的行');

@@ -54,7 +54,7 @@ node mox/src/cli.ts --ext extensions/permissions/mox.ts --ext extensions/hooks/m
 ```bash
 npm run build                 # 生成 site/dist
 node site/serve.ts            # 本地预览 http://127.0.0.1:4321/
-npm run check                 # 只做检查，不写文件
+npm run check                 # 只做检查，不写文件（会运行全部实验，实验里的断言失败会让检查失败）
 ```
 
 构建需要 Pi 源码作为对照基准，默认路径是仓库旁边的 `../pi-v1.5.0`（可用环境变量 `PI_SRC` 修改）：
@@ -63,7 +63,7 @@ npm run check                 # 只做检查，不写文件
 git clone --branch v1.5.0 https://github.com/earendil-works/pi.git ../pi-v1.5.0
 ```
 
-构建时会做三件事，保证正文和代码永远一致：
+构建时会做三件事，保证正文和代码永远一致（顶栏的“源码导图”由全部摘录自动生成）：
 
 1. **Pi 源码摘录**（`@pi 文件#行号` 或 `#函数名`）从固定提交 `f9a2636`（v1.5.0）中实时读取，文件不存在或行号越界会让构建失败；
 2. **实验输出**（`@lab 命令`）在构建时真正运行，页面上的终端输出不是手写的；
@@ -79,7 +79,7 @@ git clone --branch v1.5.0 https://github.com/earendil-works/pi.git ../pi-v1.5.0
 | `evals/` | 第 20 章的评测框架和评测任务 |
 | `labs/` | 每章的可运行实验，以及 mox 与 Pi 的对照实验；`labs/*/recorded/` 是用真实模型录制的运行记录 |
 | `site/` | 网站生成器、模板、样式与交互脚本 |
-| `assets/` | Mox 插画；`assets/course/BRIEFS.md` 是待生成插画的需求 |
+| `assets/` | Mox 插画（`assets/course/` 是正文用到的配图） |
 
 ## 版本基准
 
@@ -92,7 +92,3 @@ git clone --branch v1.5.0 https://github.com/earendil-works/pi.git ../pi-v1.5.0
 ## License
 
 MIT。Pi 源码摘录遵循 Pi 的 MIT 许可；Claude Code 相关内容仅引用其公开文档。
-
-## 工程地图与解读方法
-
-提供[源码工程地图](docs/engineering-map.md)、[可编辑 Canvas](engineering/architecture.canvas)和[工具与方法说明](docs/engineering-workflow.md)。本地阅读站顶栏的“工程地图”支持按主题筛选、缩放和打开固定源码；`npm run map:generate` 可重建。左上角使用软件官方原始图标，来源与哈希见 `site/static/brand-source.json`。

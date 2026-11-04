@@ -122,7 +122,7 @@ Pi 的 README 第一段就写明了立场：它“提供强大的默认能力，
 
 | 类别 | 机制 | 课程怎么讲 |
 | --- | --- | --- |
-| **内核自带** | Agent Loop、工具、上下文文件（`AGENTS.md` / `CLAUDE.md`）、Skills、提示模板、会话树、Compaction、MCP、扩展事件、print / json / RPC / SDK、项目信任 | 先手写最小版本，再读 Pi 源码 |
+| **内核自带** | Agent Loop、工具、上下文文件（`AGENTS.md` / `CLAUDE.md`）、Skills、提示模板、会话树、Compaction、扩展事件、print / json / RPC / SDK、项目信任；MCP 以内置扩展的形式随 Pi 一起发布 | 先手写最小版本，再读 Pi 源码 |
 | **官方给了扩展示例** | 子 Agent、Plan Mode、Todo、权限拦截、Git Checkpoint | 读示例，讲清楚 Pi 为什么不把它放进内核 |
 | **完全没有** | 权限规则与模式、系统级沙箱、长期记忆、后台命令、Web 抓取、“做完才停”的目标循环、兼容 Claude Code 协议的 Hooks | **我们自己写扩展补上**，标着“扩展”的章节就是这些 |
 

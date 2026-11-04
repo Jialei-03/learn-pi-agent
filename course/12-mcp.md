@@ -5,7 +5,7 @@ learn:
   - 线路上的协议：JSON-RPC 2.0、stdio 按行分帧、握手、tools/list 与 tools/call
   - 一个能用的客户端要扛住什么：超时与进度、取消、断线、日志污染、进程清理
   - 把 MCP 工具接进循环：命名、参数 schema、结果转换与截断、注解
-  - 工具太多怎么办：direct、deferred（tool_search）、codemode 三种接入方式
+  - 工具太多怎么办：direct、deferred（tool_search）、codemode、hidden 四种暴露方式
   - MCP 的安全：配置就是命令，描述就是提示
 prereq: 第 4、5、9 章
 time: 80 分钟
@@ -189,7 +189,7 @@ Pi 的做法更讲究：会话开始时在后台连接，不阻塞启动；第�
 
 @lab node labs/ch12/exposure.ts
 
-`direct` 模式下，第一次请求就带着全部 8 个 MCP 工具。`deferred` 模式下，第一次请求只有内置工具和 `tool_search`，系统提示里多了一个三行的 `mcp_servers` 小节；模型搜索之后，下一次请求才出现匹配的 3 个工具。
+`direct` 模式下，第一次请求就带着全部 8 个 MCP 工具。`deferred` 模式下，第一次请求只有内置工具和 `tool_search`，系统提示里多了一个只有四行的 `mcp_servers` 小节（开闭标签加两行内容：一句说明、一行服务器名）；模型搜索之后，下一次请求才出现匹配的 3 个工具。
 
 `tool_search` 用 BM25（一种经典的关键词相关性算法）在未加载工具的名字、描述和参数里搜索，把结果加入当前可用的工具：
 

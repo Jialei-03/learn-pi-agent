@@ -2,6 +2,7 @@
 //   node labs/ch08/cut-point.ts
 // 构造一段 5 轮的对话（每轮：用户提问 → 模型调用 read → 工具结果 → 模型回答），
 // 设定“至少保留最近约 N 个 token”，分别交给 mox 和 Pi 的 findCutPoint。
+import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -32,9 +33,9 @@ function conversation(turns: number, hugeTurn?: number): { mox: Message[]; pi: a
 const label = (m: Message, i: number) => `#${i} ${m.role === 'user' ? m.content : m.role === 'toolResult' ? '工具结果' : m.content[0].type === 'toolCall' ? '模型调用 read' : (m.content[0] as any).text}`;
 
 for (const c of [
-  { title: '情形一：额度恰好在一轮的开头用完', turns: 5, keep: 424, huge: undefined },
-  { title: '情形二：额度在一轮的中间用完', turns: 5, keep: 450, huge: undefined },
-  { title: '情形三：最近一轮特别大，单独就超过了保留额度', turns: 5, keep: 450, huge: 5 },
+  { title: '情形一：额度恰好在一轮的开头用完', turns: 5, keep: 424, huge: undefined, firstKept: 12, split: false },
+  { title: '情形二：额度在一轮的中间用完', turns: 5, keep: 450, huge: undefined, firstKept: 11, split: true },
+  { title: '情形三：最近一轮特别大，单独就超过了保留额度', turns: 5, keep: 450, huge: 5, firstKept: 19, split: true },
 ]) {
   const { mox, pi } = conversation(c.turns, c.huge);
   const m = findCutPoint(mox, c.keep);
@@ -46,4 +47,10 @@ for (const c of [
   console.log(`  mox：从 ${label(mox[m.firstKeptIndex], m.firstKeptIndex)} 开始保留，split turn = ${m.isSplitTurn}`);
   console.log(`  Pi ：从 ${label(mox[p.firstKeptEntryIndex], p.firstKeptEntryIndex)} 开始保留，split turn = ${p.isSplitTurn}`);
   console.log(`  被总结的部分：#0 ~ #${m.firstKeptIndex - 1}，共 ${m.firstKeptIndex} 条消息\n`);
+  // 正文说两者在三种情形下的切点和 split turn 判断完全一致；切点绝不能落在工具结果上
+  assert.equal(m.firstKeptIndex, c.firstKept, `${c.title}：mox 的切点`);
+  assert.equal(p.firstKeptEntryIndex, c.firstKept, `${c.title}：Pi 的切点`);
+  assert.equal(m.isSplitTurn, c.split, `${c.title}：mox 的 split turn`);
+  assert.equal(p.isSplitTurn, c.split, `${c.title}：Pi 的 split turn`);
+  assert.notEqual(mox[m.firstKeptIndex].role, 'toolResult', `${c.title}：切点不能是工具结果`);
 }

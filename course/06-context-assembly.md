@@ -68,7 +68,9 @@ Pi 在每个目录里依次查找这几个名字，取第一个存在的：
 
 顺序是全局、仓库根、子项目——越靠后越具体。模型读到后面的说明时，自然会把它理解成对前面的细化或覆盖。
 
-Pi 在这里还处理了一个很细的情况：在 git worktree 里工作时，worktree 和主仓库可能各有一份同样的说明文件，如果都加载，同样的规则会出现两次。`findShadowedContextFile` 专门识别这种情况（`resource-loader.ts` 第 242 行）。
+Pi 在这里还处理了一个很细的情况：在 git worktree 里工作时，worktree 和主仓库可能各有一份同样的说明文件，如果都加载，同样的规则会出现两次。`findShadowedContextFile` 专门识别这种情况：
+
+@pi packages/coding-agent/src/core/resource-loader.ts#findShadowedContextFile
 
 ::: compare Claude Code 的做法
 Claude Code 的说明文件层级更丰富：组织统一下发的策略文件、用户级、项目级、本地私有（不提交到仓库）四层；子目录里的 `CLAUDE.md` 在模型访问该目录时才按需加载；文件里可以用 `@路径` 引用其他文件。思路相同，都是“从通用到具体”，只是粒度更细。（[Claude Code 文档 · Memory](https://code.claude.com/docs/en/memory)）

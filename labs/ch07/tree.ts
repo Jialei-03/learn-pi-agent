@@ -27,9 +27,12 @@ s.appendMessage(user("U2' 给它加上类型"));
 const a2b = s.appendMessage(assistant("A2' 好的，加上 TypeScript 类型……"));
 
 console.log('━━ mox：文件里的记录（每行一条） ━━');
+// id 是随机生成的 8 位十六进制；为了让输出每次一样，按出现顺序换成 e1、e2……（文件里存的仍然是随机 id）
+const labels = new Map<string, string>();
+const label = (id: string | null) => (id === null ? 'null' : labels.get(id) ?? (labels.set(id, `e${labels.size + 1}`), labels.get(id)!));
 for (const line of readFileSync(s.file!, 'utf8').trim().split('\n')) {
   const e = JSON.parse(line);
-  console.log(e.type === 'session' ? `  [header] id=${e.id}` : `  ${e.id}  parent=${String(e.parentId).padEnd(8)}  ${say(e.message)}`);
+  console.log(e.type === 'session' ? `  [header] id=<会话 id>` : `  ${label(e.id).padEnd(3)}  parent=${label(e.parentId).padEnd(5)}  ${say(e.message)}`);
 }
 console.log(`\n  叶子在 A2 时，模型看到：${s.messages(a2).map(say).map(t => t.split(' ')[0]).join(' → ')}`);
 console.log(`  叶子在 A2' 时，模型看到：${s.messages(a2b).map(say).map(t => t.split(' ')[0]).join(' → ')}`);

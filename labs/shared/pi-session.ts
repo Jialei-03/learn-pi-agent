@@ -19,12 +19,14 @@ export interface PiSessionOptions {
   sessionManager?: SessionManager;
   /** 脚本化的界面（第 14 章起）：只需实现用到的方法，比如 select、confirm、notify。不提供则相当于没有界面（ctx.hasUI 为假） */
   ui?: Record<string, (...args: any[]) => any>;
+  /** 传给脚本模型提供方的选项，比如 { tokenSize: { min: 4, max: 4 } } 让每个增量的长度固定（第 19 章） */
+  faux?: Record<string, unknown>;
 }
 
 export async function createPiSession(options: PiSessionOptions) {
   const cwd = options.cwd ?? mkdtempSync(join(tmpdir(), 'pi-lab-'));
   const agentDir = join(cwd, '.pi-agent');                       // 隔离的配置目录，不碰你本机的 ~/.pi
-  const faux = registerFauxProvider({});
+  const faux = registerFauxProvider(options.faux ?? {});
   faux.setResponses(options.responses);
   const model = faux.getModel();
   const modelRuntime = await ModelRuntime.create({ modelsPath: null, allowModelNetwork: false } as any);

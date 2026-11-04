@@ -2,6 +2,7 @@
 // 字段名刻意与 Pi 的 packages/ai/src/types.ts 保持一致：toolCall、toolResult、stopReason……
 // 读 Pi 源码时，你会发现自己已经认识这些结构。
 
+// #region messages
 export interface TextContent { type: 'text'; text: string }
 export interface ToolCall { type: 'toolCall'; id: string; name: string; arguments: Record<string, unknown> }
 
@@ -27,6 +28,7 @@ export interface Tool { name: string; description: string; parameters: Record<st
 
 /** 一次模型请求的全部输入。模型是无状态的：每次都要带上完整的 messages。 */
 export interface Context { systemPrompt: string; messages: Message[]; tools: Tool[] }
+// #endregion
 
 /** 流式事件。UI 用它实时显示；循环只关心最后的 AssistantMessage。 */
 export type StreamEvent =
@@ -38,12 +40,14 @@ export type StreamEvent =
 
 export interface StreamOptions { signal?: AbortSignal; onEvent?: (event: StreamEvent) => void }
 
+// #region model
 /**
  * 一个模型 = 一个把 Context 变成 AssistantMessage 的函数。
  * 约定：stream() 不抛异常。网络错误、HTTP 错误、取消都编码进返回消息的 stopReason / errorMessage，
  * 这样循环只需要处理一种返回值（Pi 的 provider 也遵守同样的约定）。
  */
 export interface Model { id: string; stream(context: Context, options?: StreamOptions): Promise<AssistantMessage> }
+// #endregion
 
 export const emptyUsage = (): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 

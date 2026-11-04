@@ -20,7 +20,7 @@ export const parts: PartInfo[] = [
   {
     id: 'p1', title: '内核', subtitle: '一个能干活的 Agent',
     chapters: [
-      { n: 1, slug: '01-from-api-to-agent', title: '从一次 API 调用到 Agent', summary: '七十行代码写出第一个 Agent，看懂“模型决定，程序执行”。', status: 'ready' },
+      { n: 1, slug: '01-from-api-to-agent', title: '从一次 API 调用到 Agent', summary: '不到一百行代码写出第一个 Agent，看懂“模型决定，程序执行”。', status: 'ready' },
       { n: 2, slug: '02-model-protocol', title: '模型协议：消息、流式与 Provider 适配', summary: '同一个工具调用在两家 API 里长什么样，流式参数怎样拼回来。', status: 'ready' },
       { n: 3, slug: '03-agent-loop', title: 'Agent Loop：停止、截断与插话', summary: '让十行循环坏四次、修四次，再对照 Pi 的 runLoop。', status: 'ready' },
       { n: 4, slug: '04-tool-system', title: '工具系统：契约、校验、拦截与并行', summary: '参数校验、before/after 钩子、并行与串行、批次终止。', status: 'ready' },

@@ -19,9 +19,9 @@ import { fileURLToPath } from 'node:url';
 import MarkdownIt from 'markdown-it';
 import { createHighlighter } from 'shiki';
 import { PI, chapters, parts } from '../course/syllabus.ts';
-import { layout, homePage, interviewPage, moxMark, sourceIndexPage, type PageMeta } from './templates.ts';
+import { layout, homePage, interviewPage, mapPage, moxMark, sourceIndexPage, type PageMeta } from './templates.ts';
 
-import { engineeringMap } from '../scripts/engineering-map.mjs';
+import { courseMap } from '../scripts/course-map.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'site/dist');
@@ -225,6 +225,7 @@ md.renderer.rules.link_open = (tokens, i, options, _env, self) => {
 md.renderer.rules.fence = (tokens, i) => {
   const token = tokens[i];
   const lang = token.info.trim().split(/\s+/)[0] || 'text';
+  if (lang === 'mermaid') return `<figure class="diagram lesson-diagram"><pre class="mermaid">${esc(token.content)}</pre><figcaption>示意图 · 点击放大</figcaption></figure>`;
   return `<figure class="src plain"><figcaption><span class="src-lang">${esc(lang === 'text' ? '' : lang)}</span><button class="copy" type="button" aria-label="复制代码">复制</button></figcaption>${highlight(token.content.replace(/\n$/, ''), lang)}</figure>`;
 };
 md.renderer.rules.table_open = () => '<div class="table-wrap"><table>';
@@ -339,6 +340,19 @@ function parseFrontmatter(text: string) {
 
 const pages: { file: string; html: string }[] = [];
 const searchIndex: { url: string; chapter: string; title: string; section?: string; text: string }[] = [];
+/** 按小节建搜索索引：每个 h2/h3 一条，正文全文可搜（以前只索引每章前 6000 字）。 */
+function sectionIndex(html: string, url: string, chapter: string, title: string) {
+  const plain = (s: string) => s.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+  const parts = html.split(/(?=<h[23][^>]*\bid=")/);
+  const rows: { url: string; chapter: string; title: string; section?: string; text: string }[] = [];
+  for (const part of parts) {
+    const head = part.match(/^<h[23][^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/h[23]>/);
+    const text = plain(head ? part.slice(head[0].length) : part).slice(0, 8000);
+    rows.push(head ? { url: `${url}#${head[1]}`, chapter, title, section: plain(head[2]), text } : { url, chapter, title, text });
+  }
+  return rows;
+}
+
 
 for (const chapter of chapters.filter(c => c.status === 'ready')) {
   const path = join(ROOT, 'course', `${chapter.slug}.md`);
@@ -355,9 +369,7 @@ for (const chapter of chapters.filter(c => c.status === 'ready')) {
   const linked = html.replace(/href="(?:\.\/)?([0-9]{2}-[a-z0-9-]+)\.md(#[^"]*)?"/g, 'href="$1.html$2"');
   const meta: PageMeta = { chapter, frontmatter: data, headings };
   pages.push({ file: `chapters/${chapter.slug}.html`, html: layout(meta, linked) });
-  const plain = linked.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  searchIndex.push({ url: `chapters/${chapter.slug}.html`, chapter: `${String(chapter.n).padStart(2, '0')}`, title: chapter.title, text: plain.slice(0, 6000) });
-  for (const h of headings) searchIndex.push({ url: `chapters/${chapter.slug}.html#${h.id}`, chapter: `${String(chapter.n).padStart(2, '0')}`, title: chapter.title, section: h.text, text: '' });
+  searchIndex.push(...sectionIndex(linked, `chapters/${chapter.slug}.html`, `${String(chapter.n).padStart(2, '0')}`, chapter.title));
 }
 
 // 检查正文里直接写的 Pi 源码链接：文件必须存在，行号不能越界
@@ -381,8 +393,14 @@ for (const page of pages) {
   }
 }
 
-const MAP = engineeringMap(ROOT);
-pages.push({ file: 'map.html', html: MAP.html });
+const MAP = courseMap({
+  title: `Pi ${PI.version}`,
+  subtitle: '这门课读过的每一段 Pi 源码：按章节看学习路线，按目录看覆盖了源码的哪些部分。',
+  chapters: chapters.filter(c => c.status === 'ready').map(c => ({ n: c.n, slug: c.slug, title: c.title, part: c.part.title })),
+  citations,
+  display: (file: string) => file.replace(/^packages\//, ''),
+});
+pages.push({ file: 'map.html', html: mapPage(MAP.html) });
 pages.push({ file: 'index.html', html: homePage() });
 pages.push({ file: 'interview.html', html: interviewPage(interviews) });
 pages.push({ file: 'sources.html', html: sourceIndexPage(citations) });
@@ -400,6 +418,8 @@ rmSync(OUT, { recursive: true, force: true });
 mkdirSync(join(OUT, 'chapters'), { recursive: true });
 for (const page of pages) writeFileSync(join(OUT, page.file), page.html);
 cpSync(join(ROOT, 'site/static'), join(OUT, 'static'), { recursive: true });
+cpSync(join(ROOT, 'node_modules/mermaid/dist/mermaid.min.js'), join(OUT, 'static/mermaid.min.js'));
+cpSync(join(ROOT, 'node_modules/mermaid/LICENSE'), join(OUT, 'static/mermaid-LICENSE.txt'));
 for (const asset of usedAssets) {
   mkdirSync(dirname(join(OUT, asset)), { recursive: true });
   cpSync(join(ROOT, asset), join(OUT, asset));

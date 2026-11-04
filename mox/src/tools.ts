@@ -4,6 +4,7 @@
 import type { Tool, ToolCall, ToolResultMessage } from './types.ts';
 import { coerce, formatValidationError, validate, type Schema } from './schema.ts';
 
+// #region tool-interface
 export interface ToolResult {
   content: string;
   isError?: boolean;        // 不抛异常也能报告失败
@@ -26,6 +27,7 @@ export interface AgentTool extends Tool {
   prepareArguments?: (args: Record<string, unknown>) => Record<string, unknown>;
   execute(args: Record<string, any>, context: ToolContext): Promise<string | ToolResult> | string | ToolResult;
 }
+// #endregion
 
 export interface ToolHooks {
   /** 执行前：可以拦下这次调用。被拦下的调用变成一条错误结果。 */

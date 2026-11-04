@@ -143,6 +143,18 @@ Pi 扩展只做两件事：注册工具，并在 `tool_call` 上做同样的检�
 
 所以 `checkUrl` 在发请求前做了三层检查：只允许 http 和 https；可选的域名白名单；把域名**解析成 IP 之后**再判断是不是内网地址——因为一个看起来正常的域名完全可以指向内网 IP。还有更隐蔽的一招：公网地址返回一个 302 重定向，跳到内网地址。所以 `webFetch` 关掉了自动跟随重定向，每一跳都重新检查。
 
+“是不是内网地址”本身就容易写错。最直接的写法是把 IP 按点拆开、比较前两段，但它会漏掉好几种写法：
+
+@lab node labs/ch09/ssrf.ts
+
+最隐蔽的是 IPv4 映射地址。`http://[::ffff:169.254.169.254]/` 看起来是 IPv6，操作系统连接时却会把它当成 `169.254.169.254`；而 Node 解析 URL 时会把它规范化成十六进制的 `::ffff:a9fe:a9fe`，按点分十进制去匹配的代码根本看不出它是元数据地址。正确的做法是先把 IPv6 地址展开，取出其中藏着的 IPv4 地址再检查一遍，然后用 Node 自带的 `BlockList` 按网段判断，而不是手写字符串比较：
+
+@code extensions/web-fetch/fetch.ts#isPrivateAddress
+
+还剩一个时间差：`checkUrl` 解析过一次域名，真正发请求时 HTTP 客户端会**再解析一次**。攻击者控制的域名可以第一次返回公网 IP，第二次返回 `127.0.0.1`——这叫 DNS rebinding。所以 `webFetch` 不用全局的 `fetch`，而是用 `node:http` 发请求，并给它一个自己的 `lookup`：连接前解析出的每个地址都要再过一遍 `isPrivateAddress`，检查的就是实际要连接的那个地址。
+
+@code extensions/web-fetch/fetch.ts#guardedLookup
+
 实验在本地起一个测试网站，让模型依次抓取文档页、直接访问元数据地址、访问一个会重定向到元数据地址的链接：
 
 @lab node labs/ch09/web-fetch.ts

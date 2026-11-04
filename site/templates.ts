@@ -37,7 +37,7 @@ function topbar(base: string) {
     <button class="search-btn" type="button" data-search-open><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>搜索课程</span><kbd>⌘K</kbd></button>
     <a class="top-link" href="${base}interview.html">面试题库</a>
     <a class="top-link" href="${base}sources.html">源码索引</a>
-    <a class="top-link" href="${base}map.html">工程地图</a>
+    <a class="top-link" href="${base}map.html">源码导图</a>
     <button class="icon-btn theme-toggle" type="button" aria-label="切换深色模式"><svg class="sun" viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><svg class="moon" viewBox="0 0 24 24" width="18" height="18"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
     <a class="icon-btn" href="${REPO}" target="_blank" rel="noopener" aria-label="GitHub 仓库"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.4 1.1 3 .8.1-.6.4-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7.9.7 1.9V21c0 .3.2.6.7.5A10 10 0 0 0 12 2z"/></svg></a>
   </div>
@@ -76,6 +76,7 @@ ${toc}
 </div>
 ${searchDialog()}
 <div class="scrim" hidden></div>
+<script defer src="${base}static/mermaid.min.js"></script>
 <script type="module" src="${base}static/app.js"></script>
 </body>
 </html>`;
@@ -158,7 +159,7 @@ node ../../../mox/stage-01/agent.ts "这个项目是做什么的？"</code></pre
 </section>
 
 <section class="roadmap">
-  <div class="roadmap-head"><h2>课程路线</h2><p>已完成 ${done} / ${total} 章 · 灰色章节正在编写 · 标“扩展”的是 Pi 未内置、由我们补齐的能力</p></div>
+  <div class="roadmap-head"><h2>课程路线</h2><p>${total} 章 · 标“扩展”的是 Pi 未内置、由我们补齐的能力</p></div>
   ${roadmap}
 </section>
 </div>`;
@@ -174,6 +175,11 @@ export function interviewPage(items: { chapter: string; title: string; question:
   }).join('');
   const main = `<article class="chapter plain-page"><header class="chapter-head"><p class="eyebrow">汇总</p><h1>面试题库</h1><p class="lede">每章末尾的面试题都汇总在这里，共 ${items.length} 道。先自己回答，再展开对照要点。要点不是标准答案，而是“回答里应该出现的关键判断”。</p></header><div class="prose">${sections}</div></article>`;
   return head('面试题库 · Learn Pi Agent', 'Agent 工程面试题与回答要点', '') + shell('', undefined, main);
+}
+
+export function mapPage(content: string) {
+  const main = `<article class="chapter plain-page map-page"><header class="chapter-head"><p class="eyebrow">导航</p><h1>源码思维导图</h1></header><div class="prose">${content}</div></article>`;
+  return head('源码思维导图 · Learn Pi Agent', '课程读过的每一个 Pi 源码文件，按章节和目录组织', '') + shell('', undefined, main);
 }
 
 export function sourceIndexPage(citations: { chapter: string; title: string; file: string; start: number; end: number; url: string }[]) {

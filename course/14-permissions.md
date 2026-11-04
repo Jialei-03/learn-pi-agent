@@ -121,7 +121,7 @@ Claude Code 的文档也明确说了，deny 规则拦的是“模型通常会写
 | `/path` | 规则所在配置文件对应的目录（项目配置就是项目根目录） | `Edit(/src/**)` |
 | `path`、`./path` | 当前目录 | `Read(.env)` |
 
-不含斜杠的模式（`.env`、`*.pem`）匹配任意深度，所以 `Read(.env)` 也挡住了 `config/.env`。注意 `/path` **不是**绝对路径——这是最常见的配置错误。
+规则沿用 `.gitignore` 的习惯：**没有写起点、也不含斜杠**的裸名字（`.env`、`*.pem`）匹配任意深度，所以 `Read(.env)` 也挡住了 `config/.env`；写了起点（`/`、`//`、`~/`、`./`）或者中间带斜杠的，从起点开始匹配，`Read(/.env)` 只管项目根目录下那一个 `.env`。注意 `/path` **不是**绝对路径——这是最常见的配置错误。
 
 @code extensions/permissions/rules.ts#matchPath
 
@@ -161,6 +161,26 @@ mox 版本（`extensions/permissions/mox.ts`）需要一个让用户做选择的
 - 用 SDK 时可以提供自己的审批函数（`canUseTool`），第 19 章会用到。
 
 官方文档：[Configure permissions](https://code.claude.com/docs/en/permissions)
+:::
+
+## 你来改
+
+每道题先写下预测，再动手验证。
+
+::: predict 给 allow 加一条 Bash(*)
+在 `labs/ch14/rules.ts` 的 `allow` 列表最前面加一条 `'Bash(*)'`，运行实验。表格里哪些行会变？`cat .env`、`rm -rf` 这些 `deny` 的行呢？
+???
+五行从 `ask` 变成 `allow`，实验结果从 29/29 变成 24/29（末尾的断言会报错）：`npm run lint && npm publish`、`PATH=/tmp/evil:$PATH npm run build`、`ls > files.txt`、`python3 -c "print(open('.env').read())"`、`git -C . push origin main`。所有 `deny` 的行一行都没变，因为判断顺序是 deny → ask → allow，`Bash(*)` 夺不走 deny 的决定权。
+
+被夺走的是**兜底**。“规则看不到的东西”一节说过，Python 读 `.env`、换一种写法的 `git push`，规则拦不住，只能靠没有规则匹配时的“需要确认”把它们交给用户。一条宽泛的 allow 把这层兜底整个关掉，这些调用就悄悄放行了。所以 allow 规则要写窄：`Bash(npm run *)`，而不是 `Bash(*)`。
+:::
+
+::: predict 带环境变量的命令
+在 `labs/ch14/rules.ts` 的 `cases` 里加三行，期望都写 `allow`：`NODE_ENV=production npm run build`、`FOO=bar npm run build`、`CI=1 FOO=bar npm run test`。哪几行会通过？
+???
+只有第一行通过，另外两行得到 `ask`。匹配 allow 规则时，只去掉**已知安全**的环境变量（`NODE_ENV`、`CI`、`DEBUG`、`LANG` 等几个）。遇到不认识的变量（`FOO`）就停下来，剩下的 `FOO=bar npm run build` 不再以 `npm run` 开头，不匹配 `Bash(npm run *)`，没有规则命中，落到“需要确认”。第三行里 `CI=1` 虽然是安全变量，但它后面的 `FOO` 挡住了去路。
+
+对 deny 规则正好相反：`FOO=bar rm -rf tmp` 去掉**所有**赋值再匹配，得到 `rm`，被拒绝。放行要严，拦截要宽，这是同一条原则在环境变量上的体现。
 :::
 
 ## 面试题

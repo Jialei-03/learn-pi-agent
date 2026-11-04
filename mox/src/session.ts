@@ -72,6 +72,7 @@ export class Session {
     this.leaf = entry.id;                                    // 文件里的最后一条就是叶子
   }
 
+  // #region persist-append
   private persist(entry: Entry) {
     if (!this.file) return;
     if (!this.flushed) {
@@ -100,6 +101,7 @@ export class Session {
     }
     return full.id;
   }
+  // #endregion
 
   private newId(): string {
     for (;;) { const id = randomUUID().slice(0, 8); if (!this.byId.has(id)) return id; }

@@ -190,8 +190,13 @@ export function matchPath(spec: string, file: string, ctx: { cwd: string; base: 
   else if (spec.startsWith('~/')) { anchor = ctx.home; pattern = spec.slice(2); }
   else if (spec.startsWith('/')) { anchor = ctx.base; pattern = spec.slice(1); }
   else { anchor = ctx.cwd; pattern = spec.replace(/^\.\//, ''); }
-  const body = globToRegex(pattern.replace(/\/$/, ''));
-  const re = pattern.includes('/') && !pattern.endsWith('/') ? new RegExp(`^${body}(?:/.*)?$`) : new RegExp(`^(?:.*/)?${body}(?:/.*)?$`);
+  const trimmed = pattern.replace(/\/$/, '');
+  const body = globToRegex(trimmed);
+  // 和 .gitignore 一样：写了起点（//、~/、/、./）或者中间带 /，就从起点开始匹配；
+  // 只有像 `.env`、`build/` 这样的裸名字才匹配任意深度。所以 Read(/.env) 只管项目根目录下的 .env，
+  // 而 Read(.env) 管所有目录里的 .env。
+  const rooted = spec.startsWith('/') || spec.startsWith('~/') || spec.startsWith('./') || trimmed.includes('/');
+  const re = rooted ? new RegExp(`^${body}(?:/.*)?$`) : new RegExp(`^(?:.*/)?${body}(?:/.*)?$`);
   return [...new Set([anchor, realish(anchor)])].some(a => {
     const rel = relative(a, file).split(sep).join('/');
     return !rel.startsWith('..') && !isAbsolute(rel) && re.test(rel);

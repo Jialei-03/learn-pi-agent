@@ -433,3 +433,41 @@ figure:hover .copy, .copy:focus-visible, .copy.done { opacity: 1; }
 .diagram .mono, .diagram .mono text { font-family: var(--mono); }
 
 .product-icon { display: block; flex: none; width: 30px; height: 30px; object-fit: contain; }
+
+.mm-stats { color: var(--muted); font-size: 14px; }
+.mm-tabs { display: flex; gap: 8px; margin: 18px 0 8px; }
+.mm-tabs button { font: inherit; font-size: 14px; padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); color: var(--ink-2); cursor: pointer; }
+.mm-tabs button[aria-selected="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.mm-view { overflow-x: auto; padding: 12px 0 24px; }
+.mm-view .mm-tree, .mm-view .mm-tree ul { list-style: none; margin: 0; padding: 0; }
+.mm-view .mm-tree ul { padding-left: 28px; position: relative; }
+.mm-view .mm-tree li { position: relative; margin: 0; padding: 4px 0 4px 18px; }
+.mm-tree li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; border-left: 1.5px solid var(--line-2); }
+.mm-tree li::after { content: ""; position: absolute; left: 0; top: 19px; width: 14px; border-top: 1.5px solid var(--line-2); }
+.mm-tree li:last-child::before { bottom: auto; height: 19px; }
+.mm-view .mm-tree > li { padding-left: 0; }
+.mm-tree > li::before, .mm-tree > li::after { display: none; }
+.mm-node { display: inline-flex; align-items: baseline; gap: 8px; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.5; text-decoration: none; max-width: 100%; }
+a.mm-node:hover { border-color: var(--accent); }
+.mm-root { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 700; font-size: 15px; }
+.mm-part { background: var(--accent-soft); border-color: transparent; font-weight: 600; }
+.mm-chapter b { color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+.mm-file { background: var(--bg-soft); }
+.mm-file code, .mm-part code { font-size: 12.5px; background: none; padding: 0; }
+.mm-node small { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+.mm-toggle { cursor: pointer; }
+.mm-collapsed > ul { display: none; }
+.mm-collapsed > .mm-toggle::after { content: " ＋"; color: var(--muted); }
+.mm-tags { margin-left: 8px; display: inline-flex; gap: 4px; }
+.mm-tags a { font: 600 11px/1 var(--sans); padding: 3px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-ink); text-decoration: none; }
+.lesson-diagram { border: 1px solid var(--line); border-radius: 10px; padding: 22px 14px 12px; background: var(--bg-soft); overflow-x: auto; }
+.lesson-diagram pre.mermaid { background: transparent; padding: 0; margin: 0; text-align: center; white-space: pre; font-size: 13px; }
+.lesson-diagram .mermaid svg { min-width: 320px; width: 100%; height: auto; }
+.lesson-diagram figcaption { font-size: 12px; color: var(--muted); text-align: center; margin-top: 14px; }
+.lesson-diagram.diagram-error figcaption::after { content: ' · 图形未加载，保留可复制的原始定义'; }
+/* 图示放大查看 */
+.diagram, .lesson-diagram { cursor: zoom-in; }
+.diagram-zoom { position: fixed; inset: 0; z-index: 90; background: color-mix(in srgb, var(--bg) 94%, transparent); display: flex; align-items: flex-start; justify-content: center; overflow: auto; padding: 48px 24px; cursor: zoom-out; }
+.diagram-zoom > div { width: min(1600px, 96vw); }
+.diagram-zoom svg { width: 100% !important; max-width: none !important; height: auto; }
+.diagram-zoom p { text-align: center; font-size: 12px; color: var(--muted); margin: 0 0 12px; }

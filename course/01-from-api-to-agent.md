@@ -42,7 +42,7 @@ Claude Code 的文档把它称为 **agentic loop**：收集上下文、采取行
 
 再看循环本身：
 
-@code mox/stage-01/agent.ts#runAgent hl=67-69,73
+@code mox/stage-01/agent.ts#runAgent hl=67-68,70,73
 
 整个 Agent 的核心就是这十几行，四个编号对应四件事：
 
