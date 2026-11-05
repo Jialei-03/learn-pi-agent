@@ -1,6 +1,6 @@
 // 第 7 章实验：会话文件的最后一行写了一半，会怎样？
 //   node labs/ch07/torn.ts
-// 先试着制造半行：让一个不停写会话的进程在随机时刻被 kill -9，重复 8 次。
+// 先试着制造半行：让一个不停写会话的进程在随机时刻被 kill -9，重复 8 次。会不会出现半行取决于操作系统（见正文）。
 // 再手工造一个半行：mox 和 Pi 打开它，各自的反应；然后在 mox 里接着聊，看新消息会不会丢。
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -46,9 +46,9 @@ try {
     if (!text.endsWith('\n') || lines.some(l => { try { JSON.parse(l); return false; } catch { return true; } })) torn++;
   }
   assert.ok(totalLines > 8000, '每次都应该写下上千行');
-  console.log(`kill -9 了 8 次写会话的进程，每次都写下了上千行，出现半行的次数：${torn}`);
-  console.log('（一条记录是一次 appendFileSync，操作系统要么把这次写完，要么还没开始；进程被杀不会停在中间。半行来自断电、磁盘写满、网络盘这类情况。）\n');
-  assert.equal(torn, 0);
+  const os = { darwin: 'macOS', linux: 'Linux' }[process.platform as string] ?? process.platform;
+  console.log(`这次在 ${os} 上运行：kill -9 了 8 次写会话的进程，每次都写下了上千行，出现半行的次数：${torn}\n`);
+  assert.ok(torn <= 8);                                           // 次数因系统和机器负载而异，不做断言；下面的恢复才是要守住的
 
   // ── 二：手工造半行 ──
   const s = openSession(cwd, home);

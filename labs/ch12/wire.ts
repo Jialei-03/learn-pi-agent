@@ -31,6 +31,8 @@ const dump = (title: string) => {
 try {
   const client = new McpClient({ name: 'lab', version: '1.0.0' });
   await client.connect(new StdioTransport({ command: process.execPath, args: [tee, log, process.execPath, SERVER] }));
+  // tee 写日志和转发是异步的：最后那条 initialized 通知可能稍晚才落进日志，等它到齐再看
+  for (let i = 0; i < 100 && readFileSync(log, 'utf8').trim().split('\n').length < 3; i++) await new Promise(r => setTimeout(r, 20));
   const n1 = dump('1. 握手');
   const tools = await client.listTools();
   dump('2. 列出工具');
