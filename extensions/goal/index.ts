@@ -1,8 +1,7 @@
 // Pi 扩展：目标循环（第 18 章）。/goal "检查命令" 目标描述 —— Agent 会一直工作，直到检查命令成功。
 // 挂在 agent_before_settle 上：这是 Pi 运行真正结束前的最后一个决策点，可以追加一条消息并要求继续（第 9、13 章）。
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { parseArgs } from '../../mox/src/skills.ts';
-import { evaluate, type Goal } from './goal.ts';
+import { evaluate, parseArgs, type Goal } from './goal.ts';
 
 export function createGoalExtension(options: { maxRounds?: number } = {}) {
   return (pi: ExtensionAPI) => {

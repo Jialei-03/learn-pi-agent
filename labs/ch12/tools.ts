@@ -1,40 +1,57 @@
 // 第 12 章实验：MCP 工具接进 Agent 时的两个细节——起名字、转换结果。mox 与 Pi 对照。
 //   node labs/ch12/tools.ts
+// mox 这一侧是真正的 connectMcp 产生的工具；Pi 这一侧是它的 createMcpToolName 和 convertMcpResult。
+import assert from 'node:assert/strict';
+import { McpClient as PiClient, StdioTransport as PiStdio } from '@earendil-works/pi-mcp';
 import { convertMcpResult, createMcpToolName } from '../../node_modules/@earendil-works/pi-coding-agent/dist/extensions/mcp/tools.js';
-import { convertResult, mcpToolName } from '../../mox/src/mcp/tools.ts';
+import { connectMcp } from '../../mox/src/mcp.ts';
+import { serverCommand } from './shared.ts';
 
-console.log('━━ 工具名：mcp__服务器__工具 ━━');
-const names: [string, string][] = [
-  ['issues', 'search_issues'],
-  ['issue-tracker', 'create-issue'],                      // 连字符变成下划线
-  ['github', 'search.code'],                              // 点号也不行
-  ['company-internal-knowledge-base', 'search_confluence_pages_by_label'],  // 超过 64 个字符
-];
-for (const [server, tool] of names) {
-  const mox = mcpToolName(server, tool);
-  const pi = createMcpToolName(server, tool);
-  console.log(`${server} / ${tool}`);
-  console.log(`  mox：${mox}（${mox.length}）${mox === pi ? '' : `  Pi：${pi}`}`);
-}
-// 同一个服务器上的 a-b 和 a_b 清洗后撞名：两个都加哈希，谁拿到原名不取决于列表顺序
-const taken = (n: string) => n === 'mcp__s__a_b';
-console.log(`撞名：a-b → ${mcpToolName('s', 'a-b', taken)}，a_b → ${mcpToolName('s', 'a_b', taken)}（Pi：${createMcpToolName('s', 'a-b', taken)}，${createMcpToolName('s', 'a_b', taken)}）`);
+// ── 一、工具名：mcp__服务器__工具 ──
+const odd = ['search.code', 'a.b', 'a_b', 'search_confluence_pages_by_label_and_space_with_pagination_support', 'search_confluence_pages_by_label_and_space_with_pagination_options'];
+const mcp = await connectMcp({ s: { ...serverCommand, env: { MCP_FIXTURE_TOOLS: 'odd' } } });
+const moxNames = mcp.tools.map(t => t.name);
+const taken = new Set<string>();
+const piNames = odd.map(tool => { const name = createMcpToolName('s', tool, name => taken.has(name)); taken.add(name); return name; });
 
-console.log('\n━━ 结果转换 ━━');
-const save = async () => '/tmp/full-output.txt';
-const cases: [string, any][] = [
-  ['正常文本', { content: [{ type: 'text', text: '#42 [open] 压缩后丢失文件列表' }] }],
-  ['失败但没有任何文字', { content: [], isError: true }],
-  ['只有 structuredContent', { content: [], structuredContent: { count: 2 } }],
-  ['资源链接', { content: [{ type: 'resource_link', uri: 'issues://42', name: 'issue-42' }] }],
-  ['约 110KB 的构建日志', { content: [{ type: 'text', text: Array.from({ length: 3000 }, (_, i) => `[${String(i).padStart(4, '0')}] compile src/module-${i}.ts ... ok`).join('\n') }] }],
+console.log('| 服务器里的工具名 | mox 注册的名字 | Pi 注册的名字 |');
+console.log('| --- | --- | --- |');
+odd.forEach((tool, i) => console.log(`| \`${tool.length > 30 ? tool.slice(0, 27) + '…' : tool}\`（${tool.length}） | \`${moxNames[i].length > 40 ? moxNames[i].slice(0, 37) + '…' : moxNames[i]}\`（${moxNames[i].length}） | \`${piNames[i].length > 40 ? piNames[i].slice(0, 37) + '…' : piNames[i]}\`（${piNames[i].length}） |`));
+console.log(`\nmox 注册的 ${odd.length} 个名字里，有 ${moxNames.length - new Set(moxNames).size} 个是重复的；Pi 给撞名的加了哈希，重复的有 ${piNames.length - new Set(piNames).size} 个。`);
+console.log('重名意味着什么：循环按名字用 find 找工具，只会找到第一个，后一个永远调用不到。');
+assert.equal(moxNames[0], 'mcp__s__search_code');
+assert.equal(moxNames[1], moxNames[2]);
+assert.ok(moxNames.every(n => n.length <= 64));
+assert.equal(moxNames[3], moxNames[4]);
+assert.equal(new Set(piNames).size, piNames.length);
+mcp.close();
+
+// ── 二、结果：模型最后看到什么 ──
+const results = await connectMcp({ r: { command: process.execPath, args: [new URL('../fixtures/mcp-results.ts', import.meta.url).pathname] } });
+const resultTool = results.tools[0];
+const pi = new PiClient({ name: 'lab', version: '1.0.0' });
+await pi.connect(new PiStdio({ command: process.execPath, args: [new URL('../fixtures/mcp-results.ts', import.meta.url).pathname] }));
+
+const show = (t: string) => (t.length > 130 ? `${t.slice(0, 40).replace(/\n/g, '⏎')} …… ${t.slice(-50).replace(/\n/g, '⏎')}（共 ${t.length} 字符）` : t.replace(/\n/g, '⏎'));
+const cases: [string, string][] = [
+  ['text', '正常文本'], ['error_with_text', '失败，带说明'], ['error_empty', '失败，没有任何文字'],
+  ['structured_only', '只有 structuredContent'], ['resource_link', '资源链接'], ['image', '图片'], ['huge', '约 110KB 的构建日志'],
 ];
-for (const [label, result] of cases) {
-  const mox = convertResult('issues', 'demo', result, () => '/tmp/full-output.txt');
-  const pi = await convertMcpResult('issues', 'demo', result, { saveOutput: save });
-  const piText = pi.content.map((c: any) => c.text).join('');
-  const show = (t: string) => (t.length > 120 ? `${t.slice(0, 50).replace(/\n/g, '⏎')} …… ${t.slice(-70).replace(/\n/g, '⏎')}（共 ${t.length} 字符）` : t.replace(/\n/g, '⏎'));
-  console.log(`${label}${result.isError ? '（isError）' : ''}`);
-  console.log(`  mox：${show(mox.content)}${mox.isError ? '  [错误]' : ''}`);
-  console.log(`  Pi ：${show(piText)}${pi.isError ? '  [错误]' : ''}`);
+const seen: Record<string, string> = {};
+console.log('\n| 服务器返回的 | mox：模型看到的 | Pi：模型看到的 |');
+console.log('| --- | --- | --- |');
+for (const [kind, label] of cases) {
+  let moxText: string;
+  try { moxText = String(await resultTool.run({ kind })); } catch (e) { moxText = `错误：${(e as Error).message}`; }   // 抛出的错误，循环会加上“错误：”交给模型
+  const raw = await pi.callTool('result', { kind });
+  const converted = await convertMcpResult('r', 'result', raw as any, { saveOutput: async () => '/tmp/full-output.txt' });
+  const piText = converted.content.map((c: any) => c.text).join('');
+  seen[kind] = moxText;
+  console.log(`| ${label} | ${show(moxText)} | ${show(piText)}${converted.isError ? ' [错误]' : ''} |`);
 }
+results.close();
+await pi.close();
+assert.equal(seen.error_empty, '错误：');
+assert.equal(seen.structured_only, '');
+assert.ok(seen.huge.length > 100_000);
+process.exit(0);

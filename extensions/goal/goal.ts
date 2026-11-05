@@ -6,6 +6,9 @@ import { createHash } from 'node:crypto';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+/** 把 `"npm test" 修好测试` 拆成 ['npm test', '修好测试']：引号里的算一个词 */
+export const parseArgs = (text: string) => [...text.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map(m => m[1] ?? m[2] ?? m[3]);
+
 export interface Goal { objective: string; check: string; maxRounds: number; round: number; fingerprint?: string }
 export type Step = { kind: 'done' } | { kind: 'continue'; message: string } | { kind: 'stop'; reason: string };
 

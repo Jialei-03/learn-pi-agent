@@ -1,10 +1,10 @@
 // 第 11 章实验共用的 Skills 目录。
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export function createSkillFixture() {
-  const root = mkdtempSync(join(tmpdir(), 'ch11-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'ch11-')));
   const write = (path: string, text: string) => { mkdirSync(join(root, path, '..'), { recursive: true }); writeFileSync(join(root, path), text); };
   write('skills/release-notes/SKILL.md', `---
 name: release-notes
@@ -32,6 +32,16 @@ disable-model-invocation: true
 
 只有用户用 /skill:db-migration 明确要求时才使用。
 `);
+  // 描述写成 YAML 的折叠多行：Pi 按 YAML 解析，mox 的 frontmatter 解析只认单行 key: value
+  write('skills/folded/SKILL.md', `---
+name: folded
+description: >
+  生成并检查 API 文档。
+  用户提到 openapi、swagger 时使用。
+---
+
+按 openapi.yaml 生成文档。
+`);
   write('skills/broken/SKILL.md', `---
 name: broken
 ---
@@ -53,4 +63,15 @@ description: 团队另一份同名的发布说明 Skill。
 内容。
 `);
   return { root, dirs: [join(root, 'skills'), join(root, 'team-skills')] };
+}
+
+/**
+ * 把实验的 Skills 装进一个隔离的家目录，就像用户自己放的：skills/ → ~/.mox/skills，team-skills/ → ~/.agents/skills。
+ * 给出 names 时只装 skills/ 里的这几个（不装 team-skills/）。
+ */
+export function installSkills(root: string, home: string, names?: string[]) {
+  const target = join(home, '.mox', 'skills');
+  mkdirSync(target, { recursive: true });
+  for (const name of names ?? readdirSync(join(root, 'skills'))) cpSync(join(root, 'skills', name), join(target, name), { recursive: true });
+  if (!names) cpSync(join(root, 'team-skills'), join(home, '.agents', 'skills'), { recursive: true });
 }

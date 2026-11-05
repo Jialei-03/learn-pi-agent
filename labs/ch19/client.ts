@@ -1,7 +1,7 @@
-// 第 19 章实验：用 Pi 自带的 RpcClient，同时驱动真实的 Pi 和 mox。
+// 第 19 章实验：用 Pi 自带的 RpcClient，同时驱动真实的 Pi 和 labs/ch19/mox-rpc.ts。
 //   node labs/ch19/client.ts
 // RpcClient 是正文里读的那份客户端代码（packages/coding-agent/src/modes/rpc/rpc-client.ts）。
-// mox 只实现了 prompt、abort、get_state、get_messages 四条命令，但协议的骨架（id、响应、事件）和 Pi 一致，所以这个客户端可以直接驱动它。
+// mox-rpc 只实现了 prompt、abort、get_state、get_messages 四条命令，但协议的骨架（id、响应、事件）和 Pi 一致，所以这个客户端可以直接驱动它。
 import assert from 'node:assert/strict';
 import { RpcClient } from '@earendil-works/pi-coding-agent';
 import { label, serverConfig, type Which } from './servers.ts';
@@ -12,7 +12,7 @@ process.stderr.write = (() => true) as typeof process.stderr.write;
 const textOf = (m: any) => (typeof m.content === 'string' ? m.content : m.content.filter((b: any) => b.type === 'text').map((b: any) => b.text).join(''));
 
 async function run(which: Which) {
-  const config = serverConfig(which, '0.3');
+  const config = await serverConfig(which, '0.3');
   const client = new RpcClient({ cliPath: config.cliPath, cwd: config.cwd, env: config.env, args: config.args });
   await client.start();
 
@@ -52,6 +52,7 @@ async function run(which: Which) {
     crash = await pending.then(() => '（没有失败？）', (e: Error) => `✗ ${e.message.split('. Stderr')[0]}`);
   }
   await client.stop();
+  config.close();
   return { disposition, events, finalText: last && textOf(last), unsupported, parse: seen[0], thrown, afterThrow: afterThrow.length, crash };
 }
 

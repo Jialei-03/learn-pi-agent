@@ -1,11 +1,12 @@
 // 课程网站生成器。
 //   node site/build.ts            生成 site/dist
 //   node site/build.ts --check    只检查（源码摘录、实验、链接），不写文件
+//   node site/build.ts --only 05-coding-tools,06-context-assembly   只构建 / 检查这几章（写文件时只更新这些章节的页面）
 //
 // 正文是 course/*.md。除了普通 Markdown，还支持几种指令：
 //   @pi packages/agent/src/agent-loop.ts#L172-L190   摘录 Pi 源码（固定版本，构建时校验）；#符号名、#region:名字 也可以
 //   @pi packages/agent/src/agent-loop.ts#runLoop      按名字摘录一个函数 / 类型
-//   @code mox/src/loop.ts#runLoop                     摘录本仓库的代码
+//   @code mox/src/loop.ts#runLoop                     摘录本仓库的代码；mox/ 是 Mox-agent 仓库的子模块，链接指向它的固定提交
 //   @lab node labs/ch03/compare.ts truncated | md     构建时真正运行实验，把输出嵌进页面
 //   @trace node labs/ch01/trace.ts                    运行并生成可交互的消息回放
 //   @figure assets/xxx.png 说明文字                    插图；@figure pending 说明文字 显示待补插画
@@ -28,10 +29,17 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'site/dist');
 const PI_SRC = process.env.PI_SRC ?? join(ROOT, '../pi-v1.5.0');
 const CHECK_ONLY = process.argv.includes('--check');
+const ONLY = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1]?.split(',') : undefined;
+const selected = chapters.filter(c => c.status === 'ready' && (!ONLY || ONLY.includes(c.slug)));
+if (ONLY && selected.length !== ONLY.length) throw new Error(`--only 里有不存在的章节：${ONLY.join(', ')}`);
 const errors: string[] = [];
 
 // ── Pi 源码版本校验：摘录必须来自固定的提交 ──────────────────────────
 const piHead = execFileSync('git', ['-C', PI_SRC, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+// mox 是子模块：课程固定在子模块记录的那个提交上
+const MOX_COMMIT = execFileSync('git', ['-C', ROOT, 'ls-tree', 'HEAD', 'mox'], { encoding: 'utf8' }).split(/\s+/)[2] ?? '';
+const moxHead = execFileSync('git', ['-C', join(ROOT, 'mox'), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+if (MOX_COMMIT && moxHead !== MOX_COMMIT) console.warn(`提示：mox 子模块位于 ${moxHead.slice(0, 7)}，课程记录的是 ${MOX_COMMIT.slice(0, 7)}（git submodule update 可以对齐）`);
 if (piHead !== PI.commit) throw new Error(`PI_SRC (${PI_SRC}) 位于 ${piHead}，课程固定在 ${PI.version} = ${PI.commit}`);
 
 const highlighter = await createHighlighter({
@@ -119,7 +127,9 @@ function renderExcerpt(kind: 'pi' | 'code', args: string, where: { slug: string;
   const lineCount = ex.end - ex.start + 1;
   const url = kind === 'pi'
     ? `${PI.repo}/blob/${PI.commit}/${ex.file}#L${ex.start}-L${ex.end}`
-    : `https://github.com/Jialei-03/learn-pi-agent/blob/main/${ex.file}#L${ex.start}-L${ex.end}`;
+    : ex.file.startsWith('mox/')
+      ? `https://github.com/Jialei-03/Mox-agent/blob/${moxHead}/${ex.file.slice(4)}#L${ex.start}-L${ex.end}`
+      : `https://github.com/Jialei-03/learn-pi-agent/blob/main/${ex.file}#L${ex.start}-L${ex.end}`;
   if (kind === 'pi') citations.push({ chapter: where.slug, title: where.title, file: ex.file, start: ex.start, end: ex.end, url });
   const badge = kind === 'pi' ? `<span class="src-badge pi">Pi ${PI.version}</span>` : '<span class="src-badge mox">mox</span>';
   const label = opts.title ? `<span class="src-title">${esc(decodeURIComponent(opts.title))}</span>` : '';
@@ -372,7 +382,7 @@ function sectionIndex(html: string, url: string, chapter: string, title: string)
 
 
 const rendered: { chapter: typeof chapters[number]; data: Record<string, string | string[]>; linked: string; headings: Heading[] }[] = [];
-for (const chapter of chapters.filter(c => c.status === 'ready')) {
+for (const chapter of selected) {
   const path = join(ROOT, 'course', `${chapter.slug}.md`);
   if (!existsSync(path)) {
     if (process.env.DRAFT) { console.warn(`（草稿模式）跳过缺少的正文 ${chapter.slug}`); continue; }
@@ -396,7 +406,7 @@ for (const r of rendered) {
 }
 
 // 检查正文里直接写的 Pi 源码链接：文件必须存在，行号不能越界
-for (const chapter of chapters.filter(c => c.status === 'ready')) {
+for (const chapter of selected) {
   const path = join(ROOT, 'course', `${chapter.slug}.md`);
   if (!existsSync(path)) continue;
   const text = readFileSync(path, 'utf8');
@@ -423,10 +433,12 @@ const MAP = courseMap({
   citations,
   display: (file: string) => file.replace(/^packages\//, ''),
 });
-pages.push({ file: 'map.html', html: mapPage(MAP.html) });
-pages.push({ file: 'index.html', html: homePage() });
-pages.push({ file: 'interview.html', html: interviewPage(interviews) });
-pages.push({ file: 'sources.html', html: sourceIndexPage(citations) });
+if (!ONLY) {
+  pages.push({ file: 'map.html', html: mapPage(MAP.html) });
+  pages.push({ file: 'index.html', html: homePage() });
+  pages.push({ file: 'interview.html', html: interviewPage(interviews) });
+  pages.push({ file: 'sources.html', html: sourceIndexPage(citations) });
+}
 
 if (errors.length) {
   console.error(`构建失败，${errors.length} 个问题：\n` + errors.map(e => '  · ' + e).join('\n'));
@@ -437,7 +449,7 @@ if (CHECK_ONLY) {
   process.exit(0);
 }
 
-rmSync(OUT, { recursive: true, force: true });
+if (!ONLY) rmSync(OUT, { recursive: true, force: true });
 mkdirSync(join(OUT, 'chapters'), { recursive: true });
 for (const page of pages) writeFileSync(join(OUT, page.file), page.html);
 cpSync(join(ROOT, 'site/static'), join(OUT, 'static'), { recursive: true });
@@ -460,5 +472,5 @@ for (const asset of usedAssets) {
 mkdirSync(join(OUT, 'engineering'), { recursive: true });
 writeFileSync(join(OUT, 'engineering/architecture.canvas'), MAP.canvas);
 writeFileSync(join(OUT, 'engineering/engineering-map.md'), MAP.markdown);
-writeFileSync(join(OUT, 'static/search.json'), JSON.stringify(searchIndex));
+if (!ONLY) writeFileSync(join(OUT, 'static/search.json'), JSON.stringify(searchIndex));
 console.log(`已生成 ${relative(ROOT, OUT)}：${pages.length} 个页面，${citations.length} 处 Pi 源码摘录，${interviews.length} 道面试题`);

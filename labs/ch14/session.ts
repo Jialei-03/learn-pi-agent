@@ -1,4 +1,5 @@
 // 第 14 章实验：权限扩展装进一个真实的 Pi 会话。界面是脚本：每次弹出确认框，按预先写好的答案选择。
+// （mox 一侧的同一组情况见 labs/ch14/mox-session.ts）
 //   node labs/ch14/session.ts
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
@@ -7,11 +8,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/compat';
 import { createPermissionsExtension } from '../../extensions/permissions/index.ts';
-import { createPermissionsMoxExtension } from '../../extensions/permissions/mox.ts';
-import { createCodingTools } from '../../mox/src/coding/index.ts';
-import { ExtensionHost } from '../../mox/src/extensions.ts';
-import { runLoop } from '../../mox/src/loop.ts';
-import { scripted } from '../../mox/src/providers/scripted.ts';
 import { createPiSession, textOf } from '../shared/pi-session.ts';
 
 function project() {
@@ -76,23 +72,3 @@ async function run(title: string, answers: string[] | undefined, mode?: 'plan') 
 await run('有界面：用户逐个确认', ['允许一次', '本会话都允许', '拒绝']);
 await run('没有界面（比如 pi -p 在 CI 里运行）', undefined);
 await run('计划模式', [], 'plan');
-
-// mox：同样的规则、同样的模型脚本、同样的回答
-console.log('━━ mox：同样的三种情况 ━━');
-for (const [title, answers, mode] of [['有界面：用户逐个确认', ['允许一次', '本会话都允许', '拒绝']], ['没有界面（比如 pi -p 在 CI 里运行）', undefined], ['计划模式', [], 'plan']] as const) {
-  const cwd = project();
-  const host = new ExtensionHost(cwd);
-  const queue = answers ? [...answers] : undefined;
-  if (queue) host.setSelect(async () => queue.shift() ?? '拒绝');
-  await host.load('permissions', createPermissionsMoxExtension([{ path: join(cwd, 'permissions.json'), base: cwd }], mode));
-  let n = 0;
-  const model = scripted(() => {
-    const step = steps[n++] as any;
-    const call = step.content.find((b: any) => b.type === 'toolCall');
-    return call ? { toolCalls: [{ id: call.id, name: call.name, arguments: call.arguments }] } : { text: '完成。' };
-  });
-  const { messages } = await runLoop([], [{ role: 'user', content: '开始' }], { model, systemPrompt: '', tools: createCodingTools(cwd), hooks: host.toolHooks() });
-  const mox = messages.filter(m => m.role === 'toolResult').map(m => m.role === 'toolResult' && !m.isError);
-  console.log(`${title}：${JSON.stringify(mox) === JSON.stringify(outcomes[title]) ? '每一步的放行 / 拒绝都与 Pi 一致' : `不一致 ${JSON.stringify(mox)}`}`);
-  assert.deepEqual(mox, outcomes[title], `${title}：mox 与 Pi 的决定必须一致`);
-}

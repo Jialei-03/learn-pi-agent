@@ -1,0 +1,64 @@
+{
+  "model": "MiniMax-M3.1-Flash",
+  "recordedAt": "2026-11-05",
+  "cache": [
+    {
+      "request": 1,
+      "estimateOld": 452,
+      "estimate": 995,
+      "promptTokens": 1199,
+      "cachedTokens": 128
+    },
+    {
+      "request": 2,
+      "estimateOld": 477,
+      "estimate": 1028,
+      "promptTokens": 1236,
+      "cachedTokens": 1152
+    },
+    {
+      "request": 3,
+      "estimateOld": 502,
+      "estimate": 1061,
+      "promptTokens": 1273,
+      "cachedTokens": 1152
+    },
+    {
+      "request": 4,
+      "estimateOld": 527,
+      "estimate": 1095,
+      "promptTokens": 1310,
+      "cachedTokens": 1280
+    }
+  ],
+  "tokens": [
+    {
+      "label": "中文文档（mox/README.md 开头）",
+      "chars": 1500,
+      "estimateOld": 396,
+      "estimate": 564,
+      "actual": 582
+    },
+    {
+      "label": "英文文本（mox/LICENSE）",
+      "chars": 1066,
+      "estimateOld": 273,
+      "estimate": 272,
+      "actual": 241
+    },
+    {
+      "label": "TypeScript 代码，中文注释（mox/src/loop.ts）",
+      "chars": 2983,
+      "estimateOld": 761,
+      "estimate": 836,
+      "actual": 807
+    },
+    {
+      "label": "JSON 工具结果（30 条记录）",
+      "chars": 2101,
+      "estimateOld": 615,
+      "estimate": 614,
+      "actual": 763
+    }
+  ]
+}

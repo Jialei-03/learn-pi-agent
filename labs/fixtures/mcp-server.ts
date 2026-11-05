@@ -1,7 +1,11 @@
 // 第 12 章实验用的 MCP 服务器：一个假的 issue 系统。不依赖任何 SDK，手写协议，方便看清服务端在做什么。
 //   node labs/fixtures/mcp-server.ts
 // 协议：stdin 每行一条 JSON-RPC 消息进，stdout 每行一条出。日志只能写 stderr——stdout 是协议通道。
-// 环境变量：MCP_FIXTURE_NOISY=1 启动时往 stdout 打一行普通日志（错误示范）；MCP_FIXTURE_PAGE_SIZE=n 分页返回工具列表。
+// 环境变量：
+//   MCP_FIXTURE_NOISY=1      启动时往 stdout 打一行普通日志（错误示范）
+//   MCP_FIXTURE_PAGE_SIZE=n  分页返回工具列表
+//   MCP_FIXTURE_PING=1       握手完成后，服务器反过来给客户端发一个 ping 请求（id 是 2）
+//   MCP_FIXTURE_TOOLS=odd    换成一组名字古怪的工具（带点号、清洗后会撞名、超长），演示工具名的处理
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
@@ -38,6 +42,16 @@ const tools: Json[] = [
   { name: 'spawn_worker', description: '启动一个后台子进程（演示关闭时清理进程组）。', inputSchema: { type: 'object', properties: {} } },
   { name: 'enable_admin_tools', description: '开启管理工具（演示工具列表变化通知）。', inputSchema: { type: 'object', properties: {} } },
 ];
+if (process.env.MCP_FIXTURE_TOOLS === 'odd') {
+  const empty = { type: 'object', properties: {} };
+  tools.splice(0, tools.length,
+    { name: 'search.code', description: '名字里有点号。', inputSchema: empty },
+    { name: 'a.b', description: '清洗后会变成 a_b。', inputSchema: empty },
+    { name: 'a_b', description: '和 a.b 清洗后撞名。', inputSchema: empty },
+    { name: 'search_confluence_pages_by_label_and_space_with_pagination_support', description: '很长的名字（一）。', inputSchema: empty },
+    { name: 'search_confluence_pages_by_label_and_space_with_pagination_options', description: '很长的名字（二），前 64 个字符和（一）相同。', inputSchema: empty },
+  );
+}
 const adminTool = {
   name: 'delete_issue', description: '永久删除一个 issue。',
   inputSchema: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] },
@@ -98,6 +112,8 @@ async function handle(message: Json) {
   const { id, method, params } = message;
   if (id === undefined) {                       // 通知：没有 id，不需要回复
     if (method === 'notifications/cancelled') running.get(params?.requestId)?.abort();
+    // 服务器也可以给客户端发请求；它的 id 是自己的编号，和客户端的编号互不相干
+    if (method === 'notifications/initialized' && process.env.MCP_FIXTURE_PING) send({ id: 2, method: 'ping' });
     return;
   }
   if (!method) return;                          // 客户端发来的响应（回复我们的 ping），这里不需要

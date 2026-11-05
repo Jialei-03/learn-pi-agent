@@ -21,6 +21,9 @@ export const hooksConfig = {
   },
 };
 
+/** 只有一条钩子：拦截命令里的 rm（第 13 章“钩子能挡住什么”用）。 */
+export const rmHookConfig = { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [node('block-rm.mjs')] }] } };
+
 export function createProject() {
   const cwd = mkdtempSync(join(tmpdir(), 'ch13-'));
   writeFileSync(join(cwd, 'deploy.sh'), '#!/bin/sh\necho "deploy $@"\n', { mode: 0o755 });

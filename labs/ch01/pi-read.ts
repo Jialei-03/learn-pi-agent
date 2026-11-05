@@ -1,6 +1,6 @@
 // 第 1 章实验：同一个任务交给 Pi —— 真实的 runAgentLoop + Pi 自带的 ls / read 工具。
 //   node labs/ch01/pi-read.ts
-// 模型换成 Pi 的 faux（脚本）模型，决策与 mox/stage-01 的脚本模型相同：先列目录，再读 README，最后回答。
+// 模型换成 Pi 的 faux（脚本）模型，决策与 labs/ch01/first-agent.ts 的脚本模型相同：先列目录，再读 README，最后回答（mox 的 ls、read 工具的名字和参数与 Pi 一致）。
 import { fileURLToPath } from 'node:url';
 import { runAgentLoop } from '@earendil-works/pi-agent-core';
 import { createFauxCore, fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';

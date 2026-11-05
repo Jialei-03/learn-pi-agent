@@ -9,7 +9,7 @@ const SHOWN_EVENTS = new Set(['agent_start', 'tool_execution_start', 'tool_execu
 const fields = (data: any) => `{${Object.keys(data ?? {}).slice(0, 3).join(', ')}${Object.keys(data ?? {}).length > 3 ? ', …' : ''}}`;
 
 // ── 真实 Pi ────────────────────────────────────────────────────
-const pi = new Link('pi', '1.5');                       // 脚本里的 bash 跑 1.5 秒：足够长的“运行中”窗口
+const pi = await Link.open('pi', '1.5');                       // 脚本里的 bash 跑 1.5 秒：足够长的“运行中”窗口
 pi.send({ id: 'a', type: 'get_state' });
 await pi.until(r => r.id === 'a');
 pi.send({ id: 'p', type: 'prompt', message: '构建项目' });
@@ -54,8 +54,8 @@ assert.ok(pi.stderr.includes('[faux-ext]'));
 console.log(`\n扩展加载时执行了 console.log，它没有进入 stdout，而是出现在 stderr：\n  ${JSON.stringify(pi.stderr.trim())}`);
 await pi.close();
 
-// ── mox：同样的事，但每条命令都是同步处理的 ─────────────────────
-const mox = new Link('mox', '1.5');
+// ── mox-rpc：同样的事，但每条命令都是同步处理的 ─────────────────────
+const mox = await Link.open('mox', '1.5');
 mox.send({ id: 'p', type: 'prompt', message: '构建项目' });
 await mox.until(r => r.type === 'tool_start');
 mox.send({ id: 's', type: 'get_state' });
@@ -64,13 +64,13 @@ mox.send({ id: 'q', type: 'prompt', message: '顺便看看有没有警告' });
 await mox.until(r => r.id === 'q');
 const moxArrival = mox.received.filter(isResponse).map(r => r.id);
 assert.deepEqual(moxArrival, ['p', 's', 'm', 'q']);
-console.log(`\nmox：命令发送顺序 s → m → q，响应到达顺序 ${moxArrival.slice(1).join(' → ')}`);
+console.log(`\nmox-rpc：命令发送顺序 s → m → q，响应到达顺序 ${moxArrival.slice(1).join(' → ')}`);
 console.log('（同步处理，顺序碰巧一致；协议并不保证，客户端不能依赖）');
 await mox.until(r => r.type === 'agent_settled', 0);
 await mox.close();
 
-// 背靠背的两条 prompt：第二条到达时，第一条的运行还没来得及登记为“运行中”
-const burst = new Link('mox', '0.3');
+// 背靠背的两条 prompt：mox-rpc 在“收下”的那个同步片段里就创建了 AbortController，所以第二条到达时已经知道有运行了
+const burst = await Link.open('mox', '0.3');
 burst.send({ id: 'p1', type: 'prompt', message: '构建项目' });
 burst.send({ id: 'p2', type: 'prompt', message: '顺便看看有没有警告' });
 await burst.until(r => r.type === 'agent_settled');
@@ -79,5 +79,5 @@ const dispositions = burst.received.filter(isResponse).map(r => `${r.id}=${r.dat
 const starts = burst.received.filter(r => r.type === 'agent_start').length;
 assert.deepEqual(dispositions, ['p1=started', 'p2=queued']);
 assert.equal(starts, 1, '只有一次运行');
-console.log(`mox：同时写入两条 prompt → ${dispositions.join('，')}`);
+console.log(`mox-rpc：同时写入两条 prompt → ${dispositions.join('，')}`);
 console.log(`agent_start 出现 ${starts} 次（只有一个运行）`);

@@ -1,17 +1,17 @@
-// 第 19 章实验：用 RPC 控制 mox。父进程是“客户端”，mox 是长期运行的子进程。左边的数字是这一行在整个对话里的序号。
+// 第 19 章实验：用 RPC 控制 labs/ch19/mox-rpc.ts（在 runLoop 之上写的最小 RPC 宿主）。父进程是“客户端”，它是长期运行的子进程。
+// 左边的数字是这一行在整个对话里的序号。模型是本机起的假服务器，按剧本回复。
 //   node labs/ch19/rpc.ts
 import { spawn } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { serverConfig } from './servers.ts';
 
-const repo = fileURLToPath(new URL('../..', import.meta.url));
-const cwd = mkdtempSync(join(tmpdir(), 'ch19-'));
-const child = spawn(process.execPath, [join(repo, 'mox/src/cli.ts'), '--mode', 'rpc', '--no-session'], {
-  cwd,
+const config = await serverConfig('mox', '0.6');
+const child = spawn(process.execPath, [config.cliPath], {
+  cwd: config.cwd,
   // HOME 指向临时目录：不加载你本机 ~/.mox 和 ~/.agents 里的东西
-  env: { ...process.env, HOME: mkdtempSync(join(tmpdir(), 'ch19-home-')), MOX_API: 'scripted', MOX_SCRIPT: join(repo, 'labs/ch19/script.ts') },
+  env: { ...process.env, ...config.env },
   stdio: ['pipe', 'pipe', 'pipe'],
 });
 let step = 0;                                   // 行号而不是时间戳：每次运行的输出完全一样
@@ -54,4 +54,5 @@ const all = await until(r => r.id === '5');
 console.log(`\n会话里共有 ${all.data.messages.length} 条消息：${all.data.messages.map((m: any) => m.role).join(' → ')}`);
 child.stdin.end();                                                                     // 关闭 stdin = 请求退出
 const code = await new Promise(r => child.once('close', r));
-console.log(`mox 退出，退出码 ${code}`);
+config.close();
+console.log(`mox-rpc 退出，退出码 ${code}`);

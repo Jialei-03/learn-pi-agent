@@ -221,8 +221,8 @@ sequenceDiagram
 @pi packages/agent/src/agent-loop.ts#runAgentLoop
 把新消息拼到已有上下文后面，发出开始事件，交给 `runLoop`。
 @@ mox
-@code mox/src/loop.ts#L49-L67
-mox 没有单独的入口函数：`prompts` 在这里变成 `pending`，由内层循环推进历史，同样不负责保存。
+@code mox/src/cli.ts#L126-L129 hl=129
+mox 没有单独的入口函数：命令行把用户消息放进会话的消息数组，直接调用 `runLoop`。保存也是命令行在 `onEvent` 里做的，循环自己同样不保存。
 :::
 
 它做的事情只有三件：把新消息拼到已有上下文后面，发出“开始”事件，然后把一切交给 `runLoop`。注意它不保存任何东西——保存是第 6 步产品层订阅事件时做的。**循环只负责“转”，不负责“记”。**
@@ -256,10 +256,10 @@ Pi 的 README 第一段就写明了立场：它“提供强大的默认能力，
 每一章都围绕一个机制，按同样的顺序展开：
 
 1. **一个现象。** 先看一个具体问题：模型为什么读不到你的文件？流被掐断时会发生什么？
-2. **Build：亲手实现。** 在 `mox`（我们的 agent）里用几十行代码实现最小版本。带橙色 <span class="src-badge mox">mox</span> 标记的代码在本仓库里，可以直接运行。
-3. **找到它的边界。** 构造几个最小版本处理不了的情形——生产级的实现为什么要多做那些事，答案就在这里。
+2. **Build：读懂并运行 mox。** mox 是 [Mox-agent](https://github.com/Jialei-03/Mox-agent)：六百多行、零依赖、真的能用的 coding agent，每个机制一个文件，放在本仓库的 `mox/` 目录（Git 子模块）。每章先读它里面对应的那几十行，在离线实验里让它跑起来；扩展类章节则是给 mox 写一个扩展。带橙色 <span class="src-badge mox">mox</span> 标记的代码来自它。
+3. **找到它的边界。** 构造几个 mox 处理不了的情形——mox 刻意保持最小，生产级的实现为什么要多做那些事，答案就在这里。
 4. **Read：看生产代码怎么做。** 带黑色 <span class="src-badge pi">Pi v1.5.0</span> 标记的代码来自 Pi 的固定提交，点文件名就能跳到 GitHub 上的对应行。
-5. **Extend：补齐能力。** 部分章节会给 Pi 写一个扩展。
+5. **Extend：补齐能力。** 部分章节会给 mox 或 Pi 写一个扩展，把边界上缺的东西补上。
 6. **Interview：讲得出取舍。** 章末的面试题汇总在[面试题库](../interview.html)。
 
 正文里的终端输出都是构建网站时**真正运行**实验得到的，不是手写的。你在本地运行同一条命令，应该看到同样的结果。
@@ -269,11 +269,11 @@ Pi 的 README 第一段就写明了立场：它“提供强大的默认能力，
 需要 Node.js 22.19 或更新版本（课程代码是 TypeScript，Node 可以直接运行，不需要编译）。
 
 ```bash
-git clone https://github.com/Jialei-03/learn-pi-agent.git
+git clone --recurse-submodules https://github.com/Jialei-03/learn-pi-agent.git
 cd learn-pi-agent && npm install
 ```
 
-`npm install` 只为两件事安装依赖：实验里用到的 Pi 包（版本固定为 1.5.0），以及生成网站用的 Markdown 和代码高亮工具。`mox` 本身没有任何依赖。
+`--recurse-submodules` 会把 `mox/`（Mox-agent）一起取下来；已经克隆过的话，运行 `git submodule update --init`。`npm install` 只为两件事安装依赖：实验里用到的 Pi 包（版本固定为 1.5.0），以及生成网站用的 Markdown 和代码高亮工具。mox 本身没有任何依赖，Node.js 直接运行它的 TypeScript。
 
 建议把 Pi 源码也克隆到旁边，读代码时对照着看：
 
@@ -281,11 +281,11 @@ cd learn-pi-agent && npm install
 git clone --branch v1.5.0 https://github.com/earendil-works/pi.git ../pi-v1.5.0
 ```
 
-最后检查一下环境。这个脚本逐项检查 Node 版本和 Pi 包，最后还会把第 2 章的一个实验真跑一遍：
+最后检查一下环境。这个脚本逐项检查 Node 版本、Pi 包和 mox 子模块，确认 mox 的命令行能启动，最后把第 2 章的一个实验真跑一遍：同一段回放字节流，分别交给 mox 和 Pi 的适配器，结果应该一致。
 
 @lab node labs/ch00/check-env.ts
 
-最后一行显示“环境就绪”就可以开始了。所有实验默认使用脚本模型，**不需要 API Key，也不会产生费用**。想接真实模型时，第 1 章会告诉你怎么配置。
+最后一行显示“环境就绪”就可以开始了。默认构建和离线实验**不需要 API Key，也不会产生模型费用**；它们使用脚本回复、本地协议样本或已保存的记录。第 1 章说明真实模型配置，第 2 章另有明确需要凭据、会产生用量的 MiniMax M3.1 Flash 真实调用实验。
 
 ### 读源码的方法
 

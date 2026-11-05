@@ -143,7 +143,7 @@ export function homePage() {
 </section>
 
 <section class="pillars">
-  <article><span class="pillar-num">01</span><h3>亲手实现</h3><p>每章给 mox 加一个机制。零依赖 TypeScript，没有 API Key 也能离线运行。</p></article>
+  <article><span class="pillar-num">01</span><h3>亲手实现</h3><p>每章在 <a href="https://github.com/Jialei-03/Mox-agent">mox</a> 里读懂、跑通一个机制。约 680 行零依赖 TypeScript，实验没有 API Key 也能离线运行。</p></article>
   <article><span class="pillar-num">02</span><h3>读生产源码</h3><p>源码摘录在构建时从 Pi 的固定提交读取，行号自动校验。</p></article>
   <article><span class="pillar-num">03</span><h3>写扩展补齐</h3><p>权限、Hooks、记忆、子 Agent——Pi 没有内置的，我们自己写。</p></article>
   <article><span class="pillar-num">04</span><h3>讲得出取舍</h3><p>每章附面试题和回答要点，汇总在<a href="interview.html">面试题库</a>。</p></article>
@@ -151,11 +151,15 @@ export function homePage() {
 
 <section class="quickstart">
   <h2>五分钟跑起来</h2>
-  <p>需要 Node.js 22.19 以上。没有 API Key 时自动使用脚本模型，离线、免费。</p>
-  <pre><code>git clone ${REPO}.git
+  <p>需要 Node.js 22.19 以上。课程实验使用脚本模型，离线、免费；接上任意 OpenAI 兼容的模型，mox 就是一个能用的命令行 Agent。</p>
+  <pre><code>git clone --recurse-submodules ${REPO}.git
 cd learn-pi-agent &amp;&amp; npm install
-cd labs/fixtures/mox-project
-node ../../../mox/stage-01/agent.ts "这个项目是做什么的？"</code></pre>
+node labs/ch00/check-env.ts          # 检查环境
+
+export MOX_BASE_URL=https://api.minimaxi.com/v1
+export MOX_API_KEY=你的 Key
+export MOX_MODEL=MiniMax-M3.1-Flash
+node mox/src/cli.ts                  # 开始和 mox 对话</code></pre>
 </section>
 
 <section class="roadmap">

@@ -1,28 +1,29 @@
 ---
 motto: 终端、打印、JSON、RPC 都是同一个会话对象的外壳。RPC 的难点不在 JSON，而在一条 stdout 上谁先说话、谁来认领。
 learn:
-  - 沿 pi 命令读到 createAgentSession，说清楚各种运行模式在哪里分叉、共用什么
+  - 沿 pi 命令读到 createAgentSession，说清楚各种运行模式在哪里分叉、共用什么；再对照 mox：它只有交互和 -p 两种，“SDK”就是 import
+  - 说清楚 mox -p 的 stdout 里有什么、退出码怎么翻译失败，以及脚本为什么不能只看 stdout
   - 说清楚 RPC 的一条 stdout 怎样同时装下响应和事件，客户端怎样按 id 认领、应对乱序、崩溃和取消
-  - 解释 prompt 的响应为什么只代表“收下了”，abort 的响应在 Pi 和 mox 里又代表什么
-  - 说明 stdout 为什么要被接管、事件为什么只带增量、JSONL 为什么只能按 \n 切，并用 Pi 自带的 RpcClient 驱动 mox
-prereq: 第 3、7、12 章
+  - 解释 prompt 的响应为什么只代表“收下了”，abort 的响应何时该回复
+  - 读懂在 runLoop 之上写的六十行 RPC（labs/ch19/mox-rpc.ts），并用 Pi 自带的 RpcClient 驱动它
+prereq: 第 3、7、9 章
 time: 70 分钟
-build: mox/src/rpc.ts —— mox 的 JSON 事件流与 RPC 模式
+build: labs/ch19/mox-rpc.ts —— 在 runLoop 之上实现的最小 RPC（mox 没有 SDK 或 RPC 模式，它的 SDK 就是 import）
 ---
 
 到目前为止，用 Agent 的都是坐在终端前的人。但调用者越来越多是程序：IDE 插件在侧边栏画进度，CI 在 Agent 跑完后判断成败，网页后端把输出推给浏览器，第 20 章的评测框架一口气跑几百次。
 
-它们问的是同一组问题：怎么启动？怎么知道做到哪了？运行到一半怎么插话、叫停？Pi 给了五种答案：
+它们问的是同一组问题：怎么启动？怎么知道做到哪了？运行到一半怎么插话、叫停？Pi 给了五种答案，mox 只给了两种，其余的要你自己搭：
 
-| 方式 | 怎么用 | 进程边界 | 适合 |
-| --- | --- | --- | --- |
-| 交互 | `pi` | 无 | 人在终端里用 |
-| 打印 | `pi -p "任务"` | 一次性 | 脚本、命令替换：只要最后的文字 |
-| JSON 事件流 | `pi --mode json "任务"` | 一次性 | CI：要知道过程（工具调用、用量） |
-| RPC | `pi --mode rpc` | 长期运行的子进程 | 其他语言、需要隔离、要来回交互（IDE、自定义界面） |
-| SDK | `createAgentSession()` | 无 | Node.js 宿主，要完整的 API |
+| 方式 | Pi | mox | 进程边界 | 适合 |
+| --- | --- | --- | --- | --- |
+| 交互 | `pi` | `mox` | 无 | 人在终端里用 |
+| 打印 | `pi -p "任务"` | `mox -p "任务"` | 一次性 | 脚本、命令替换 |
+| JSON 事件流 | `pi --mode json "任务"` | 没有 | 一次性 | CI：要知道过程（工具调用、用量） |
+| RPC | `pi --mode rpc` | 没有（本章写一个） | 长期运行的子进程 | 其他语言、需要隔离、要来回交互（IDE、自定义界面） |
+| SDK | `createAgentSession()` | `import` 模块 | 无 | Node.js 宿主，要完整的 API |
 
-这不是五套实现。沿着 `pi` 命令走一遍，看它们在哪里分叉。
+这不是五套实现。沿着 `pi` 命令走一遍，看它们在哪里分叉；然后看 mox 少了什么，补起来要多少行。
 
 ## 从 pi 命令走到 AgentSession
 
@@ -56,9 +57,20 @@ build: mox/src/rpc.ts —— mox 的 JSON 事件流与 RPC 模式
 
 @pi packages/coding-agent/src/core/output-guard.ts#takeOverStdout hl=50-52,54-63
 
-它把 `process.stdout.write` 换成写 stderr 的函数，同时存下真正的 stdout 写函数；协议记录只经 `writeRawStdout` 写，用的就是存下来的那个。于是扩展里的 `console.log`、第三方库的 `process.stdout.write` 全部落到 stderr，不可能混进协议（下面的 `wire.ts` 实验会验证）。mox 靠约定：cli.ts 的 `say()` 在 json、rpc 模式下写 stderr。约定挡不住别人写的代码，接管可以。
+它把 `process.stdout.write` 换成写 stderr 的函数，同时存下真正的 stdout 写函数；协议记录只经 `writeRawStdout` 写，用的就是存下来的那个。于是扩展里的 `console.log`、第三方库的 `process.stdout.write` 全部落到 stderr，不可能混进协议（下面的 `wire.ts` 实验会验证）。mox 的命令行没有这个问题，因为它只有一个模式、本来就往 stdout 写给人看的内容（下面会看到这有什么后果）；等我们自己在 `runLoop` 之上写 RPC 的时候，同样的接管只要两行。
 
 三个运行器拿到的都是 `runtime.session`，一个 `AgentSession`。它从哪来，就是 SDK 的入口。
+
+mox 的分叉在 `cli.ts` 的最后二十几行，只有一个判断：
+
+@code mox/src/cli.ts#L143-L167 hl=143,145,146,147,161
+
+- 第 143 行：命令行里有没有 `-p`。有，`once` 就是那条任务；没有，就是交互模式。
+- 第 161 行：`-p` 模式 `await run(once)`，成功退出码 0，失败（`run` 返回 `false`）退出码 1，然后 `exit`。交互模式则画出提示符，一行一行等输入（第 148 行的 `rl.on('line')`）。
+- 第 145 行：`exit` 不调用 `process.exit`，只设置 `process.exitCode`、触发扩展的 `shutdown` 事件、关掉 MCP 和 readline，让事件循环自然结束。注释说得很清楚：输出接在管道上时，`process.exit` 可能截断还没写完的内容。
+- 第 146–147 行：Ctrl+C 在运行中是取消（`controller.abort()`），空闲时是退出；stdin 关闭时，交互模式退出，`-p` 模式不管它。
+
+两种模式共用同一个 `run`、同一个 `options`、同一个会话。mox 没有 AgentSession 这样的对象，**整个命令行就是宿主**。
 
 ## SDK 入口：createAgentSession 装配了什么
 
@@ -88,11 +100,35 @@ build: mox/src/rpc.ts —— mox 的 JSON 事件流与 RPC 模式
 - **空闲时**：校验模型和凭证，`_startRun`。`prompt()` 的 Promise 要等整个运行（含自动重试）结束才完成。
 - **`preflightResult`**：注释写着“Internal hook used by RPC mode”。预检通过时调用，参数是 `"started"` 或 `"queued"`（扩展命令、输入处理器接管时是 `"handled"`，在函数前半段），让调用者**在 Promise 完成之前**就知道提示被怎样处理。
 
-SDK 的 `prompt()` 回答“做完了”；RPC 必须在做完之前回话，所以有这个回调。mox 没有 AgentSession 这一层，它的“SDK”就是模块本身（`runLoop`、`Session`、`ExtensionHost`），cli.ts 的 `execute` 相当于 `prompt()`。
+SDK 的 `prompt()` 回答“做完了”；RPC 必须在做完之前回话，所以有这个回调。
 
-## 打印模式与 JSON 模式：订阅会话，写到 stdout
+### mox 的 SDK：import 四个模块
 
-打印和 JSON 模式是最简单的 SDK 宿主：建会话、订阅、`prompt`、退出。
+mox 没有 AgentSession 这一层，它的“SDK”就是模块本身。`createAgentSession` 装配的六样东西（工作目录、模型、工具、会话、资源、设置），mox 只有四样要装，而且每一样都是一个函数或一个对象，没有默认值，自己传：
+
+| 装配什么 | Pi | mox |
+| --- | --- | --- |
+| 模型 | `modelRuntime`，读 `auth.json`、`models.json` | `openai({ baseUrl, apiKey, model })`，一个 `Model` 函数 |
+| 工具 | 内置七个 + 扩展 + 自定义 | `codingTools(cwd)`，一个 `Tool[]` 数组 |
+| 会话 | `sessionManager`（树，可分支） | `openSession(cwd, home)`，`messages` 数组加 JSONL |
+| 系统提示 | `resourceLoader`（扩展、Skills、模板） | `systemPrompt(cwd, home, skills)`，一个字符串 |
+| 运行 | `session.prompt(text)` | `runLoop(messages, options)` |
+
+用 mox 当库，一个 CI 步骤只要这么多代码：
+
+@code labs/ch19/library.ts#L19-L37 hl=20,24,25,26,31,34,35,36,37
+
+- 装配（第 20–26 行）：脚本模型换成真实的 `openai(...)` 就是生产环境；换掉任何一样都不影响其他三样。这和 Pi 的实验把 faux 提供方、内存会话塞进 `createAgentSession` 是同一个思路。
+- 运行（第 31–37 行）：`runLoop` **就地**往 `session.messages` 里追加，返回最后的回答；用户消息由宿主自己 push、自己 `save`，持久化也是宿主的事（`onEvent` 里 `session.save`），`runLoop` 只管循环。第一次写这个实验时漏了 `save(prompt)`，会话文件里就少了用户消息，恢复出来的对话从 assistant 开始。
+- `beforeTool` 是宿主的审批：这里的宿主不允许执行命令，返回一个字符串就是拒绝。
+
+@lab node labs/ch19/library.ts
+
+事件流、最终回答、会话文件、恢复，都是函数调用，没有进程边界。代价和 Pi 的 SDK 一样：Agent 崩溃就是宿主崩溃；好处是整个对象都在你手里，没有序列化。
+
+## 打印模式：mox -p 的 stdout 是什么
+
+打印和 JSON 模式是最简单的 SDK 宿主：建会话、订阅、`prompt`、退出。Pi 的做法：
 
 @pi packages/coding-agent/src/modes/print-mode.ts#L106-L119 hl=108-112,113-118
 
@@ -104,7 +140,21 @@ JSON 模式下，每个事件经 `toJsonEvent` 变成一行 JSON，用 `writeRaw
 
 停止原因是 `error`、`aborted`：原因写 stderr，退出码 1。`length`（第 3 章的截断）文字照打，退出码也是 1。JSON 模式不做这个翻译：失败的回复只是流里一条 `stopReason: "error"` 的消息，进程照样以 0 退出，要判断成败得读事件。
 
-事件本身也不是原样写出的：
+### mox -p：什么都写在 stdout 上
+
+mox 的 `-p` 是同一件事的最简版本，看看它的 stdout 和退出码：
+
+@lab node labs/ch19/print.ts
+
+和 Pi 的文本模式比，有三处不同：
+
+- **stdout 不只是最终回答。** 工具调用（`● bash …`）和结果（`✓ …`）也是 `print` 写到 stdout 的，和最后的文字混在一起（表里第一行的纯文本回答，只是因为那次没有工具调用）。想要“只要最后的文字”，脚本得自己解析，或者用库的方式拿 `runLoop` 的返回值。
+- **失败写在 stdout 上，靠退出码区分。** 模型服务返回 500，`run` 捕获异常、`print(red(...))` 到 stdout，stderr 是空的，退出码 1。只看 stdout 的脚本分不出这次是成功还是失败。
+- **工具被拒绝不算失败。** 没有终端又没有 `--yolo`，`bash` 得到一条“已拒绝”的工具结果，模型照样回答，运行本身成功，退出码 0。CI 里要自动执行，必须显式加 `--yolo`；要判断“任务到底做成没有”，退出码不够，得检查结果（第 20 章）。
+
+## JSON 事件流：事件为什么只带增量
+
+mox 没有 JSON 模式。Pi 的 JSON 模式把每个事件写成一行 JSON，而且事件本身也不是原样写出的：
 
 @pi packages/coding-agent/src/modes/json-event.ts#L40-L61 hl=49-51,56-60
 
@@ -112,22 +162,18 @@ SDK 的 `message_update` 带两份累计快照：`event.message`（整条消息�
 
 @lab node labs/ch19/delta-size.ts
 
-SDK 形状的字节数随回复长度平方增长，线上形状线性增长。客户端自己重建：从 `message_start` 的初始消息出发叠加增量，**以 `message_end` 里的完整消息为准**。mox 的 `toWireEvent` 更简单，七种事件，`text_delta` 平铺：
-
-@lab node labs/ch19/json.ts
-
-线上的事件形状，Pi 的 `toJsonEvent` 和 mox 的 `toWireEvent` 对照：
+SDK 形状的字节数随回复长度平方增长，线上形状线性增长。客户端自己重建：从 `message_start` 的初始消息出发叠加增量，**以 `message_end` 里的完整消息为准**。线上的事件形状，Pi 的 `toJsonEvent` 和本章 `mox-rpc.ts` 里的 `toWire` 对照：
 
 ::: tabs
 @@ Pi
 @pi packages/coding-agent/src/modes/json-event.ts#L40-L61
 只处理 `message_update`：去掉累计快照，保留 `usage` 和增量；其他事件原样输出。
-@@ mox
-@code mox/src/rpc.ts#toWireEvent
-只挑出外部关心的七种事件，`text_delta` 平铺；内部事件的形状改了，协议不受影响。
+@@ mox-rpc
+@code labs/ch19/mox-rpc.ts#toWire
+mox 的 `Event` 本来就只有四种：`text` 是增量，没有累计快照，所以不用“去掉”，只需要改名字、挑出外部关心的字段。内部事件的形状改了，协议不受影响。
 :::
 
-还有一点：`agent_end` 只表示一次底层运行结束，之后还可能有自动重试、压缩后重试、排队的追加任务；`agent_settled` 才表示 Pi 不会再自己继续。mox 也在最后发一个。
+还有一点：`agent_end` 只表示一次底层运行结束，之后还可能有自动重试、压缩后重试、排队的追加任务；`agent_settled` 才表示 Pi 不会再自己继续。mox-rpc 没有重试和追加任务，两个事件总是前后脚发出；留着 `agent_settled` 是为了和 Pi 的客户端对得上。
 
 ## RPC：一条 stdout，三类记录
 
@@ -150,7 +196,7 @@ RPC 模式让 Agent 一直运行：命令走 stdin，响应和事件共用 stdou
 </defs>
 <g font-size="12" text-anchor="middle" fill="var(--ink)">
 <rect x="25" y="8" width="170" height="38" rx="8" fill="var(--bg-soft)" stroke="var(--line-2)"/><text x="110" y="31" font-weight="700">客户端（RpcClient）</text>
-<rect x="255" y="8" width="210" height="38" rx="8" fill="var(--bg-soft)" stroke="var(--line-2)"/><text x="360" y="31" font-weight="700">RPC 服务端（pi / mox 进程）</text>
+<rect x="255" y="8" width="210" height="38" rx="8" fill="var(--bg-soft)" stroke="var(--line-2)"/><text x="360" y="31" font-weight="700">RPC 服务端（pi / mox-rpc 进程）</text>
 <rect x="525" y="8" width="170" height="38" rx="8" fill="var(--ink)"/><text x="610" y="31" font-weight="700" fill="var(--bg)">AgentSession · 循环</text>
 <rect x="600" y="112" width="20" height="228" rx="4" fill="var(--accent-soft)" stroke="var(--accent)"/>
 </g>
@@ -199,15 +245,15 @@ Pi 的 RPC 服务端读到一行，就交给 `handleInputLine`：
 
 所以 `prompt` 的响应只说“收下了”：运行已开始（`started`）、排进队列（`queued`），或被扩展命令直接处理（`handled`，没有运行，别等 `agent_settled`）。做完看 `agent_settled`。
 
-`prompt` 命令的处理，Pi 的 RPC 服务端和 mox 的 `startRpc` 并排看：
+`prompt` 命令的处理，Pi 的 RPC 服务端和本章 `mox-rpc.ts` 的 `handle` 并排看：
 
 ::: tabs
 @@ Pi
 @pi packages/coding-agent/src/modes/rpc/rpc-mode.ts#L394-L429
 `void session.prompt(…)`，响应由 `preflightResult` 回调写出；运行中必须带 `streamingBehavior`。
-@@ mox
-@code mox/src/rpc.ts#L48-L57
-用 `busy` 标志在“收下”的那一刻置位；运行中的 `prompt` 一律作为插话排队（`queued`），否则 `started` 并开始运行。
+@@ mox-rpc
+@code labs/ch19/mox-rpc.ts#L67-L73
+`controller` 就是“正在运行”的标志，在“收下”的那个同步片段里创建；运行中的 `prompt` 一律作为插话排队（`queued`），否则 `started`、开始运行，`current = execute(…)` 不 await。
 :::
 
 让真实的 Pi 在运行 bash 时同时收到三条命令，看响应按什么顺序回来：
@@ -218,7 +264,7 @@ Pi 的 RPC 服务端读到一行，就交给 `handleInputLine`：
 - 先发的 `bash`（要跑 0.4 秒）响应最后到，后发的两条没有等它。**响应不按发送顺序回来**；表格是“按到达顺序认领”的后果：每个命令都拿到了别人的数据。
 - 事件没有 id，只有 `bash_execution_update` 例外：它是 bash 的流式输出，得告诉客户端属于哪条命令。
 - 扩展里的 `console.log` 出现在 stderr。所有记录经 `writeRawStdout` 排进同一条写队列，一条写完才写下一条，不会在一行中间交错。
-- mox 的命令都是同步处理的，响应顺序碰巧等于发送顺序，但协议不保证。最后一行是 mox 的一个真实 bug：`isRunning()` 要等 `execute` 里创建了 `AbortController` 才为真，背靠背的两条 `prompt` 都得到 `started`，开出两个并发的运行，往同一个会话里交错写消息。现在 `startRpc` 用 `busy` 标志在“收下”那一刻就置位。
+- mox-rpc 的命令也都是立刻处理的，响应顺序碰巧等于发送顺序，但协议不保证，客户端不能依赖。最后两行是背靠背的两条 `prompt`：第二条到达时，第一条已经把 `controller` 置位，所以得到 `queued`，只有一个运行。如果“正在运行”的标志要等运行真正开始（比如 `await` 之后）才置位，两条都会得到 `started`，开出两个并发的运行，往同一个会话里交错写消息。状态要在**决定**的地方改，而不是在**执行**的地方改。
 
 ::: steps RPC 的一次往返：三条命令同时在途
 --- 客户端发出 `prompt`，id 是 `p`。服务端的读循环 `void handleInputLine(line)`：**不 await**，这一行立刻开始处理。
@@ -338,23 +384,37 @@ flowchart LR
 
 **先**收集事件，**再**发提示。反过来的话，很快的运行可能在监听器装上之前就结束，客户端永远等不到 `agent_settled`。另一个坑：`prompt` 返回 `handled` 时没有运行，`promptAndWait` 会等到超时，调用方要自己看 `disposition`。
 
-让 Pi 自己的 `RpcClient` 同时驱动真实的 Pi 和 mox：
+让 Pi 自己的 `RpcClient` 同时驱动真实的 Pi 和本章的 `mox-rpc.ts`：
 
 @lab node labs/ch19/client.ts
 
-mox 只实现了 `prompt`、`abort`、`get_state`、`get_messages` 四条命令，但协议骨架（id、响应、事件）一致，同一个客户端能直接驱动它；没实现的命令得到 `success: false`，`RpcClient` 把它变成异常。第 5、6 行验证了上面读到的两条规则：`parse` 响应以事件身份到达，第一个监听器抛异常，第二个就收不到。最后一行是崩溃：`bash()` 挂起时进程被杀，请求立刻失败。
+`mox-rpc.ts` 只实现了 `prompt`、`abort`、`get_state`、`get_messages` 四条命令，但协议骨架（id、响应、事件）一致，同一个客户端能直接驱动它；没实现的命令得到 `success: false`，`RpcClient` 把它变成异常。第 5、6 行验证了上面读到的两条规则：`parse` 响应以事件身份到达，第一个监听器抛异常，第二个就收不到。最后一行是崩溃：`bash()` 挂起时进程被杀，请求立刻失败。
 
-### mox 的实现
+### 在 runLoop 之上写一个 RPC：六十行
 
-mox 的服务端是同一套结构，只留骨架：
+mox 没有 RPC，所以我们自己写一个，作为参考实现。它就是一个“宿主”：和 `cli.ts` 做同样的事（装配模型、工具、会话，调用 `runLoop`），只是输入输出换成了 stdin/stdout 上的 JSON。先看它怎么装配、怎么执行一次运行：
 
-@code mox/src/rpc.ts#startRpc collapse=true
+@code labs/ch19/mox-rpc.ts#L30-L60 hl=30,32,33,37,40,51,54,57
 
-对应关系：`handle` ↔ `handleCommand`，`respond` ↔ `success`/`error`，`toWireEvent` ↔ `toJsonEvent`；读 stdin 按字节里的 `\n` 切分（见“分帧”）。mox 的一次完整会话，`→` 是客户端发的，`←` 是 mox 回的：
+- **第 30–33 行：接管 stdout。** 把 `process.stdout.write` 换成写 stderr 的函数，自己留一个真正的写函数 `raw`。这就是 Pi 的 `takeOverStdout` 的做法，两行；之后任何库、工具里的 `console.log` 都落到 stderr，不会混进协议。
+- **第 37 行：工具直接执行。** RPC 里没有人可以问，所以没有 `beforeTool`。要审批，得把 `ask` 转给客户端（练习题；Pi 的 `extension_ui_response` 就是这条路）。
+- **第 40 行：`controller` 就是“正在运行”。** 有它就是忙，`undefined` 就是闲。
+- **第 51–54 行：** `runLoop` 的 `steer` 取走排队的插话，`onEvent` 里一边 `session.save` 持久化，一边把事件翻译成线上的形状写出去。
+- **第 57 行：先标记空闲，再通知。** 顺序重要：客户端一收到 `agent_settled` 就会发下一条 `prompt`，这时 `controller` 必须已经清掉，否则它会被当成插话排队。
+
+然后是命令处理和读循环：
+
+@code labs/ch19/mox-rpc.ts#handle hl=69,70,71,72,74 collapse=false
+
+- **第 69–73 行：`prompt`。** 运行中是插话（`queued`），空闲时创建 `controller`、回复 `started`、`current = execute(…)` 并且**不 await**。这一行的 `await` 如果加上，读命令的循环就被一次运行占住，运行期间的 `abort`、`get_state` 都得排在整个运行后面。
+- **第 74 行：`abort`。** `controller.abort()` 把信号交给 `runLoop`，它一路传到模型请求和 bash 工具（工具用 `signal` 终止进程组）；响应等 `current` 结束再写，和 Pi 一样：收到响应时会话已经空闲。
+- 读循环（最后两行）是一个异步迭代器，按字节里的 `\n` 切分（见“分帧”）；`handle(line)` 同步处理每一行，stdin 关闭后 `await current` 等运行结束再退出。
+
+对应关系：`handle` ↔ Pi 的 `handleCommand`，`respond` ↔ `success`/`error`，`toWire` ↔ `toJsonEvent`。一次完整的会话，`→` 是客户端发的，`←` 是 mox-rpc 回的（模型是本机起的假服务器）：
 
 @lab node labs/ch19/rpc.ts
 
-第 10 行的 `prompt` 到达时 mox 正在运行，作为插话排队（`queued`），下一轮被模型看到；写坏的命令得到 `parse` 失败响应，mox 继续运行。
+第 8 行的 `prompt` 到达时正在运行，作为插话排队（`queued`）；工具结果交回之后，第 12 行它作为用户消息送达，模型在第 13–14 行回复“没有警告”；写坏的命令得到 `parse` 失败响应，进程继续运行。
 
 ## 取消与退出：三个层次
 
@@ -362,9 +422,11 @@ mox 的服务端是同一套结构，只留骨架：
 
 | 层次 | 做法 | 效果 |
 | --- | --- | --- |
-| abort | RPC `abort` 命令；SDK `session.abort()` | 停掉当前运行，会话还能继续用 |
-| dispose | 关闭 stdin（Pi 的 `shutdown()`）；SDK `session.dispose()` | 中止运行、释放资源，会话不再复用 |
+| abort | RPC `abort` 命令；SDK `session.abort()`；mox 的 `controller.abort()` | 停掉当前运行，会话还能继续用 |
+| dispose | 关闭 stdin（Pi 的 `shutdown()`）；SDK `session.dispose()`；mox 的 `exit()` | 中止运行、释放资源，会话不再复用 |
 | 杀进程 | SIGTERM、SIGKILL | Pi 对 SIGTERM 也走 `shutdown`；`RpcClient.stop()` 先 SIGTERM，1 秒后 SIGKILL |
+
+mox 命令行里这三层的对应：Ctrl+C 在运行中调用 `controller.abort()`（abort），空闲时或输入 `/exit` 调用 `exit()`（触发 `shutdown` 事件、关闭 MCP，然后让进程自然结束）；杀进程就是操作系统的事，mox 没有信号处理。`abort` 的效果取决于信号传到多深：`cli.ts` 把同一个 `signal` 交给 `runLoop`、子 Agent 和每个工具，`bash` 工具监听它并杀掉整个进程组（`tools.ts` 的 `kill(-child.pid)`）。
 
 @figure assets/agent-sdk-illustrations/06-abort-vs-dispose.png abort 只停下当前运行，会话还能继续；dispose 断开监听、清理资源，会话不再复用
 
@@ -377,8 +439,9 @@ mox 的服务端是同一套结构，只留骨架：
 @lab node labs/ch19/abort.ts
 
 - **Pi**：abort 的响应排在 `agent_end`、`agent_settled`（`aborted=true`）之后。收到响应，会话已空闲，下一条 `prompt` 立刻开始新的运行。
-- **mox**：响应只说“取消信号已发出”，运行还要收尾。此时立刻发新 `prompt`，`isRunning()` 仍为真，它被当成插话排了队，没有新运行开始。mox 的客户端要等 `agent_settled` 才算取消完成。
-- **关闭 stdin**：Pi 立即中止运行并退出；mox 等当前运行结束再退出。想让它做完再走，要先等 `agent_settled` 再关 stdin。
+- **mox-rpc**：同样先收尾后回复。取消的路径是 `controller.abort()` → `runLoop` 的 `signal` → 模型请求（`fetch` 抛 AbortError）和正在跑的 bash（`tools.ts` 里监听 `abort`，杀掉整个进程组）。30 秒的命令不到 3 秒就返回了，表里的第三行就是这个证据。
+- **关闭 stdin**：Pi 立即中止运行并退出；mox-rpc 等当前运行结束再退出。想让它做完再走，要先等 `agent_settled` 再关 stdin。
+- 如果 `abort` 的响应改成“信号已发出”就立刻回复，客户端收到响应时运行还在收尾；这时发新的 `prompt` 会撞上 `controller` 还没清掉，被当成插话排队，而且这条消息要到下一次运行才会被取走（见下面的预测题）。
 - Pi 的文档还说明 `abort` 不清队列：界面上的 Esc 要先发 `clear_queue` 再发 `abort`。
 
 ## 分帧：只按 \n 切
@@ -395,7 +458,7 @@ Node 22 的 readline 并没有在 U+2028 处断行，注释可能描述的是旧
 
 ## 不调用模型，测试整条链路
 
-这一章的实验，包括真实的 Pi，都不调用模型。mox 用 `MOX_API=scripted MOX_SCRIPT=labs/ch19/script.ts`；Pi 的命令行没有这样的开关，实验用扩展 `labs/ch19/faux-ext.ts` 注册 faux 提供方，再 `--provider faux`。集成测试验证的是协议、事件顺序、进程生命周期、取消，和模型说了什么无关。下一章的评测则反过来，关心的正是真实模型的表现。
+这一章的实验，包括真实的 Pi，都不调用模型。mox 一侧，`mox` 命令行只能连 HTTP 接口，所以实验在本机起一个“假模型”服务器（`labs/shared/mox-cli.ts` 的 `startFakeModel`，OpenAI 兼容的流式接口，按剧本回复），把 `MOX_BASE_URL` 指过去：mox 走的是和真实模型完全相同的网络代码，只是对面的话由实验决定。直接用 `runLoop` 的实验更简单，`labs/shared/scripted.ts` 的 `scripted()` 本身就是一个 `Model` 函数。Pi 的命令行没有这样的开关，实验用扩展 `labs/ch19/faux-ext.ts` 注册 faux 提供方，再 `--provider faux`。集成测试验证的是协议、事件顺序、进程生命周期、取消，和模型说了什么无关。下一章的评测则反过来，关心的正是真实模型的表现。
 
 ::: compare Claude Code：`-p` 与 Agent SDK
 - **打印与事件流**：`claude -p "任务"` 对应打印模式；`--output-format` 可选 `text`、`json`、`stream-json`。`stream-json` 每行一个事件，需要加 `--verbose`，再加 `--include-partial-messages` 才有 token 级增量（`stream_event`）。流以 `system/init` 开头，最后一行是带结果、花费和会话信息的 `result`；Pi 没有单独的结果记录，最终回答就是最后一条 `message_end`。
@@ -405,16 +468,22 @@ Node 22 的 readline 并没有在 U+2028 处断行，注释可能描述的是旧
 
 ## 你来改
 
-::: predict 去掉 busy 标志会怎样？
-把 mox `startRpc` 里的 `busy` 去掉，只用 `host.isRunning()` 判断“正在运行”。客户端背靠背写两条 `prompt`。两条的响应各是什么？会出现几个 `agent_start`？
+::: predict 让读命令的循环等一等运行
+把 `labs/ch19/mox-rpc.ts` 最后的读循环改成 `await handle(line)`，并把 `handle` 改成 `async`，`prompt` 分支里的 `current = execute(…)` 改成 `await execute(…)`。然后运行 `node labs/ch19/wire.ts`。背靠背的两条 `prompt` 各得到什么？
 ???
-两条都得到 `started`，出现两个 `agent_start`，两个循环交错运行，共用一个会话。原因：`isRunning()` 看的是 `controller` 是否存在，而 `controller` 要等 `run` 里的 `await host.emitInput(...)` 和 `execute` 里的 `await maybeCompact()` 之后才创建；第一条命令在第一个 `await` 处就让出了控制权，第二条进来时 `controller` 还是空的。两个循环往同一个会话追加消息，工具调用和结果的对应会乱，下一次请求可能被服务商直接拒绝。修复是在“收下”的那一刻就置位：状态要在**决定**的地方改，而不是在**执行**的地方改。改回去再运行 `node labs/ch19/wire.ts`，最后的断言会失败。
+两条都得到 `started`（`p1=started，p2=started`），实验最后一段的断言失败。读循环被第一条 `prompt` 的整个运行占住，第二条命令要等第一个运行结束才被读到；那时 `controller` 已经清掉，它开始了一个新的运行，而不是排队成插话。更严重的是同样的原因会让运行期间的 `abort`、`get_state` 全部排在运行之后：`abort` 变成无法取消的取消。Pi 的读循环用 `void handleInputLine(line)` 防的正是这个。
 :::
 
-::: predict abort 的响应到了，马上发下一条 prompt
-客户端发出 `abort`，一收到它的响应就立刻发一条新的 `prompt`。对真实的 Pi 和对 mox，这条 `prompt` 的响应各是什么？
+::: predict abort 一收到就回复
+把 `mox-rpc.ts` 的 `case 'abort'` 改成 `controller?.abort(); return respond(true);`（不等 `current`）。客户端收到 abort 的响应后立刻发一条 `prompt`，得到什么？运行得到的结果是确定的吗？
 ???
-Pi：`started`，新的运行立刻开始。Pi 的 `abort` 要等会话空闲才回复，响应到达时旧的运行已经结束。mox：`queued`，而且没有新运行开始。mox 的 `abort` 同步回复，旧的运行还在收尾（`controller` 还在），新 `prompt` 被当成插话排进队列，要等下一次运行启动才会被取走。同一个“响应”，有的实现是“已发出”，有的是“已完成”：客户端要读文档、做实验，或只信 `agent_settled`。（`node labs/ch19/abort.ts` 的第四行。）
+通常是 `started`，但不确定，取决于时序。`abort` 之后运行的收尾（bash 被杀、下一次模型请求抛 AbortError、`controller` 被清掉）只要几毫秒；客户端从收到响应到发出新命令，也是几毫秒。收尾先完成，新 `prompt` 得到 `started`；收尾还没完成，`controller` 还在，它被当成插话排队，得到 `queued`。`queued` 的那一句话还会留在 `steering` 里，要到**下一次**运行才被取走，等于一条迟到的插话。这就是 Pi 选择“等会话空闲再回复 abort”的原因：把一个取决于时序的行为，变成确定的。
+:::
+
+::: predict 把工具的审批转给客户端
+`mox-rpc.ts` 没有 `beforeTool`，bash 命令直接执行。要在 RPC 里加上审批，你会在协议里加什么？先写下客户端和服务端各发什么记录、`runLoop` 在等的时候读循环能不能被阻塞。
+???
+一种可行的设计（Pi 的 `extension_ui_response` 就是这样）：给 `runLoop` 传 `beforeTool`，它写出一条事件 `{"type":"approval_request","id":"a1","tool":"bash","args":{…}}`，返回一个 Promise 挂在 `pending` 表里；客户端回一条命令 `{"type":"approval_response","id":"a1","allow":true}`，读循环的 `handle` 找到 `pending['a1']` 并 resolve。这个设计能工作的前提正是第一道题的结论：读循环不能被运行占住，否则 `approval_response` 永远读不到，`runLoop` 永远等下去，死锁。要处理的边界：客户端断开时怎么办（stdin 关闭要把所有 pending 当拒绝）、`abort` 时要 reject 掉 pending、超时。
 :::
 
 ## 面试题
@@ -422,8 +491,8 @@ Pi：`started`，新的运行立刻开始。Pi 的 `abort` 要等会话空闲才
 先自己回答，再展开对照要点。
 
 ::: interview 要把一个 Agent 集成进 IDE / CI / Web 应用，有哪些方式？怎么选？
-- **SDK**（进程内）：宿主是同一种语言，要完整的 API 和零开销；代价是没有隔离，Agent 崩溃就是宿主崩溃。
-- **打印模式**：脚本里只要最终文字；退出码反映成败（Pi 里 error、aborted、length 都是 1）。
+- **SDK**（进程内）：宿主是同一种语言，要完整的 API 和零开销；代价是没有隔离，Agent 崩溃就是宿主崩溃。mox 的 SDK 就是 import `runLoop` 等模块。
+- **打印模式**：脚本里只要最终文字；退出码反映成败（Pi 里 error、aborted、length 都是 1；mox 的 `-p` 失败时退出码 1，但错误信息写在 stdout 上，和工具调用的输出混在一起）。
 - **JSON 事件流**：一次性任务要过程信息（工具调用、用量），比如 CI；成败要读事件，不看退出码。
 - **RPC**（长期运行的子进程）：其他语言、需要隔离、需要多轮交互和控制（插话、取消、切换模型），比如 IDE 插件。
 - 关键是三问：要不要进程边界，一次性还是长期，需要多少控制。加分点：Pi 的几种方式共用同一个 `AgentSession`，差别只在输入输出的形式。
@@ -453,12 +522,12 @@ Pi：`started`，新的运行立刻开始。Pi 的 `abort` 要等会话空闲才
 :::
 
 ::: interview 取消一次运行，有哪几个层次？它们的区别是什么？
-- **abort**：停掉当前运行，会话保留，可以继续 `prompt`。响应何时回复取决于实现：Pi 等会话空闲才回复，收到就能发下一条；mox 回复的只是“信号已发出”，要等 `agent_settled`。
+- **abort**：停掉当前运行，会话保留，可以继续 `prompt`。响应何时回复取决于实现：等会话空闲才回复（Pi），收到就能发下一条；如果只回复“信号已发出”，客户端要等 `agent_settled` 才算取消完成。mox 用的是 `AbortController`，信号一路传到模型请求和 bash 的进程组。
 - **dispose / 关闭 stdin**：中止运行并释放资源（断开监听、让扩展上下文失效），会话不再复用。想让运行做完再退出，要先等 `agent_settled`。
 - **杀进程**：SIGTERM 给善后的机会，SIGKILL 没有；客户端要让所有在途请求同时失败。
 - 加分点：取消要传到最底层，bash 的进程树要被杀掉（第 5 章），否则运行“停了”，子进程还在跑；`abort` 不清排队的消息，需要时先 `clear_queue`。
 :::
 
 ::: interview 不调用真实模型，怎样测试 Agent 的集成？
-用脚本化的模型（Pi 的 faux 提供方、mox 的 scripted）：按请求内容返回预先写好的回复和工具调用，仍走真实的流式事件路径。这样可以确定、快速、免费地测试协议、事件顺序、工具执行、取消、错误恢复、进程生命周期；对真实的 Pi 进程，用扩展注册这样的提供方。它测不了“模型会不会这样做”，那是评测（evals）的事。让输出稳定：固定随机数、不打印时间戳、不依赖事件个数（增量的分块可能随机）。
+用脚本化的模型（Pi 的 faux 提供方、mox 的 scripted 或本机起的假模型服务器）：按请求内容返回预先写好的回复和工具调用，仍走真实的流式事件路径。这样可以确定、快速、免费地测试协议、事件顺序、工具执行、取消、错误恢复、进程生命周期；对真实的 Pi 进程，用扩展注册这样的提供方。它测不了“模型会不会这样做”，那是评测（evals）的事。让输出稳定：固定随机数、不打印时间戳、不依赖事件个数（增量的分块可能随机）。
 :::

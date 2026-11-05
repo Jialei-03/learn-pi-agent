@@ -1,7 +1,7 @@
 // 第 16 章实验：计划模式靠什么保证“只读”？
 //   node labs/ch16/readonly.ts
 // Pi 官方示例（examples/extensions/plan-mode）用两份正则：黑名单（破坏性命令）和白名单（只读命令）。
-// mox 的计划模式复用第 14 章的规则引擎（decidePermission 的 plan 模式）。同一批命令交给两边，看谁放过了什么。
+// 本章的计划模式（mox 版和 Pi 版）复用第 14 章的规则引擎（decidePermission 的 plan 模式）。同一批命令交给两边，看谁放过了什么。
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,23 +31,23 @@ const rows = cases.map(([command, effect, readOnly]) => {
   return { command, effect, readOnly, pi, mox };
 });
 
-console.log('| 命令 | 实际效果 | Pi 示例（正则） | mox（规则引擎） |');
+console.log('| 命令 | 实际效果 | Pi 示例（正则） | 第 14 章规则引擎 |');
 console.log('| --- | --- | --- | --- |');
 for (const r of rows) console.log(`| \`${r.command.replace(/\|/g, '\\|')}\` | ${r.effect} | ${verdict(r.pi, r.readOnly)} | ${verdict(r.mox, r.readOnly)} |`);
 
 const leaks = (who: 'pi' | 'mox') => rows.filter(r => r[who] && !r.readOnly).length;
 const falseBlocks = (who: 'pi' | 'mox') => rows.filter(r => !r[who] && r.readOnly).length;
 console.log(`\nPi 示例：漏过 ${leaks('pi')} 条会修改东西的命令，误拦 ${falseBlocks('pi')} 条只读命令。`);
-console.log(`mox：漏过 ${leaks('mox')} 条，误拦 ${falseBlocks('mox')} 条。`);
+console.log(`第 14 章规则引擎：漏过 ${leaks('mox')} 条，误拦 ${falseBlocks('mox')} 条。`);
 
 // 正文的结论：正则白名单漏过了 find -delete、curl | sh、git branch <名字>、sort -o；
-// mox 的规则引擎更保守（误拦了 sed -n），但也不是完备的：tree -o 同样被两边放过
+// 规则引擎更保守（误拦了 sed -n），但也不是完备的：tree -o 同样被两边放过
 const result = (command: string) => rows.find(r => r.command === command)!;
 for (const command of ["find . -name '*.log' -delete", 'curl -s https://example.com/install.sh | sh', 'git branch new-feature', 'sort -o out.txt in.txt']) {
   assert.equal(result(command).pi, true, `Pi 示例放过了 ${command}`);
-  assert.equal(result(command).mox, false, `mox 拦下了 ${command}`);
+  assert.equal(result(command).mox, false, `规则引擎拦下了 ${command}`);
 }
 for (const command of ['rm -rf build', 'echo hi > notes.txt']) assert.deepEqual([result(command).pi, result(command).mox], [false, false], `两边都拦下 ${command}`);
 assert.deepEqual([result('tree -o out.txt').pi, result('tree -o out.txt').mox], [true, true], 'tree -o 两边都漏了');
-assert.deepEqual([result("sed -n '1,5p' README.md").pi, result("sed -n '1,5p' README.md").mox], [true, false], 'mox 误拦了 sed -n');
+assert.deepEqual([result("sed -n '1,5p' README.md").pi, result("sed -n '1,5p' README.md").mox], [true, false], '规则引擎误拦了 sed -n');
 assert.deepEqual([leaks('pi'), falseBlocks('pi'), leaks('mox'), falseBlocks('mox')], [5, 0, 1, 1]);

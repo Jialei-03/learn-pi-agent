@@ -4,12 +4,17 @@
 //   - 插了一句 S：“只用一句话回答”（steering）
 //   - 追加了一个任务 F：“再列出 src 目录”（follow-up）
 // 模型的每次回复都会说出“我这次看到了哪几条用户消息”。
+//
+// mox 的 runLoop 只有 steer 一个队列。追加任务在循环外面：命令行（cli.ts 第 124-132 行）在 runLoop 返回后
+// 问扩展的 agent_end 事件“还有下一句吗”，有就把它当新的用户消息，再调一次 runLoop。这里原样照做，
+// 并且真的用 loadExtensions 装一个 agent_end 扩展。
 import { runAgentLoop } from '@earendil-works/pi-agent-core';
 import { createFauxCore, fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/providers/faux';
 import { obj, str } from '@earendil-works/pi-schema';
-import { runLoop } from '../../mox/src/loop.ts';
-import { scripted } from '../../mox/src/providers/scripted.ts';
-import type { Message, UserMessage } from '../../mox/src/types.ts';
+import { loadExtensions } from '../../mox/src/extensions.ts';
+import { runLoop, type Tool } from '../../mox/src/loop.ts';
+import type { Msg } from '../../mox/src/model.ts';
+import { scripted } from '../shared/scripted.ts';
 
 const U = '读取 README.md，介绍这个项目';
 const S = '只用一句话回答';
@@ -23,28 +28,32 @@ function reply(userTexts: string[], n: number) {
 }
 
 async function withMox() {
-  const steering: UserMessage[] = [];
-  const followUp: UserMessage[] = [];
+  const steering: string[] = [];
+  const followUp: string[] = [];
   const seen: string[] = [];
-  const model = scripted((ctx, n) => {
-    const texts = ctx.messages.filter(m => m.role === 'user').map(m => (m as UserMessage).content);
+  const model = scripted((messages, n) => {
+    const texts = messages.filter(m => m.role === 'user').map(m => m.content as string);
     seen.push(texts.map(short).join(' '));
     const r = reply(texts, n);
-    return r.tool ? { toolCalls: [{ name: 'read_file', arguments: { path: 'README.md' } }] } : { text: r.text };
+    return r.tool ? { toolCalls: [{ name: 'read', arguments: { path: 'README.md' } }] } : { text: r.text };
   });
-  const tools = [{
-    name: 'read_file', description: '读文件', parameters: {},
-    execute() {
-      steering.push({ role: 'user', content: S });                     // 工具运行期间，用户插话
-      followUp.push({ role: 'user', content: F });                     // 同时追加一个任务
+  const tools: Tool[] = [{
+    name: 'read', description: '读文件', parameters: { type: 'object', properties: { path: { type: 'string' } } },
+    run() {
+      steering.push(S);                                                // 工具运行期间，用户插话
+      followUp.push(F);                                                // 同时追加一个任务
       return '# Mox Notes';
     },
   }];
-  const { messages } = await runLoop([], [{ role: 'user', content: U }], {
-    model, systemPrompt: '', tools,
-    getSteering: () => steering.splice(0),
-    getFollowUp: () => followUp.splice(0),
-  });
+  // 扩展：Agent 准备停下时，如果还有追加的任务，就把它作为下一句话
+  const extensions = await loadExtensions([mox => mox.on('agent_end', () => followUp.shift())], { cwd: '.', tools, ask: async () => undefined });
+  const messages: Msg[] = [];
+  let text: string | undefined = U;
+  while (text) {                                                       // 这几行就是 cli.ts 的 run()
+    messages.push({ role: 'user', content: text });
+    const final = await runLoop(messages, { model, system: '', tools, steer: () => steering.splice(0) });
+    text = extensions.text(await extensions.emit('agent_end', final));
+  }
   return { seen, order: messages.map(describe) };
 }
 
@@ -59,11 +68,11 @@ async function withPi() {
     seen.push(texts.map(short).join(' '));
     const r = reply(texts, i + 1);
     return r.tool
-      ? fauxAssistantMessage(fauxToolCall('read_file', { path: 'README.md' }, { id: 'read-1' }), { stopReason: 'toolUse' })
+      ? fauxAssistantMessage(fauxToolCall('read', { path: 'README.md' }, { id: 'read-1' }), { stopReason: 'toolUse' })
       : fauxAssistantMessage(r.text);
   }));
   const tool = {
-    name: 'read_file', label: 'read_file', description: '读文件', parameters: obj({ path: str() }),
+    name: 'read', label: 'read', description: '读文件', parameters: obj({ path: str() }),
     async execute() {
       steering.push({ role: 'user', content: S, timestamp: 1 });
       followUp.push({ role: 'user', content: F, timestamp: 2 });
@@ -81,14 +90,13 @@ async function withPi() {
     () => {}, undefined,
     (m, c, o) => faux.streamSimple(m, c, o),
   );
-  return { seen, order: added.filter((m: any) => m.role !== 'system').map((m: any) => describe({ ...m, content: m.role === 'assistant' ? m.content : textOf(m.content) })) };
+  return { seen, order: added.filter((m: any) => m.role !== 'system').map((m: any) => describe({ ...m, content: m.role === 'user' ? textOf(m.content) : m.content, tool_calls: m.content?.some?.((b: any) => b.type === 'toolCall') ? [1] : undefined, role: m.role === 'toolResult' ? 'tool' : m.role })) };
 }
 
-function describe(m: Message | any): string {
+function describe(m: any): string {
   if (m.role === 'user') return short(m.content);
-  if (m.role === 'toolResult') return 'R';
-  const call = m.content.find((b: any) => b.type === 'toolCall');
-  return call ? 'A(read)' : 'A';
+  if (m.role === 'tool') return 'R';
+  return m.tool_calls?.length ? 'A(read)' : 'A';
 }
 
 for (const [label, run] of [['mox', withMox], ['Pi', withPi]] as const) {

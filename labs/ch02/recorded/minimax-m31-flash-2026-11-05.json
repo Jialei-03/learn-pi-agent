@@ -1,0 +1,371 @@
+{
+  "kind": "real-api-sanitized-observation",
+  "captured_at_utc": "2026-11-05T03:37:06.883168+00:00",
+  "model_requested": "MiniMax-M3.1-Flash",
+  "endpoint": "https://api.minimaxi.com/v1/chat/completions",
+  "source": "real MiniMax API; synthetic prompt and temporary file; no scripted reply",
+  "first_response": {
+    "role": "assistant",
+    "content": "I'll read the README file for you.",
+    "tool_calls": [
+      {
+        "id": "call_01a1a9c8143f76dd8a8bfee9",
+        "type": "function",
+        "function": {
+          "name": "read_file",
+          "arguments": "{\"path\":\"README.md\"}"
+        }
+      }
+    ],
+    "reasoning_content_omitted": true,
+    "reasoning_chars": 0,
+    "reasoning_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "model_reported": "MiniMax-M3.1-Flash",
+    "finish_reason": "tool_calls",
+    "usage": {
+      "total_tokens": 494,
+      "total_characters": 0,
+      "prompt_tokens": 457,
+      "completion_tokens": 37,
+      "completion_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "cached_tokens": 456
+      }
+    },
+    "visible_sse_deltas": [
+      {
+        "delta": {
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": "I'll",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " read the README",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " file",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " for you",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": ".",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "id": "call_01a1a9c8143f76dd8a8bfee9",
+              "type": "function",
+              "function": {
+                "name": "read_file",
+                "arguments": ""
+              },
+              "index": 0
+            }
+          ]
+        }
+      },
+      {
+        "delta": {
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "{"
+              },
+              "index": 0
+            }
+          ]
+        }
+      },
+      {
+        "delta": {
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "\"path\":\"README.md\""
+              },
+              "index": 0
+            }
+          ]
+        }
+      },
+      {
+        "delta": {
+          "role": "assistant",
+          "tool_calls": [
+            {
+              "function": {
+                "arguments": "}"
+              },
+              "index": 0
+            }
+          ]
+        }
+      },
+      {
+        "delta": {
+          "role": "assistant"
+        }
+      }
+    ]
+  },
+  "tool_result_sent": {
+    "role": "tool",
+    "tool_call_id": "call_01a1a9c8143f76dd8a8bfee9",
+    "content": "# Demo\nThis project counts apples.\n"
+  },
+  "second_response": {
+    "content": "The README is quite minimal — it just says:\n\n# Demo\nThis project counts apples.\n\nSo, based on the README alone, this is a small demonstration project whose purpose is counting apples. There's no further detail about the language, framework, or how the counting is performed — if you need that, you'd have to look at the source code or other docs in the project.",
+    "reasoning_content_omitted": true,
+    "model_reported": "MiniMax-M3.1-Flash",
+    "finish_reason": "stop",
+    "usage": {
+      "total_tokens": 599,
+      "total_characters": 0,
+      "prompt_tokens": 516,
+      "completion_tokens": 83,
+      "completion_tokens_details": {
+        "reasoning_tokens": 5
+      },
+      "prompt_tokens_details": {
+        "cached_tokens": 462
+      }
+    },
+    "visible_sse_deltas": [
+      {
+        "delta": {
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": "The README is",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " quite",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " minimal",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " —",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " it just says",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": ":\n\n#",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " Demo\nThis",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " project counts apples.\n\nSo,",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " based on the",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " README alone",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": ", this is",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " a small",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " demonstration project whose purpose",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " is counting apples.",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " There's no further detail",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " about",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " the language",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": ", framework",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": ", or how the",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " counting is",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " performed",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " — if",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " you",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " need that",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": ", you'd",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " have",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " to look at the source code",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " or",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " other",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " docs",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "content": " in the project.",
+          "role": "assistant"
+        }
+      },
+      {
+        "delta": {
+          "role": "assistant"
+        }
+      }
+    ]
+  },
+  "checks": {
+    "tool_id_copied_from_response": true,
+    "reasoning_returned_unchanged": null,
+    "final_answer_received": true
+  }
+}

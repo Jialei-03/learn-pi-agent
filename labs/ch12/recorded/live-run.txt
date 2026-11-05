@@ -1,32 +1,30 @@
-$ mox --trust -p "看看现在有哪些 open 的 issue。如果没有关于“MCP 服务器断线重连”的，就新建一个，标签用 feature。最后告诉我你做了什么。"
+$ mox --trust --yolo -p "看看现在有哪些 open 的 issue。如果没有关于“MCP 服务器断线重连”的，就新建一个，标签用 feature。最后告诉我你做了什么。"
 
-[mcp:issues] 已连接 issues，8 个工具
-I'll check the open issues first.
+我先看看当前有哪些 open 的 issue。
 ● mcp__issues__search_issues {"query":"","state":"open"}
   ✓ #41 [open] mox -p 模式下 Ctrl+C 不退出 #42 [open] 压缩后丢失文件列表 #43 [open] 支持 MCP
-Let me also search specifically for reconnect-related issues to be thorough.
-● mcp__issues__search_issues {"query":"断线重连","state":"all"}
 
-● mcp__issues__search_issues {"query":"MCP","state":"all"}
-  ✓ 没有匹配的 issue
+● mcp__issues__search_issues {"query":"MCP","state":"open"}
   ✓ #43 [open] 支持 MCP
-No reconnect-related issue exists. Creating one:
-● mcp__issues__create_issue {"title":"MCP 服务器断线重连","labels":["feature"]}
+再针对“断线重连”相关关键词确认一下。
+● mcp__issues__search_issues {"query":"重连","state":"all"}
+  ✓ 没有匹配的 issue
+
+● mcp__issues__search_issues {"query":"断线","state":"all"}
+  ✓ 没有匹配的 issue
+
+● mcp__issues__search_issues {"query":"reconnect","state":"all"}
+  ✓ 没有匹配的 issue
+没有关于重连的 issue，现在新建。
+● mcp__issues__create-issue {"title":"MCP 服务器断线重连","labels":["feature"]}
   ✓ 已创建 #44
-## 做了什么
 
-**1. 查看了当前的 open issue（共 3 个）**
-- #41 [open] mox -p 模式下 Ctrl+C 不退出
-- #42 [open] 压缩后丢失文件列表
-- #43 [open] 支持 MCP
+● mcp__issues__search_issues {"query":"","state":"open"}
+  ✓ #41 [open] mox -p 模式下 Ctrl+C 不退出 #42 [open] 压缩后丢失文件列表 #43 [open] 支持 MCP #44 [open] MCP 服务器断线重连
+做完了：
 
-**2. 查重**
-- 搜索「断线重连」（全部状态）：无匹配
-- 搜索「MCP」（全部状态）：只有 #43「支持 MCP」，内容是"MCP 支持"方向，与"断线重连"不是同一件事
+- **查看现有 open issue**：#41 mox -p 模式下 Ctrl+C 不退出、#42 压缩后丢失文件列表、#43 支持 MCP。
+- **确认无重连相关 issue**：搜索了「重连」「断线」「reconnect」（含已关闭的全部状态），均无匹配。现有的 #43 只是笼统的「支持 MCP」，不涉及断线重连。
+- **新建 issue**：**#44 MCP 服务器断线重连**，标签为 `feature`。
 
-确认没有关于「MCP 服务器断线重连」的 issue。
-
-**3. 新建 issue**
-- **#44 [open] MCP 服务器断线重连**，标签 `feature`
-
-需要我给 #44 补充更详细的问题描述或验收标准吗？
+当前 open issue 共 4 个。

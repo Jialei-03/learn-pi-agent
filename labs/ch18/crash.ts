@@ -1,66 +1,78 @@
-// 第 18 章实验：进程在工具执行期间被杀死，重启后怎么继续？
+// 第 18 章实验：进程在工具执行期间被杀死，重启后怎么继续？跑的是真正的 mox 命令行。
 //   node labs/ch18/crash.ts
+// ① mox -p 执行部署：模型一次发出三个调用（读 README、部署并等待、读源码）。部署命令把一行写进 deploy.log 之后还在 sleep，这时 kill -9。
+// ② 看会话文件里留下了什么。③ 朴素的恢复：把没有结果的调用重新执行。④ mox 的恢复：mox -c 打开会话，session.ts 给没有结果的调用补“中断”。
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createCodingTools } from '../../mox/src/coding/index.ts';
-import { runLoop } from '../../mox/src/loop.ts';
-import { scripted } from '../../mox/src/providers/scripted.ts';
-import { findInterrupted, INTERRUPTED, settleInterrupted } from '../../mox/src/resume.ts';
-import { Session } from '../../mox/src/session.ts';
-import { runTools } from '../../mox/src/tools.ts';
+import { codingTools } from '../../mox/src/tools.ts';
+import { killGroup, spawnMox, startFakeModel, type CliScript } from '../shared/mox-cli.ts';
 
-const root = mkdtempSync(join(tmpdir(), 'ch18-'));
-const cwd = join(root, 'project');
-cpSync(fileURLToPath(new URL('../fixtures/mox-project', import.meta.url)), cwd, { recursive: true });
-const sessions = join(root, 'sessions');
-const lines = (dir: string) => (existsSync(join(dir, 'deploy.log')) ? readFileSync(join(dir, 'deploy.log'), 'utf8').trim().split('\n').length : 0);
+const root = mkdtempSync(join(tmpdir(), 'ch18-crash-'));
+const cwd = join(root, 'project'), home = join(root, 'home');
+mkdirSync(join(cwd, 'src'), { recursive: true });
+writeFileSync(join(cwd, 'README.md'), '# demo\n部署：echo 部署 v2 >> deploy.log\n');
+writeFileSync(join(cwd, 'src', 'app.js'), "console.log('app');\n");
+const deploys = (dir: string) => (existsSync(join(dir, 'deploy.log')) ? readFileSync(join(dir, 'deploy.log'), 'utf8').trim().split('\n').length : 0);
+const deploy = 'echo "部署 v2" >> deploy.log && sleep 30';
 
-// ① 子进程跑 mox，部署命令一执行完就把它杀掉（sleep 30 还在跑）
-const child = spawn(process.execPath, [fileURLToPath(new URL('./crash-child.ts', import.meta.url)), cwd, sessions], { stdio: ['ignore', 'pipe', 'inherit'] });
-const file = await new Promise<string>(resolve => child.stdout.once('data', d => resolve(String(d).trim())));
+// ① 第一次运行：部署命令的效果已经发生（deploy.log 有了一行），命令本身还在 sleep 的时候，整个进程组被 kill -9
+const crashing: CliScript = () => ({ toolCalls: [
+  { id: 'c1', name: 'read', arguments: { path: 'README.md' } },
+  { id: 'c2', name: 'bash', arguments: { command: deploy } },
+  { id: 'c3', name: 'read', arguments: { path: 'src/app.js' } },
+] });
+const first = await startFakeModel(crashing);
+const run = spawnMox(['-p', '部署 v2，然后等它跑完', '--yolo'], { cwd, home, url: first.url });
 while (!existsSync(join(cwd, 'deploy.log'))) await new Promise(r => setTimeout(r, 20));
-child.kill('SIGKILL');
-await new Promise(r => child.once('close', r));
+killGroup(run);
+await run.done;
+first.close();
 
-const session = Session.open(file);
-console.log('━━ 进程被杀之后 ━━');
-console.log(`会话记录：${session.messages().map(m => (m.role === 'assistant' ? `assistant（${m.content.filter(b => b.type === 'toolCall').length} 个工具调用）` : m.role)).join(' → ')}`);
-console.log(`deploy.log：${lines(cwd)} 行——部署命令其实已经执行了，但它的结果没来得及写进会话（同一批的结果要等所有工具执行完才一起写）`);
+// ② 会话文件：消息一产生就追加，所以被杀时已经发生的事都在里面
+const dir = join(home, '.mox', 'sessions'), sessionDir = join(dir, readdirSync(dir)[0]);
+const file = join(sessionDir, readdirSync(sessionDir)[0]);
+const records = () => readFileSync(file, 'utf8').trim().split('\n').map(l => JSON.parse(l).message);
+const unanswered = (messages: any[]) => {
+  const answered = new Set(messages.filter(m => m.role === 'tool').map(m => m.tool_call_id));
+  return messages.flatMap(m => m.tool_calls ?? []).map((c: any) => c.id).filter((id: string) => !answered.has(id));
+};
+const brief = (m: any) => (m.role === 'assistant' ? `assistant（${m.tool_calls.length} 个工具调用）` : m.role === 'tool' ? `tool(${m.tool_call_id})` : m.role);
+console.log('━━ kill -9 之后 ━━');
+console.log(`会话记录：${records().map(brief).join(' → ')}`);
+console.log(`没有结果的调用：${unanswered(records()).join('、')}`);
+console.log(`deploy.log：${deploys(cwd)} 行——部署的效果已经发生了；c3（读源码）其实还没有开始，可是会话里它和 c2 看起来一模一样：都没有结果`);
+assert.deepEqual(records().map(m => m.role), ['user', 'assistant', 'tool']);
+assert.deepEqual(unanswered(records()), ['c2', 'c3']);
+assert.equal(deploys(cwd), 1);
 
-// 正文的结论：会话里只有三个工具调用、一个结果都没有，可是部署命令已经执行了一次
-assert.deepEqual(session.messages().map(m => m.role), ['user', 'assistant']);
-assert.equal(findInterrupted(session.messages()).length, 3);
-assert.equal(lines(cwd), 1);
-
-// ② 朴素的做法：把没有结果的调用全部重新执行一遍（在项目的副本上试）
+// ③ 朴素的做法：把没有结果的调用全部重新执行（在项目的副本上试，部署命令只给 1 秒）
 const copy = join(root, 'naive');
 cpSync(cwd, copy, { recursive: true });
-const calls = findInterrupted(session.messages());
-await runTools(calls.filter(c => c.id !== 'c3'), createCodingTools(copy), { emit: () => {} });
-console.log(`\n━━ 朴素做法：全部重新执行 ━━\ndeploy.log：${lines(copy)} 行——同一次部署执行了两遍`);
-
-// ③ mox 的做法：read 重放安全，直接重新执行；两个 bash 写“中断”结果，让模型自己查证
-const tools = createCodingTools(cwd);
-const settled = await settleInterrupted(calls, tools);
-// read 重放安全，重新执行；两个 bash 写“中断”结果
-assert.deepEqual(settled.map(r => r.content === INTERRUPTED), [false, true, true]);
-for (const r of settled) session.appendMessage(r);
-console.log('\n━━ mox 的做法 ━━');
-for (const r of settled) console.log(`${r.toolName}（${calls.find(c => c.id === r.toolCallId)?.id}）：${r.content === INTERRUPTED ? '中断，交给模型查证' : `重放安全，重新执行 → ${r.content.split('\n')[0].slice(0, 30)}…`}`);
-const model = scripted(c => {
-  const results = c.messages.filter(m => m.role === 'toolResult');
-  if (!results.some(r => r.role === 'toolResult' && r.toolCallId === 'check')) return { toolCalls: [{ id: 'check', name: 'bash', arguments: { command: 'cat deploy.log 2>/dev/null || echo "（没有 deploy.log）"' } }] };
-  return { text: 'deploy.log 里已经有“部署 v2”：部署命令在中断前已经执行，不再重复。sleep 只是在等待，跳过。' };
-});
-const { messages } = await runLoop(session.messages(), [], { model, systemPrompt: '', tools, onEvent: e => { if (e.type === 'message') session.appendMessage(e.message); } });
-for (const m of messages) {
-  if (m.role === 'assistant') for (const b of m.content) { if (b.type === 'toolCall') console.log(`模型 → ${b.name} ${JSON.stringify(b.arguments)}`); if (b.type === 'text') console.log(`模型：${b.text}`); }
-  if (m.role === 'toolResult') console.log(`  ✓ ${m.content.trim()}`);
+const calls = records()[1].tool_calls.filter((c: any) => unanswered(records()).includes(c.id));
+for (const call of calls) {
+  const args = JSON.parse(call.function.arguments);
+  // 部署命令后面跟着 sleep 30：只给它 1 秒，超时被杀会抛出错误，效果（deploy.log 多一行）已经发生了
+  try { await codingTools(copy).find(t => t.name === call.function.name)!.run(call.function.name === 'bash' ? { ...args, timeout: 1 } : args); } catch { /* 超时被杀 */ }
 }
-console.log(`deploy.log：${lines(cwd)} 行`);
-assert.equal(lines(cwd), 1, 'mox 的做法：模型查证之后没有重复部署');
-void writeFileSync;
+console.log(`\n━━ 朴素做法：全部重新执行 ━━\ndeploy.log：${deploys(copy)} 行——同一次部署执行了两遍`);
+assert.equal(deploys(copy), 2);
+
+// ④ mox 的做法：mox -c 恢复这个会话。session.ts 给没有结果的调用补一条“中断”，对话才是合法的
+const resumed: CliScript = ({ messages }, n) => (n === 1
+  ? { toolCalls: [{ name: 'bash', arguments: { command: 'cat deploy.log' } }] }
+  : { text: `deploy.log 里已经有“部署 v2”：部署命令在中断前已经执行，不再重复。（${messages.filter(m => m.role === 'tool').length} 个工具结果）` });
+const second = await startFakeModel(resumed);
+const again = spawnMox(['-c', '-p', '继续刚才的部署', '--yolo'], { cwd, home, url: second.url });
+await again.done;
+second.close();
+const seen = second.requests[0].messages;
+console.log('\n━━ mox 的做法 ━━\n恢复后第一次请求，模型看到的对话（system 之后）：');
+for (const m of seen.slice(1)) console.log(`  ${brief(m).padEnd(24)}${m.role === 'tool' ? String(m.content).split('\n')[0].slice(0, 40) : m.role === 'user' ? m.content : ''}`);
+console.log(`\n补上之前，这份对话里有 ${unanswered(records().slice(0, 3)).length} 个没有结果的调用——OpenAI 兼容的接口会直接返回 400；补上之后是 ${unanswered(seen).length} 个。`);
+console.log(`模型先查 deploy.log，然后：${again.output().trim().split('\n').at(-1)}`);
+console.log(`deploy.log：${deploys(cwd)} 行`);
+assert.equal(unanswered(seen).length, 0);
+assert.deepEqual(seen.filter((m: any) => m.role === 'tool').map((m: any) => m.content.startsWith('中断')), [false, true, true]);
+assert.equal(deploys(cwd), 1, 'mox 的做法：模型查证之后没有重复部署');

@@ -1,6 +1,6 @@
 // 第 0 章：检查环境能不能跑后面所有实验。
 //   node labs/ch00/check-env.ts
-// 每一项只打一行；最后一项把第 2 章的回放实验跑一遍，只看结论。
+// 每一项只打一行；mox 能启动，并且 mox 和 Pi 读同一段回放（第 2 章的实验）得到相同的结果。
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -15,9 +15,16 @@ for (const name of ['pi-ai', 'pi-agent-core', 'pi-coding-agent']) {
   checks.push([`Pi 包 ${name}`, version === '1.5.0', version === '未安装' ? '没找到，先运行 npm install' : `版本 ${version}`]);
 }
 
-const replay = execFileSync(process.execPath, ['labs/ch02/replay.ts'], { encoding: 'utf8' });
-const same = /是否一致.*：是/.test(replay);
-checks.push(['mox 和 Pi 读同一段回放', same, same ? '四个实现结果一致' : '结果不一致，见 node labs/ch02/replay.ts']);
+// mox 是 Git 子模块：没克隆下来的话 mox/ 是空目录
+const moxReady = existsSync('mox/src/loop.ts');
+const moxHelp = moxReady ? execFileSync(process.execPath, ['mox/src/cli.ts', '--help'], { encoding: 'utf8' }) : '';
+checks.push(['mox（Mox-agent 子模块）', moxHelp.includes('用法'), moxReady ? '命令行能启动' : '没找到 mox/src，先运行 git submodule update --init']);
+
+// 第 2 章的回放实验：同一段 SSE 字节流交给 mox 的 openai() 和 Pi 的适配器
+const replay = moxReady ? execFileSync(process.execPath, ['labs/ch02/replay.ts'], { encoding: 'utf8' }) : '';
+const verdicts = replay.match(/是否一致：.*/g) ?? [];
+const same = verdicts.length > 0 && verdicts.every(v => v.endsWith('是'));
+checks.push(['mox 和 Pi 读同一段回放', same, same ? `${verdicts.length} 段样本，结果一致` : '结果不一致，见 node labs/ch02/replay.ts']);
 
 for (const [label, ok, detail] of checks) console.log(`${ok ? '✓' : '✗'} ${label}：${detail}`);
 

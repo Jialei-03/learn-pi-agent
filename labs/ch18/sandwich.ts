@@ -3,11 +3,12 @@
 // 一个最小的“持久执行”模型（不是 Pi 的代码，只复刻它的记录方式）：每个工具调用在存储里最多留下三种记录——
 //   call（助手发出了调用）、intent（执行前写下的意图）、result（执行后写下的结果）。
 // “崩溃”= 在某个位置抛出异常，内存里的一切都丢掉，只剩存储；外部世界（部署了几次）不受崩溃影响。恢复时只能读存储。
-// 三种恢复策略：朴素重放（第 18 章开头）、mox（没有 intent，靠 replaySafe 声明）、三明治（Pi durable：先写 intent）。
+// 四种恢复策略：朴素重放（第 18 章开头）、mox（session.ts：没有结果的调用一律写“中断”）、
+// 声明重放安全（旧版 mox 和 Pi durable 的规则：声明过的工具直接重跑，其余写“中断”）、三明治（Pi durable：先写 intent）。
 import assert from 'node:assert/strict';
 
 type Rec = { kind: 'call' | 'intent' | 'result'; id: string; text?: string };
-type Strategy = 'naive' | 'mox' | 'sandwich';
+type Strategy = 'naive' | 'mox' | 'declared' | 'sandwich';
 type CrashAt = 'beforeTool' | 'afterIntent' | 'afterEffect';
 
 class Crash extends Error {}
@@ -40,6 +41,7 @@ function recover(strategy: Strategy, store: Rec[], tool: string, key: string | u
   const replay = () => { store.push({ kind: 'result', id: 'c1', text: tools[tool].run('c1', key) }); };
   const interrupt = () => { store.push({ kind: 'result', id: 'c1', text: INTERRUPTED }); return `写“${INTERRUPTED}”`; };
   if (strategy === 'naive') { replay(); return '重放'; }
+  if (strategy === 'mox') return interrupt();                                   // mox：不区分，一律“中断”
   if (strategy === 'sandwich' && !intent) { replay(); return '首次执行'; }     // 没有 intent：工具肯定还没开始
   if (tools[tool].replaySafe) { replay(); return '重放'; }                      // 声明了重放安全：直接再执行
   return interrupt();                                                           // 否则如实告诉模型：不知道有没有生效
@@ -59,10 +61,10 @@ const points: [CrashAt, string][] = [
   ['afterIntent', '② 意图已写，工具刚要开始'],
   ['afterEffect', '③ 工具跑完了，结果没来得及写'],
 ];
-const strategies: [Strategy, string][] = [['naive', '朴素重放'], ['mox', 'mox（replaySafe）'], ['sandwich', '效果三明治']];
+const strategies: [Strategy, string][] = [['naive', '朴素重放'], ['mox', 'mox（一律中断）'], ['declared', '声明重放安全'], ['sandwich', '效果三明治']];
 
 console.log('| 工具 | 崩溃位置 | ' + strategies.map(s => s[1]).join(' | ') + ' |');
-console.log('| --- | --- | --- | --- | --- |');
+console.log('| --- | --- | --- | --- | --- | --- |');
 const grid: Record<string, ReturnType<typeof trial>> = {};
 for (const [label, tool, key] of [['read（只读）', 'read', undefined], ['deploy（有副作用）', 'deploy', undefined], ['deploy + 幂等键', 'deploy', 'v2']] as const) {
   for (const [crashAt, where] of points) {
@@ -76,19 +78,21 @@ for (const [label, tool, key] of [['read（只读）', 'read', undefined], ['dep
 }
 
 console.log(`
-读表的三个要点：
-  · deploy 的第 ③ 行：朴素重放生效了 2 次（事故）；mox 和三明治都只生效 1 次，并告诉模型“中断了”，让它去查证。
+读表的四个要点：
+  · deploy 的第 ③ 行：朴素重放生效了 2 次（事故）；其余三种都只生效 1 次，并告诉模型“中断了”，让它去查证。
+  · read 的几行是 mox 的代价：读文件重放无害，mox 不区分，也写“中断”，模型要多花一轮把文件再读一遍。“声明重放安全”就是为了省掉这一轮。
   · 三明治只改善了第 ① 行：没有 intent 就说明工具肯定没开始，可以放心首次执行，模型不必多花一轮去查证。
   · 第 ② 和 ③ 行无法区分：intent 已经写下，但不知道工具有没有开始。这一段窗口不可能关闭，只能靠“重放安全”或“幂等键”兜底。`);
 
 // 正文的结论
 const at = (label: string, crashAt: CrashAt, strategy: Strategy) => grid[`${label}|${crashAt}|${strategy}`];
 assert.equal(at('deploy（有副作用）', 'afterEffect', 'naive').effects, 2, '朴素重放：部署生效两次');
-for (const strategy of ['mox', 'sandwich'] as const) {
+for (const strategy of ['mox', 'declared', 'sandwich'] as const) {
   const r = at('deploy（有副作用）', 'afterEffect', strategy);
   assert.deepEqual([r.effects, r.text], [1, INTERRUPTED], `${strategy}：部署只生效一次，模型收到“中断”`);
 }
 assert.deepEqual([at('deploy（有副作用）', 'beforeTool', 'mox').effects, at('deploy（有副作用）', 'beforeTool', 'mox').text], [0, INTERRUPTED], 'mox 无法区分“没开始”，只能写“中断”');
+assert.deepEqual([at('deploy（有副作用）', 'beforeTool', 'declared').effects, at('deploy（有副作用）', 'beforeTool', 'declared').text], [0, INTERRUPTED], '声明重放安全帮不了 deploy：它没有这个声明');
 assert.deepEqual([at('deploy（有副作用）', 'beforeTool', 'sandwich').effects, at('deploy（有副作用）', 'beforeTool', 'sandwich').text], [1, '部署完成'], '三明治：没有 intent，直接首次执行');
 assert.equal(at('deploy（有副作用）', 'afterIntent', 'sandwich').text, INTERRUPTED, '有 intent 但没有结果：窗口无法关闭');
 assert.equal(at('deploy + 幂等键', 'afterEffect', 'naive').runs, 2, '带幂等键：朴素重放仍然会执行两次……');
@@ -96,6 +100,7 @@ assert.equal(at('deploy + 幂等键', 'afterEffect', 'naive').effects, 1, '…�
 for (const [crashAt] of points) {
   for (const [strategy] of strategies) {
     const r = at('read（只读）', crashAt, strategy);
-    assert.deepEqual([r.text, r.effects], ['# README', 0], `read 在任何位置、任何策略下都能重放，而且没有副作用（${strategy}，${crashAt}）`);
+    // 读文件在任何位置都没有副作用；除了 mox 把它也写成“中断”，其余策略都能直接重放
+    assert.deepEqual([r.text, r.effects], [strategy === 'mox' ? INTERRUPTED : '# README', 0], `read（${strategy}，${crashAt}）`);
   }
 }
