@@ -16,17 +16,31 @@ const home = tmp('ch07-home-');
 const cwd = tmp('ch07-proj-');
 const spam = join(import.meta.dirname, 'spam.ts');
 
+/** 等 dir 下出现会话文件、并且写够 n 行，返回文件路径。 */
+async function waitForLines(dir: string, n: number) {
+  for (let waited = 0; waited < 30_000; waited += 20) {
+    try {
+      const sub = join(dir, readdirSync(dir)[0]);
+      const file = join(sub, readdirSync(sub)[0]);
+      if (readFileSync(file, 'utf8').split('\n').length > n) return file;
+    } catch {}                                                    // 目录或文件还没建出来
+    await new Promise(r => setTimeout(r, 20));
+  }
+  throw new Error(`30 秒内 ${dir} 里没有写够 ${n} 行`);
+}
+
 try {
   // ── 一：kill -9 会撕裂一行吗？ ──
   let torn = 0, totalLines = 0;
   for (let trial = 0; trial < 8; trial++) {
     const trialHome = join(home, `trial-${trial}`);
     const child = spawn(process.execPath, [spam, cwd, trialHome], { stdio: 'ignore' });
-    await new Promise(r => setTimeout(r, 150 + trial * 11));     // 子进程一刻不停地写 ~2KB 的记录，这段时间里写了成千上万条
+    // 等子进程真正写下上千行再杀（不按固定时间等：慢机器上光启动 Node 就要几百毫秒），再随机多写一会儿
+    const file = await waitForLines(join(trialHome, '.mox', 'sessions'), 1000);
+    await new Promise(r => setTimeout(r, trial * 7));
     child.kill('SIGKILL');
     await new Promise(r => child.once('close', r));
-    const dir = join(trialHome, '.mox', 'sessions', readdirSync(join(trialHome, '.mox', 'sessions'))[0]);
-    const text = readFileSync(join(dir, readdirSync(dir)[0]), 'utf8');
+    const text = readFileSync(file, 'utf8');
     const lines = text.split('\n').filter(Boolean);
     totalLines += lines.length;
     if (!text.endsWith('\n') || lines.some(l => { try { JSON.parse(l); return false; } catch { return true; } })) torn++;
