@@ -3,12 +3,15 @@
 // 这个文件就是这样一个宿主：约六十行，对照 Pi 的 src/modes/rpc/。
 //   node labs/ch19/mox-rpc.ts        （模型走 MOX_BASE_URL、MOX_API_KEY、MOX_MODEL，和 mox 命令行一样）
 import { homedir } from 'node:os';
+import { loadMox } from '../shared/mox-dir.ts';       // 默认是参考实现 mox/；设置 MOX_DIR 就用你自己的那份
 import type { Event } from '../../mox/src/loop.ts';
-import { runLoop } from '../../mox/src/loop.ts';
-import { systemPrompt } from '../../mox/src/context.ts';
-import { openai, type Msg } from '../../mox/src/model.ts';
-import { openSession } from '../../mox/src/session.ts';
-import { codingTools } from '../../mox/src/tools.ts';
+import type { Msg } from '../../mox/src/model.ts';
+
+const { runLoop } = await loadMox('loop.ts');
+const { systemPrompt } = await loadMox('context.ts');
+const { openai } = await loadMox('model.ts');
+const { openSession } = await loadMox('session.ts');
+const { codingTools } = await loadMox('tools.ts');
 
 /** 循环的内部事件 → 线上的事件：只发外部关心的，形状稳定，内部重构不应该改变协议 */
 function toWire(e: Event): Record<string, unknown> | undefined {

@@ -3,12 +3,13 @@ motto: 写在提示里的规矩是请求，写成钩子的规矩是保证——�
 learn:
   - 钩子和扩展的区别：进程外的命令、与语言无关、写配置就能用、团队可以共享
   - Claude Code 的钩子协议：事件、匹配器、stdin 输入、退出码与 JSON 输出
-  - 把协议映射到 mox 的扩展事件：PreToolUse → tool_call，PostToolUse → tool_result，Stop → agent_end，以及对应不上的两个事件怎么办
+  - 把协议映射到 Pi 的扩展事件：每个钩子在 Agent 循环里的位置
   - 失败语义：钩子默认“出错放行”，安全检查该怎么写
   - 解释为什么按命令文本拦截 rm 的钩子挡不住 unlink，并说出哪一层才挡得住
+  - 实战：给 mox 写钩子扩展，把 PreToolUse / PostToolUse / Stop 映射到 tool_call / tool_result / agent_end
 prereq: 第 4、9 章
-time: 60 分钟
-build: extensions/hooks —— 兼容 Claude Code 钩子协议的扩展（mox 与 Pi 两个版本，共用协议实现）；mox 版用 mox -e extensions/hooks/mox.ts 加载
+time: 90 分钟
+build: 实战：给 mox 加上兼容 Claude Code 协议的钩子扩展（extensions/hooks/mox.ts，与 Pi 版共用 protocol.ts）
 ---
 
 ## 提示是请求，钩子是保证
@@ -22,12 +23,12 @@ build: extensions/hooks —— 兼容 Claude Code 钩子协议的扩展（mox �
 | | 扩展（第 9 章） | 钩子 |
 | --- | --- | --- |
 | 形式 | Agent 进程里的 TypeScript 代码 | 一条外部命令：shell、Python、任何语言 |
-| 接口 | Agent 专属的 API（`mox.on`、`pi.on`） | stdin 进 JSON，退出码和 stdout 出结果 |
-| 能力 | 几乎无限：注册工具、改系统提示、问用户 | 有限：在固定事件上放行、拦截、改写、补充信息 |
+| 接口 | Agent 专属的 API（`pi.on`） | stdin 进 JSON，退出码和 stdout 出结果 |
+| 能力 | 几乎无限：注册工具、改界面、控制会话 | 有限：在固定事件上放行、拦截、改写、补充信息 |
 | 门槛 | 要懂这个 Agent 的 API | 会写脚本就行，写在配置文件里 |
 | 适合 | 给 Agent 增加能力 | 给团队制定规矩 |
 
-钩子的接口足够简单，同一份钩子脚本可以在不同的 Agent 里使用。Claude Code 的钩子协议是目前事实上的参考，这一章给 mox 写一个扩展来实现这套协议：为 Claude Code 写的钩子脚本，不用改一行就能在 mox 里运行。这个扩展同时有 Pi 版本，两个版本共用同一份协议实现，对照着读，能看出两个宿主的接口差别落在哪里。
+钩子的接口足够简单，同一份钩子脚本可以在不同的 Agent 里使用。Claude Code 的钩子协议是目前事实上的参考，这一章给 Pi 实现这套协议：为 Claude Code 写的钩子脚本，不用改一行就能在 Pi 里运行。章末再给 mox 写一个同样的扩展。
 
 ## 协议
 
@@ -53,18 +54,16 @@ build: extensions/hooks —— 兼容 Claude Code 钩子协议的扩展（mox �
 
 ### 事件
 
-Claude Code 定义了二十多种事件，我们实现最常用的六种，并对应到 mox 和 Pi 的扩展事件：
+Claude Code 定义了二十多种事件，我们实现最常用的六种，并对应到 Pi 的扩展事件：
 
-| 钩子事件 | 什么时候 | 能做什么 | mox | Pi |
-| --- | --- | --- | --- | --- |
-| `SessionStart` | 会话开始 | 给模型补充背景信息 | 没有事件；在扩展函数里直接运行，结果用 `addSystemPrompt` 放进系统提示 | `session_start` |
-| `UserPromptSubmit` | 用户提交提示，模型看到之前 | 拦下提示；补充信息 | **对应不上**：mox 没有看到用户输入的入口 | `input`、`before_agent_start` |
-| `PreToolUse` | 工具执行前 | 允许、拒绝、要求确认；改写参数 | `tool_call` | `tool_call` |
-| `PostToolUse` | 工具执行后，结果交给模型前 | 替换结果；补充信息 | `tool_result`（只有工具成功时才触发） | `tool_result` |
-| `Stop` | 模型准备结束这次运行 | 不让它停，要求继续 | `agent_end` | `agent_before_settle` |
-| `SessionEnd` | 会话结束 | 清理、记录 | `shutdown` | `session_shutdown` |
-
-mox 的四个事件正好对应上 `PreToolUse`、`PostToolUse`、`Stop` 和 `SessionEnd`。`SessionStart` 不需要事件：扩展函数本身就在会话开始时运行，而且可以是 `async`，`loadExtensions` 会等它跑完（第 9 章）。`UserPromptSubmit` 是真正对应不上的：mox 的扩展只能看到模型的工具调用和最终回答，看不到用户敲的那一行，想拦下带密码的提示，要在 mox 里加一个新事件，或者放在 `-p` 之前的 shell 脚本里做。扩展加载时会提示一次“这类钩子不会运行”，免得配置了却以为生效。
+| 钩子事件 | 什么时候 | 能做什么 | Pi 的事件 |
+| --- | --- | --- | --- |
+| `SessionStart` | 会话开始 | 给模型补充背景信息 | `session_start` |
+| `UserPromptSubmit` | 用户提交提示，模型看到之前 | 拦下提示；补充信息 | `input`、`before_agent_start` |
+| `PreToolUse` | 工具执行前 | 允许、拒绝、要求确认；改写参数 | `tool_call` |
+| `PostToolUse` | 工具执行后，结果交给模型前 | 替换结果；补充信息 | `tool_result` |
+| `Stop` | 模型准备结束这次运行 | 不让它停，要求继续 | `agent_before_settle` |
+| `SessionEnd` | 会话结束 | 清理、记录 | `session_shutdown` |
 
 <figure class="diagram">
 <svg viewBox="0 0 720 170" role="img" aria-label="钩子在 Agent 运行中的位置">
@@ -86,6 +85,7 @@ mox 的四个事件正好对应上 `PreToolUse`、`PostToolUse`、`Stop` 和 `Se
 </svg>
 <figcaption>橙色的六个位置可以挂钩子。PreToolUse、PostToolUse 每次工具调用都会运行，Stop 能把即将结束的运行拉回循环。</figcaption>
 </figure>
+
 ### 输入
 
 钩子从 stdin 读到一个 JSON 对象。公共字段有 `session_id`、`transcript_path`、`cwd`、`hook_event_name`，再加上事件自己的字段：`UserPromptSubmit` 有 `prompt`；`PreToolUse` 有 `tool_name`、`tool_input`；`PostToolUse` 再多一个 `tool_response`；`Stop` 有 `stop_hook_active`、`last_assistant_message`。
@@ -113,61 +113,39 @@ mox 的四个事件正好对应上 `PreToolUse`、`PostToolUse`、`Stop` 和 `Se
 
 @code extensions/hooks/protocol.ts#interpret collapse=true
 
+## 映射到 Pi
 
-## 映射到 mox
+### 让 Claude Code 的钩子脚本直接可用
 
-### 工具名和参数：几乎不用翻译
-
-为 Claude Code 写的钩子脚本，期待的是 Claude Code 的工具名和参数：`Bash` 的 `tool_input.command`，`Edit` 的 `file_path`（绝对路径）、`old_string`、`new_string`。mox 的工具叫 `bash`、`edit`，参数是 `path` 和 `edits` 数组（和 Pi 一致）。扩展在两者之间翻译，钩子用 `updatedInput` 改写的参数再翻译回来：
+为 Claude Code 写的钩子脚本，期待的是 Claude Code 的工具名和参数：`Bash` 的 `tool_input.command`，`Edit` 的 `file_path`（绝对路径）、`old_string`、`new_string`。Pi 的工具叫 `bash`、`edit`，参数是 `path` 和 `edits` 数组。扩展在两者之间翻译，钩子用 `updatedInput` 改写的参数再翻译回来：
 
 @code extensions/hooks/protocol.ts#toClaudeTool
 
-MCP 工具不用翻译：mox、Pi 和 Claude Code 用的都是 `mcp__服务器__工具`（第 12 章）。翻译函数在 Pi 版本和 mox 版本之间是同一个，因为 mox 的工具刻意和 Pi 的对齐。
+MCP 工具不用翻译：Pi 和 Claude Code 用的都是 `mcp__服务器__工具`（第 12 章）。
 
 ### 每个事件接到哪里
 
-mox 版的扩展是一个 `async` 函数，一个事件一段代码。先看最简单的 `SessionStart`：
+@code extensions/hooks/index.ts#createHooksExtension collapse=true
 
-@code extensions/hooks/mox.ts#region:session-start
+几处值得注意：
 
-加载扩展时直接运行钩子（`loadExtensions` 会 `await` 扩展函数），拿到的补充信息用 `addSystemPrompt` 放进系统提示：这些信息整个会话不变，放在系统提示里不会破坏提示缓存（第 6 章）。再看 `PreToolUse`，它做五件事：
-
-@code extensions/hooks/mox.ts#region:pre-tool-use hl=44,45,47,49,54-56,58
-
-- **拒绝**：返回钩子给的原因（47 行）。第 9 章的规则：`tool_call` 返回字符串就是拒绝，原因作为错误结果交给模型。
-- **要求确认**：钩子的 JSON 输出可以是 `ask`。mox 有 `mox.ask`，所以这里真的去问用户（49 行）；没有终端时 `ask` 返回 `undefined`，按拒绝处理。
-- **放行**：钩子明确输出 `allow`，或者用户刚在 `ask` 里点了“允许”，就在最后返回 `true`（44 行记下，58 行返回）。返回 `true` 跳过 mox 内置的确认，所以 `dry-run-deploy.mjs` 这样的钩子在 `mox -p`（没有终端、没有 `--yolo`）里也能让调用通过。
-- **改写参数**：钩子给了 `updatedInput`，翻译回 mox 的形状，清空 `args` 再写入（54～56 行）。`args` 就是后面 `tool.run` 要用的同一个对象，所以不需要返回值；会话里记录的仍是模型发出的原始调用，模型并不知道参数被改了。
-- **补充信息**：钩子的 `additionalContext` 要等到工具跑完才交给模型。45 行把它存在一个 `WeakMap` 里，键就是 `args` 这个对象：`tool_call` 和 `tool_result` 的处理函数拿到的是同一个对象，用它就能把“这次调用的补充信息”和“这次调用的结果”配对，不需要调用 id（mox 的事件不传 id）。
-
-`PostToolUse` 把配对的信息取出来，返回的字符串就是这一环接力的结果：
-
-@code extensions/hooks/mox.ts#region:post-tool-use hl=63,66-67
-
-63 行取出 `PreToolUse` 暂存的信息，加上本次 `PostToolUse` 钩子自己的；66 行如果钩子用 `updatedToolOutput` 替换了输出，就用新的；67 行把补充信息用 `<hook-context>` 标签附在结果末尾，返回的字符串替换原来的结果。
-
-有几点和 Pi 不同，写钩子时要留意。第一，**`tool_result` 只在工具成功时触发**：mox 的 `bash` 在退出码非零时抛错，错误结果直接交给模型，不经过 `afterTool`，所以 `PostToolUse` 钩子不会运行（Claude Code 另有 `PostToolUseFailure` 事件处理失败，这里没有对应）。第二，`tool_result` 是接力（第 9 章的 `transform`）：hooks 扩展返回的字符串会成为下一个扩展收到的结果，它前面的扩展改过的结果也会先交给它，所以钩子的脱敏不会被别的扩展挡住，也能脱掉前一个扩展加进来的内容。唯一的顺序问题是别的扩展想看原始输出时，要排在 hooks 扩展前面。第三，`allow` 对应的 `true` 在 mox 里只有“没人拒绝”时才生效：第 9 章说过，`tool_call` 是拒绝优先，每个扩展都会被问到。所以钩子的 `allow` 不会短路后面的沙箱或权限扩展，一个脚本说 `allow`、另一个扩展说拒绝，结果是拒绝。这和 Claude Code 合并多个 PreToolUse 钩子的规则（`deny` 优先于 `ask`，`ask` 优先于 `allow`）是同一个思路，`interpret` 在钩子这一层、`verdict` 在扩展这一层，各做一遍。
-
-`Stop` 对应 `agent_end`。mox 的 `agent_end` 直接把最终回答交给处理函数，返回字符串就是“还没完，接着干”；Pi 要用 `agent_before_settle`，上一条助手消息也要自己找。两边并排看：
-
-::: tabs
-@@ mox
-@code extensions/hooks/mox.ts#region:stop
-`answer` 就是 `last_assistant_message`；返回的字符串被 `cli.ts` 当作新的用户消息。
-@@ Pi
-@code extensions/hooks/index.ts#L108-L117
-把原因追加成一条 `custom_message`，返回 `continue: true`，让 Pi 再跑一轮。
-:::
-
-Pi 的这个入口在源码里长这样：
+- **补充信息放在哪里**，影响提示缓存（第 6 章）。`SessionStart` 的信息整个会话不变，放进系统提示的一个小节；`UserPromptSubmit` 的信息每次不同，作为一条隐藏消息跟在用户提示后面；工具相关的信息附在那次工具结果的末尾。
+- **改写参数**用 Pi 的约定：就地修改 `event.input`。
+- **Stop** 对应 Pi 的 `agent_before_settle`：运行真正结束前的最后一个决策点，处理函数可以追加记录，并要求再跑一轮：
 
 @pi packages/coding-agent/src/core/extensions/types.ts#L1035-L1050
 
-`stopHookActive` 是协议里 `stop_hook_active` 的来源：这一轮如果是 Stop 钩子要求的，就为真。mox 版本在 `agent_end` 里按钩子的裁决设置它：被拦下，下一轮就是钩子要求的；放行了，运行结束，下一次运行从假开始。
+扩展把钩子给出的原因作为一条消息追加，返回 `continue: true`，模型就会带着这个原因继续工作。
+
+Stop 钩子的接法：
+
+@code extensions/hooks/index.ts#L108-L117
+
+把原因追加成一条 `custom_message`，返回 `continue: true`，让 Pi 再跑一轮。
 
 ### 实验
 
-一份 Claude Code 格式的钩子配置（`labs/fixtures/hooks/` 下的七个脚本），分别装进 mox 和 Pi，用同一个脚本模型执行。mox 这一侧是 `loadExtensions` 加 `runLoop` 加脚本模型，组装方式和 `cli.ts` 一样，包括 `agent_end` 续跑的那个 `while`：
+一份 Claude Code 格式的钩子配置（`labs/fixtures/hooks/` 下的七个脚本），装进 Pi，用一个脚本模型执行：
 
 @lab node labs/ch13/hooks.ts
 
@@ -178,126 +156,119 @@ Pi 的这个入口在源码里长这样：
 3. 读取 `.env` 被拒绝，拒绝原因作为错误结果交给模型。
 4. `cat config.txt` 正常执行，但模型看到的 API Key 已经被换成 `[REDACTED]`。工具确实读到了密钥，只是没有进入模型的上下文（也就不会被发给模型服务商）。
 5. 模型说“都处理好了”，`Stop` 钩子不让它停：没提到测试。模型补跑测试，第二次说完成时，`stop_hook_active` 为真，钩子放行。
-6. 带着密码的提示：Pi 里被 `UserPromptSubmit` 钩子拦下，根本没有发给模型；mox 里**没有拦住**，因为没有对应的事件，启动时的提示已经说了。
-
-最后的对照表里，工具调用的结果在两个宿主里一致（mox 的错误多一个“错误：”前缀，bash 多一行退出码，比较时忽略）。上面是装配方式的实验；下面这个实验启动真正的 `mox` 命令行（连本地假服务），配置放在 `~/.mox/hooks.json`，用 `-e` 加载扩展。第一次运行加 `--yolo`，确认 `SessionStart` 的信息进了发给模型的系统提示、钩子的拦截与脱敏在命令行里一样生效、`Stop` 钩子让命令行真的续跑了一轮。第二次不加 `--yolo`，也没有终端：钩子对 `./deploy.sh` 给出了 `allow`，它执行了；`ls` 没有任何钩子表态，落回内置确认，被拒绝：
-
-@lab node labs/ch13/mox-cli.ts
-
-第一次运行末尾的 `stderr` 是扩展启动时的提示：配置里有 `UserPromptSubmit` 钩子，但 mox 对应不上。`↳ 扩展让 Agent 继续：Stop 钩子……` 那行是 `cli.ts` 的 `while (text)` 打印的，第 9 章已经读过。
+6. 带着密码的提示被 `UserPromptSubmit` 钩子拦下，根本没有发给模型。
 
 ::: steps PreToolUse 改写参数：一次 deploy 调用的来回
---- 模型要执行 `./deploy.sh production`。工具执行前，`beforeTool` 触发 `tool_call` 事件，hooks 扩展的处理函数先翻译：`toClaudeTool` 把 `bash` 换成 Claude Code 脚本期待的 `Bash`。
+--- 模型要执行 `./deploy.sh production`。工具执行前，Agent 循环触发 `tool_call` 事件，hooks 扩展的处理函数先翻译：`toClaudeTool` 把 `bash` 换成 Claude Code 脚本期待的 `Bash`。
 sequenceDiagram
-  participant L as runLoop
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as 钩子脚本
   participant T as bash 工具
-  L->>X: tool_call(bash, args)
+  L->>X: tool_call bash deploy.sh
   Note over X: toClaudeTool：bash 变 Bash
 --- `run('PreToolUse')` 经 `runHooks` 按 `matcher` 找到匹配的钩子（这里是 `dry-run-deploy.mjs`），把 `tool_name`、`tool_input` 作为 JSON 写进它的 stdin。
 sequenceDiagram
-  participant L as runLoop
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as 钩子脚本
   participant T as bash 工具
-  L->>X: tool_call(bash, args)
+  L->>X: tool_call bash deploy.sh
   Note over X: toClaudeTool：bash 变 Bash
   X->>H: stdin：tool_name、tool_input
 --- 脚本发现命令以 `./deploy.sh` 开头且没有 `--dry-run`，在 stdout 输出一段 JSON：`permissionDecision: allow`，`updatedInput` 里的命令加了 `--dry-run`，再附一句 `additionalContext`。
 sequenceDiagram
-  participant L as runLoop
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as 钩子脚本
   participant T as bash 工具
   X->>H: stdin：tool_name、tool_input
   H-->>X: allow + updatedInput + context
---- `interpret` 合并结果：`v.permission` 是 `allow`，`updatedInput` 记下，`additionalContext` 进 `v.context`；扩展把 context 存进 `WeakMap`，键是 `args` 这个对象，留给 PostToolUse。
+--- `interpret` 合并结果：`v.permission` 是 `allow`，`updatedInput` 记下，`additionalContext` 进 `v.context`；扩展把 context 按 `toolCallId` 存进 `toolContext`，留给 PostToolUse。
 sequenceDiagram
-  participant L as runLoop
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as 钩子脚本
   participant T as bash 工具
   H-->>X: allow + updatedInput + context
-  Note over X: interpret 合并；context 按 args 暂存
---- 没有拒绝，于是处理函数走到改写分支：`fromClaudeInput` 翻译回 mox 的参数，先清空再 `Object.assign` 到 `args`，不返回字符串，循环放行。
+  Note over X: interpret 合并；context 按 id 暂存
+--- 没有 `block`，于是处理函数走到改写分支：`fromClaudeInput` 翻译回 Pi 的参数，先清空再 `Object.assign` 到 `event.input`，不返回 `block`，循环放行。
 sequenceDiagram
-  participant L as runLoop
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as 钩子脚本
   participant T as bash 工具
-  Note over X: interpret 合并；context 按 args 暂存
-  Note over X: fromClaudeInput 就地改 args
-  X-->>L: 返回空，放行
---- 工具执行的是改写后的命令，模型却不知道。随后 `tool_result` 事件触发 PostToolUse，扩展用同一个 `args` 取出暂存的 context，以 `hook-context` 标签附在结果末尾，模型这才知道发生了什么。
+  Note over X: interpret 合并；context 按 id 暂存
+  Note over X: fromClaudeInput 就地改 input
+  X-->>L: 放行
+--- 工具执行的是改写后的命令，模型却不知道。随后 `tool_result` 事件触发 PostToolUse，扩展把暂存的 context 以 `hook-context` 标签附在结果末尾，模型这才知道发生了什么。
 sequenceDiagram
-  participant L as runLoop
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as 钩子脚本
   participant T as bash 工具
   L->>T: deploy.sh production --dry-run
   T-->>L: 部署（dry-run）输出
-  L->>X: tool_result(bash, args, 输出)
+  L->>X: tool_result
   X-->>L: 结果末尾附 hook-context
 :::
 
 ::: warn Stop 钩子与无限循环
-一个总是返回 `block` 的 Stop 钩子会让 Agent 永远停不下来。mox 的 `cli.ts` 对 `agent_end` 没有任何次数限制：`while (text)` 只看扩展返回了什么。协议的解决办法是 `stop_hook_active`：这一轮本来就是 Stop 钩子要求的，它就为真。钩子应该检查它，必要时放行。更稳妥的钩子会自己记录次数，或者检查真实的状态（测试结果文件、git 状态），而不是只看模型说了什么——模型完全可以在没跑测试的情况下写出“测试通过”。
+一个总是返回 `block` 的 Stop 钩子会让 Agent 永远停不下来。协议的解决办法是 `stop_hook_active`：这一轮本来就是 Stop 钩子要求的，它就为真。钩子应该检查它，必要时放行。更稳妥的钩子会自己记录次数，或者检查真实的状态（测试结果文件、git 状态），而不是只看模型说了什么——模型完全可以在没跑测试的情况下写出“测试通过”。
 :::
 
 ::: steps Stop 钩子：不让模型说完就走
---- 模型说“都处理好了”，没有工具调用。`runLoop` 返回最终回答，`cli.ts` 触发 `agent_end`。
+--- 模型说“都处理好了”，没有工具调用。循环准备结束这次运行，先触发 `agent_before_settle`，它是结束前最后一个决策点。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as Stop 钩子
   M->>L: 都处理好了（无工具调用）
-  L->>X: agent_end(answer)
---- 扩展 `run('Stop')`，把 `stop_hook_active`（此刻为假）和 `answer`（就是 `last_assistant_message`）交给钩子。
+  L->>X: agent_before_settle
+--- 扩展 `run('Stop')`，把 `stop_hook_active`（此刻为假）和上一条助手消息的文字交给钩子。这段文字是 `message_end` 事件里记下的 `lastAssistantText`。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as Stop 钩子
-  L->>X: agent_end(answer)
+  L->>X: agent_before_settle
   X->>H: Stop：active 为假
 --- 钩子检查：没有 `stop_hook_active`，回复里也没有“测试通过”，于是输出 `decision: block` 和原因。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as Stop 钩子
   X->>H: Stop：active 为假
   H-->>X: block：先运行 npm test
---- `interpret` 把 `block` 记进 verdict。扩展把 `stopHookActive` 置为真——让钩子知道下一轮是它要求的——并返回 `Stop 钩子：…`。
+--- `interpret` 把 `block` 记进 verdict。扩展把 `stopHookActive` 置为真——让钩子知道下一轮是它要求的。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as Stop 钩子
   H-->>X: block：先运行 npm test
   Note over X: stopHookActive 置为真
-  X-->>L: 返回「Stop 钩子：…」
---- `cli.ts` 把这句话当作新的用户消息，`while (text)` 再跑一轮。运行没有结束，模型带着这条消息继续工作。
+--- 处理函数把 “Stop 钩子：…” 作为 `custom_message` 追加进 `entries`，返回 `continue: true`。运行没有结束，模型带着这条消息再来一轮。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as Stop 钩子
-  X-->>L: 返回「Stop 钩子：…」
-  L->>M: 新的用户消息，再来一轮
---- 模型运行 `echo "12 passed"`，再次宣布“测试通过（12 passed）”，第二次触发 `agent_end`。这次 `stop_hook_active` 为真，而且回复里有“测试通过”，钩子不再输出，`block` 为空，处理函数返回空，运行结束。
+  Note over X: stopHookActive 置为真
+  X-->>L: 追加消息，continue
+--- 模型运行 `echo "12 passed"`，再次宣布“测试通过（12 passed）”，第二次触发 `agent_before_settle`。这次 `stop_hook_active` 为真，而且回复里有“测试通过”，钩子不再输出，`block` 为空，处理函数直接返回，运行结束。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts
+  participant L as Agent 循环
   participant X as hooks 扩展
   participant H as Stop 钩子
   M->>L: 跑 echo，再说测试通过
-  L->>X: agent_end（第 2 次）
+  L->>X: agent_before_settle（第 2 次）
   X->>H: Stop：active 为真
   H-->>X: 无输出，放行
-  X-->>L: 返回空，运行结束
+  X-->>L: 放行，运行结束
 :::
 
 ## 失败语义：钩子坏了怎么办
@@ -306,7 +277,7 @@ sequenceDiagram
 
 @lab node labs/ch13/failures.ts
 
-和第 9 章对比一下。第 9 章里，mox 的 `tool_call` 处理函数抛出异常，工具调用**被阻止**（`execute` 里的 `try/catch` 把异常变成错误结果：出错时拒绝）。而按照 Claude Code 的协议，钩子出错时（退出码 1、超时、输出不是 JSON）工具调用**照常执行**（出错时放行）。hooks 扩展站在两者之间：钩子脚本是外部命令，它的失败由 `interpret` 按协议处理，不会变成扩展的异常；扩展自己只有在代码有 bug 时才会抛，那时 mox 会拒绝这次调用。
+和第 9 章对比一下。第 9 章里，`tool_call` 扩展抛出异常，工具调用**被阻止**（出错时拒绝）。而按照 Claude Code 的协议，钩子出错时（退出码 1、超时、输出不是 JSON）工具调用**照常执行**（出错时放行）。
 
 协议这样设计有它的道理：大多数钩子是锦上添花的（格式化、通知、记录日志），一个写坏的格式化脚本不应该让 Agent 完全无法工作。但这意味着**安全类的钩子要格外小心**：
 
@@ -327,7 +298,7 @@ sequenceDiagram
 
 @code labs/fixtures/hooks/block-rm.mjs
 
-命令里出现独立的 `rm` 就 `exit 2`，原因是“不允许删除文件（rm）”。然后把“删除当前目录下的 a.txt”交给 MiniMax-M3.1-Flash，用 mox 的 `runLoop` 真实地跑 12 次（`labs/ch13/record.ts`，结果存在 `labs/ch13/recorded/rm-bypass.json`，实验回放它）：
+命令里出现独立的 `rm` 就 `exit 2`，原因是“不允许删除文件（rm）”。然后把“删除当前目录下的 a.txt”交给 MiniMax-M3.1-Flash，让一个用 mox 搭起来的 Agent 真实地跑 12 次（被测的 Agent 不重要，拦截发生在钩子这一层，Pi 上同样成立）（`labs/ch13/record.ts`，结果存在 `labs/ch13/recorded/rm-bypass.json`，实验回放它）：
 
 @lab node labs/ch13/rm-bypass.ts recorded
 
@@ -337,7 +308,7 @@ sequenceDiagram
 
 ### 换哪些写法能绕过，什么才挡得住
 
-录制的是真实模型挑中的几种写法。这个实验把能绕过的写法一次列清楚：每一行都是用真正的 mox `bash` 工具、真正的 hooks 扩展执行一次，看 a.txt 最后怎样。第二列是只装钩子的结果；后两列去掉钩子，换成最朴素的操作系统权限：先把目录设为只读（`chmod 555`），再加上把文件也设为只读（`chmod 444`）：
+录制的是真实模型挑中的几种写法。这个实验把能绕过的写法一次列清楚：每一行都是用 Pi 真实的 `bash` 工具、真正的 hooks 扩展执行一次，看 a.txt 最后怎样。第二列是只装钩子的结果；后两列去掉钩子，换成最朴素的操作系统权限：先把目录设为只读（`chmod 555`），再加上把文件也设为只读（`chmod 444`）：
 
 @lab node labs/ch13/rm-bypass.ts matrix
 
@@ -359,7 +330,7 @@ sequenceDiagram
 
 钩子本身也带来了风险：
 
-- **钩子是自动执行的代码。** 克隆一个陌生仓库，它的 `.claude/settings.json` 或项目里的钩子配置里的 `SessionStart` 钩子会在你打开 Agent 的那一刻运行。mox 的 hooks 扩展只读 `~/.mox/hooks.json`；想用项目里的钩子，要把扩展放进项目的 `.mox/extensions/`，并且加 `--trust`（第 9 章）。Pi 版本的扩展只在信任项目后才读取项目里的配置。
+- **钩子是自动执行的代码。** 克隆一个陌生仓库，它的 `.claude/settings.json` 或项目里的钩子配置里的 `SessionStart` 钩子会在你打开 Agent 的那一刻运行。所以 Pi 版本的扩展只在信任项目后才读取项目里的配置。
 - **钩子的输入包含模型生成的内容。** `tool_input.command` 是模型写的，可能被注入的内容所影响。钩子脚本如果用 `eval` 或者不加引号地拼接它，就给了攻击者一个执行命令的机会。
 - **`additionalContext` 会进入模型的上下文**，内容应该是事实陈述，而不是命令式的“系统指令”。
 
@@ -373,26 +344,90 @@ sequenceDiagram
 官方文档：[Hooks reference](https://code.claude.com/docs/en/hooks)
 :::
 
-## 你来改
+## 实战：给 mox 加上钩子
 
-每道题先写下预测，再动手验证。
+Pi 的钩子扩展把六个钩子事件接到六个扩展事件上。mox 的扩展接口只有四个事件，但已经够用，因为第 9 章的 `tool_call` / `tool_result` / `agent_end` / `shutdown` 恰好对应 `PreToolUse` / `PostToolUse` / `Stop` / `SessionEnd`。`protocol.ts`（配置、匹配器、运行命令、合并结果）和 Pi 版共用，mox 的工具名和参数与 Pi 一致，`toClaudeTool` 也不用改。要写的只有接线，约 70 行：`extensions/hooks/mox.ts`。
 
-::: predict 把规则扩成 rm、unlink、-delete、os.remove
-把 `labs/fixtures/hooks/block-rm.mjs` 里的正则改成 `/(^|[\s;&|(])(rm|unlink)(\s|$)|-delete|os\.remove/`，再用 `labs/ch13/rm-bypass.ts` 的八种写法试一遍（只看“只有钩子”那一列）。哪些写法被堵上了，哪些还能删掉文件？
-???
-`unlink`、`find -delete`、Python 的 `os.remove` 被堵上了；`/bin/rm a.txt`、`cmd=rm; $cmd a.txt`、`perl -e 'unlink q(a.txt)'`、`mv a.txt ../moved.txt` 仍然能让 a.txt 消失（我们在编写这一章时用同样的规则做过一次）。新规则里 `rm` 要求前面是空白或分隔符，`/bin/rm` 前面是 `/`，`$cmd` 展开发生在 bash 里，钩子根本看不到；Perl 的 `unlink` 前面是引号，不满足“前面是空白或分隔符”，`mv` 压根不在名单上。每堵上一种写法，模型换一种就是了：名单永远追不上命令的数量，这就是文本规则的上限。
+| 钩子事件 | mox 里怎么接 | 和 Pi 版的差别 |
+| --- | --- | --- |
+| `SessionStart` | 扩展函数里直接运行，结果用 `addSystemPrompt` | 不需要事件：扩展函数本身就在会话开始时运行，而且可以是 `async`，`loadExtensions` 会等它 |
+| `UserPromptSubmit` | **对应不上** | mox 看不到用户输入，配置了也不会运行，启动时提示一次 |
+| `PreToolUse` | `tool_call`：拒绝返回理由，`allow` 返回 `true`，`ask` 用 `mox.ask` | 改写参数就地改 `args`，一样 |
+| `PostToolUse` | `tool_result`：返回字符串就是新结果 | 补充信息靠 `args` 对象配对 |
+| `Stop` | `agent_end`：返回字符串就让 Agent 接着干 | `answer` 直接就是最后一条回答 |
+| `SessionEnd` | `shutdown` | 一样 |
+
+### 第一步：SessionStart 和系统提示
+
+@code extensions/hooks/mox.ts#region:session-start
+
+加载扩展时直接运行钩子，拿到的补充信息用 `addSystemPrompt` 放进系统提示。这些信息整个会话不变，放在系统提示里不会破坏提示缓存（第 6 章），和 Pi 版放进系统提示的一个小节同理。
+
+### 第二步：PreToolUse，拒绝、确认、放行、改写
+
+@code extensions/hooks/mox.ts#region:pre-tool-use hl=44,45,47,49,54-56,58
+
+- **拒绝**：返回钩子给的原因（47 行）。第 9 章的 `verdict`：返回字符串就是拒绝，原因作为错误结果交给模型。
+- **要求确认**：钩子的 JSON 输出可以是 `ask`。mox 有 `mox.ask`，所以这里真的去问用户（49 行）；没有终端时 `ask` 返回 `undefined`，按拒绝处理。
+- **放行**：钩子明确输出 `allow`，或者用户刚在 `ask` 里点了“允许”，就在最后返回 `true`（44 行记下，58 行返回）。`true` 跳过 mox 内置的确认，所以 `dry-run-deploy.mjs` 这样的钩子在 `mox -p`（没有终端、没有 `--yolo`）里也能让调用通过。而且 `verdict` 是拒绝优先的：一个脚本说 `allow`、另一个扩展说拒绝，结果是拒绝。这和 Claude Code 合并多个 PreToolUse 钩子的规则（`deny` 优先于 `ask`，`ask` 优先于 `allow`）是同一个思路，`interpret` 在钩子这一层、`verdict` 在扩展这一层，各做一遍。
+- **改写参数**：钩子给了 `updatedInput`，翻译回 mox 的形状，清空 `args` 再写入（54～56 行）。`args` 就是后面 `tool.run` 要用的同一个对象，所以不需要返回值；会话里记录的仍是模型发出的原始调用。
+- **补充信息**：钩子的 `additionalContext` 要等到工具跑完才交给模型。45 行把它存在一个 `WeakMap` 里，键就是 `args` 这个对象：`tool_call` 和 `tool_result` 的处理函数拿到的是同一个对象，用它就能把“这次调用的补充信息”和“这次调用的结果”配对，不需要调用 id（mox 的事件不传 id）。
+
+### 第三步：PostToolUse 和 Stop
+
+@code extensions/hooks/mox.ts#region:post-tool-use hl=66,69-70
+
+`tool_result` 是接力（第 9 章的 `transform`）：返回的字符串成为下一个扩展收到的结果，所以钩子的脱敏不会被别的扩展挡住。66 行取出 `PreToolUse` 暂存的信息；69 行如果钩子用 `updatedToolOutput` 替换了输出，就用新的；70 行把补充信息用 `<hook-context>` 标签附在结果末尾。
+
+`Stop` 对应 `agent_end`。mox 直接把最终回答交给处理函数，返回字符串就是“还没完，接着干”；Pi 要用 `agent_before_settle`，上一条助手消息要自己找：
+
+::: tabs
+@@ mox
+@code extensions/hooks/mox.ts#region:stop
+`answer` 就是 `last_assistant_message`；返回的字符串被 `cli.ts` 当作新的用户消息。
+@@ Pi
+@code extensions/hooks/index.ts#L108-L117
+把原因追加成一条 `custom_message`，返回 `continue: true`。
 :::
 
+`stopHookActive` 是协议里 `stop_hook_active` 的来源：被拦下，下一轮就是钩子要求的；放行了，运行结束，下一次运行从假开始。最后一行 `mox.on('shutdown', …)` 触发 `SessionEnd`。
+
+### 验证
+
+`labs/ch13/practice.ts` 把钩子扩展装到你的 `extensions.ts`、`loop.ts`、`tools.ts` 上，用上面 Pi 实验里同一份钩子配置和同一个脚本模型走一遍，检查：SessionStart 的信息进了系统提示、`rm -rf` 被拦下、`./deploy.sh` 被改写且 `verdict` 为 `true`、读 `.env` 被拒绝、API Key 被遮盖、Stop 钩子让 Agent 续跑一轮、`UserPromptSubmit` 的提示、失败的命令不触发 PostToolUse。默认检验参考实现，设置 `MOX_DIR` 检验你自己的：
+
+```bash
+node labs/ch13/practice.ts                        # 检验参考实现 mox/
+MOX_DIR=~/my-mox node labs/ch13/practice.ts      # 检验你自己的
+```
+
+@lab node labs/ch13/practice.ts
+
+### 和 Pi 比，mox 省掉了什么
+
+- **`UserPromptSubmit`**：mox 没有看到用户输入的入口，想拦下带密码的提示，要在 mox 里加一个新事件，或者放在 `-p` 之前的 shell 脚本里做。
+- **PostToolUse 只在成功时触发**：mox 的 `bash` 在退出码非零时抛错，错误结果直接交给模型，不经过 `afterTool`，所以失败的命令没有 `PostToolUse`（Claude Code 另有 `PostToolUseFailure`）。
+- **`continue: false`**：钩子要求整个 Agent 停下，mox 的扩展没有中止运行的入口，只能提示后忽略。
+- **项目钩子**：mox 的 hooks 扩展只读 `~/.mox/hooks.json`；想用项目里的钩子，要把扩展放进项目的 `.mox/extensions/` 并加 `--trust`（第 9 章）。
+
+### 你来改
+
 ::: predict 让 Stop 钩子无视 stop_hook_active
-把 `require-tests.mjs` 里 `!stop_hook_active &&` 删掉，让它在回复里没有“测试通过”时一直 `block`。模型第二次说“全部完成”（没有再提测试）时，运行会怎样？
+把 `require-tests.mjs` 里 `!stop_hook_active &&` 删掉，让它在回复里没有“测试通过”时一直 `block`。模型第二次说“全部完成”（没有再提测试）时，mox 的运行会怎样？
 ???
-会一直续跑下去。每次 `agent_end` 钩子都返回 `block`，扩展都返回 `Stop 钩子：……`，`cli.ts` 的 `while (text)` 只看返回值，没有次数上限，模型被反复要求“先运行 npm test”。`stop_hook_active` 就是为这种情况准备的：第二轮开始它为真，钩子应当据此放行，或者自己记次数。mox 的 `cli.ts` 不替你兜底，这个判断完全在钩子一侧。
+会一直续跑下去。每次 `agent_end` 钩子都返回 `block`，扩展都返回 `Stop 钩子：……`，`cli.ts` 的 `while (text)` 只看返回值，没有次数上限，模型被反复要求“先运行 npm test”。`stop_hook_active` 就是为这种情况准备的：第二轮开始它为真，钩子应当据此放行，或者自己记次数。mox 不替你兜底，这个判断完全在钩子一侧。
 :::
 
 ::: predict 命令执行失败时 PostToolUse 钩子会运行吗
 给 `Bash` 配一个 PostToolUse 钩子，让它把 `tool_input.command` 追加写进一个日志文件。模型依次执行 `echo ok` 和 `exit 3`，日志里会有几行？
 ???
-只有一行：`echo ok`。mox 的 `bash` 在退出码非零时抛错（第 5 章），错误结果由 `execute` 的 `catch` 直接交给模型，不经过 `afterTool`，也就不会触发 `tool_result` 事件。我们在编写这一章时用同样的配置验证过这一点。想记录所有执行过的命令，包括失败的，要在 `tool_call` 上记（执行之前），或者用 Claude Code 的 `PostToolUseFailure`——mox 里没有对应的事件。
+只有一行：`echo ok`。`practice.ts` 的最后一项检查验证的就是这一点。想记录所有执行过的命令，包括失败的，要在 `tool_call` 上记（执行之前）。
+:::
+
+::: predict 把 allow 去掉
+把 `extensions/hooks/mox.ts` 最后的 `return approved ? true : undefined` 改成 `return undefined`，在 `mox -p`（不加 `--yolo`）里重新跑 `./deploy.sh production`，会怎样？
+???
+钩子依然把命令改写成 `--dry-run`，但不再返回 `true`，`verdict` 落回内置确认：没有终端，被拒绝，报错“没有终端可以确认，已拒绝”。`allow` 映射成 `true` 的意义就在于把钩子的放行决定变成 mox 的放行。
 :::
 
 ## 面试题

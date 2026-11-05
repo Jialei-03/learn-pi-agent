@@ -6,11 +6,13 @@ import { execSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { estimateTokens } from '../mox/src/compact.ts';
 import type { Msg } from '../mox/src/model.ts';
 
-const CLI = fileURLToPath(new URL('../mox/src/cli.ts', import.meta.url));
+import { MOX_DIR } from '../labs/shared/mox-dir.ts';
+
+// 被评测的 mox：默认是课程自带的参考实现；设置 MOX_DIR 就评测你自己的那份
+const CLI = join(MOX_DIR, 'src', 'cli.ts');
 
 export interface RunResult {
   finalText: string;

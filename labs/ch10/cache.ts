@@ -1,9 +1,8 @@
 // 第 10 章实验：记忆在会话中途变化时，请求的前缀还在吗？
 //   node labs/ch10/cache.ts
-// 同一段对话（五次运行，第三次用户说“记住……”，模型保存一条记忆），用三种方式把记忆放进系统提示：
+// 同一段对话（五次运行，第三次用户说“记住……”，模型保存一条记忆），用两种方式把记忆放进系统提示：
 //   A  Pi 的分节补丁：扩展只修改 systemPromptOptions.sections.memory（本章的 extensions/memory/index.ts）
 //   B  Pi 的整段替换：扩展在 before_agent_start 里返回完整的 systemPrompt
-//   C  mox：addSystemPrompt 把记忆追加在系统提示末尾，每次运行重新生成整段系统提示（extensions/memory/mox.ts）
 // 每次请求，我们计算它和上一次请求的“公共前缀”占多少（按字符，简化了服务商的实际规则，和第 6 章的实验一样）。
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
@@ -11,15 +10,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fauxAssistantMessage, fauxToolCall } from '@earendil-works/pi-ai/compat';
 import { createMemoryExtension } from '../../extensions/memory/index.ts';
-import { createMemoryMoxExtension } from '../../extensions/memory/mox.ts';
 import { MemoryStore, saveFromModel, userAskedToRemember } from '../../extensions/memory/store.ts';
-import { systemPrompt } from '../../mox/src/context.ts';
-import { loadExtensions } from '../../mox/src/extensions.ts';
-import { runLoop } from '../../mox/src/loop.ts';
-import type { Msg } from '../../mox/src/model.ts';
-import { codingTools } from '../../mox/src/tools.ts';
 import { createPiSession } from '../shared/pi-session.ts';
-import { scripted } from '../shared/scripted.ts';
 
 const prompts = ['先看看这个项目的结构。', '再看看 src 目录。', '记住：这个项目用 pnpm，不要用 npm，因为锁文件是 pnpm-lock.yaml。', '跑一下测试。', '再跑一次，看看有没有不稳定的用例。'];
 const MEMORY = { name: 'package-manager', description: '这个项目用 pnpm，不用 npm', type: 'feedback', content: '运行脚本和安装依赖都用 pnpm。\n原因：锁文件是 pnpm-lock.yaml。' } as const;
@@ -71,41 +63,18 @@ async function runPi(extension: (pi: any) => void): Promise<Requests> {
   return requests;
 }
 
-// ── C：mox ───────────────────────────────────────────────
-async function runMox(): Promise<Requests> {
-  const cwd = mkdtempSync(join(tmpdir(), 'ch10-mox-'));
-  const tools = codingTools(cwd);
-  // 用户在 ask 里选“保存，立即生效”，对应 A、B 里用户说了“记住”
-  const extensions = await loadExtensions([createMemoryMoxExtension({ dir: tmp('memory') })], { cwd, tools, ask: async (_question, choices) => choices.find(c => c.startsWith('保存')) });
-  const base = systemPrompt(cwd, cwd, []);
-  const system = () => [base, ...extensions.prompts.map(part => part())].join('\n\n');         // 和 mox/src/cli.ts 的 system() 一样
-  const requests: Requests = [];
-  const model = scripted((messages, n) => {
-    requests.push(wire(messages));                                                          // 第一条就是系统提示
-    if (n === 3) return { toolCalls: [{ id: 's1', name: 'save_memory', arguments: { ...MEMORY } }] };
-    return { text: n === 4 ? '记住了。' + reply(3) : reply(n < 3 ? n : n - 1) };
-  });
-  const history: Msg[] = [];
-  for (const prompt of prompts) {
-    history.push({ role: 'user', content: prompt });
-    await runLoop(history, { model, system: system(), tools });                             // 每次运行前重新取系统提示
-  }
-  return requests;
-}
-
 const strategies = {
   A: await runPi(createMemoryExtension({ dir: tmp('memory') })),
   B: await runPi(replaceWholePrompt(tmp('memory'))),
-  C: await runMox(),
 };
-assert.deepEqual(Object.values(strategies).map(r => r.length), [6, 6, 6]);
+assert.deepEqual(Object.values(strategies).map(r => r.length), [6, 6]);
 
 /** 第 i 次请求有多少比例和上一次请求相同（i 从 2 开始）。 */
 const reuse = (requests: Requests, i: number) => commonPrefix(requests[i - 2], requests[i - 1]) / requests[i - 1].length;
 const events = ['', '第 2 次运行', '第 3 次运行：用户说“记住”，模型调用 save_memory', '同一次运行：工具结果交回模型', '第 4 次运行：记忆已经变了', '第 5 次运行：记忆不再变化'];
 
-console.log('| 请求 | 发生了什么 | A Pi：分节补丁 | B Pi：整段替换 | C mox：追加在末尾 |');
-console.log('| --- | --- | --- | --- | --- |');
+console.log('| 请求 | 发生了什么 | A Pi：分节补丁 | B Pi：整段替换 |');
+console.log('| --- | --- | --- | --- |');
 for (let i = 2; i <= 6; i++) {
   console.log(`| ${i} | ${events[i - 1]} | ${Object.values(strategies).map(r => `${Math.round(reuse(r, i) * 100)}%`).join(' | ')} |`);
 }
@@ -113,11 +82,10 @@ for (let i = 2; i <= 6; i++) {
 const drop = (requests: Requests) => reuse(requests, 4) - reuse(requests, 5);
 console.log(`| **记忆变化那一次，复用比例下降** | 第 4 → 5 次请求 | ${Object.values(strategies).map(r => `**−${Math.round(drop(r) * 100)} 个百分点**`).join(' | ')} |`);
 
-// 结论：记忆变化后的第一次请求（第 5 次）里，A 的复用比例和平时差不多，B 和 C 掉了一大截——系统提示变了，后面的历史全部无法复用
+// 结论：记忆变化后的第一次请求（第 5 次）里，A 的复用比例和平时差不多，B 掉了一大截——系统提示变了，后面的历史全部无法复用
 assert.ok(drop(strategies.A) < 0.05, 'A：补丁追加在历史末尾，之前的内容全部复用');
 assert.ok(drop(strategies.B) > 0.3, 'B：系统提示变了，历史全部无法复用');
-assert.ok(drop(strategies.C) > 0.3, 'C：系统提示变了，历史全部无法复用');
-// 记忆不再变化之后（第 6 次），三种方式都恢复正常
+// 记忆不再变化之后（第 6 次），两种方式都恢复正常
 for (const requests of Object.values(strategies)) assert.ok(reuse(requests, 6) > 0.8);
 // A 的“补丁”确实是一条追加在历史末尾、只含 memory 小节的系统消息
 const patch = JSON.parse(strategies.A[4]).filter((m: any) => m.role === 'system').at(-1);

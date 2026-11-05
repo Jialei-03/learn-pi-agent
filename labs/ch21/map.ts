@@ -2,9 +2,11 @@
 //   node labs/ch21/map.ts
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { MOX_DIR, whose } from '../shared/mox-dir.ts';
 
-const dir = fileURLToPath(new URL('../../mox/src/', import.meta.url));
+console.log(`${whose()}\n`);
+const dir = `${join(MOX_DIR, 'src')}/`;
 // 每个文件在课程里的位置（章节号）
 const chapters: Record<string, string> = {
   'model.ts': '2', 'loop.ts': '3', 'tools.ts': '4、5', 'session.ts': '7', 'compact.ts': '8',

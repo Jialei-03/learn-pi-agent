@@ -7,7 +7,10 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createEditTool as piEdit } from '@earendil-works/pi-coding-agent';
-import { codingTools } from '../../mox/src/tools.ts';
+import { loadMox, whose } from '../shared/mox-dir.ts';
+
+const { codingTools } = await loadMox('tools.ts');
+console.log(`${whose()}\n`);
 
 const cases = [
   { label: '精确匹配', file: 'let a = 1;\nlet b = 2;\n', edits: [['let b = 2;', 'let b = 3;']] },
@@ -30,7 +33,7 @@ async function attempt(tool: 'mox' | 'pi', c: (typeof cases)[number]) {
   writeFileSync(join(dir, 'notes.txt'), c.file);
   try {
     const edits = c.edits.map(([oldText, newText]) => ({ oldText, newText }));
-    if (tool === 'mox') await codingTools(dir).find(t => t.name === 'edit')!.run({ path: 'notes.txt', edits });
+    if (tool === 'mox') await codingTools(dir).find((t: any) => t.name === 'edit')!.run({ path: 'notes.txt', edits });
     else await piEdit(dir).execute('1', { path: 'notes.txt', edits } as any);
     return { ok: true, text: `✓ ${show(readFileSync(join(dir, 'notes.txt'), 'utf8'))}` };
   } catch (error) {

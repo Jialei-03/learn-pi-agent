@@ -1,14 +1,17 @@
 # Learn Pi Agent
 
-**从零造一个 Coding Agent，再读懂一个生产级的。**
+**读懂一个生产级的 Coding Agent，再亲手搭一个自己的。**
 
-每一章拆开 Coding Agent 的一个机制（循环、工具、上下文、会话、压缩、权限、沙箱、子 Agent……）：先在 [Mox-agent](https://github.com/Jialei-03/Mox-agent) 里读懂、运行实现它的那几十行代码，再对照 [Pi](https://github.com/earendil-works/pi)（MIT）的源码，看生产级 Agent 怎么设计、为什么这样取舍。Pi 刻意没有内置的能力——权限规则、兼容 Claude Code 协议的 Hooks、长期记忆、子 Agent、后台任务——我们用 Pi 的扩展 API 自己写出来。
+每一章拆开 Coding Agent 的一个机制（循环、工具、上下文、会话、压缩、权限、沙箱、子 Agent……），主体是读 [Pi](https://github.com/earendil-works/pi)（MIT）的源码：生产级 Agent 怎么设计、为什么这样取舍。Pi 刻意没有内置的能力——权限规则、兼容 Claude Code 协议的 Hooks、长期记忆、子 Agent、后台任务——我们用 Pi 的扩展 API 自己写出来。
+
+每章末尾是**实战**：把这一章读懂的机制，用几十行代码亲手加进你自己的 Agent —— mox。学完全课，mox 也就一块一块搭完了。[Mox-agent](https://github.com/Jialei-03/Mox-agent) 是实战的参考答案。
 
 学完你手里会有：
 
-- **mox**：一个约 680 行、零依赖、能接真实模型的命令行 Agent（[Mox-agent](https://github.com/Jialei-03/Mox-agent)），每一行你都知道为什么在那里；
-- **一组扩展**：补齐 mox 和 Pi 没有内置的生产能力，大多同时有 mox 版本和 Pi 版本；
-- **一张源码地图和一个面试题库**：讲得出“为什么这样设计”。
+- **对 Pi 的完整理解**：一张源码地图，每个机制都读过源码、跑过实验；
+- **一组 Pi 扩展**：补齐 Pi 没有内置的生产能力（大多也有 mox 版本）；
+- **你自己的 mox**：一个约 680 行、零依赖、能接真实模型的命令行 Agent，每一行都是你写的，参考答案是 [Mox-agent](https://github.com/Jialei-03/Mox-agent)；
+- **一个面试题库**：讲得出“为什么这样设计”。
 
 ## 快速开始
 
@@ -78,7 +81,7 @@ git clone --branch v1.5.0 https://github.com/earendil-works/pi.git ../pi-v1.5.0
 | | |
 | --- | --- |
 | Pi 源码 | [v1.5.0 · `f9a2636`](https://github.com/earendil-works/pi/tree/f9a26365568127461c47a07a37dcb42c140a3ac5) |
-| mox | [Mox-agent · `69cda3f`](https://github.com/Jialei-03/Mox-agent/tree/69cda3f4121cb3d0871c9f42ba3af65fa792e4cb)（子模块） |
+| mox | [Mox-agent · `87bba09`](https://github.com/Jialei-03/Mox-agent/tree/87bba0978d9dd63f87081ee20a6f689732f5d9ad)（子模块） |
 | 实验使用的 npm 包 | `@earendil-works/pi-*@1.5.0`（与源码同一版本） |
 | Claude Code 对照 | 只引用 [官方文档](https://code.claude.com/docs) |
 

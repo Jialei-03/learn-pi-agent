@@ -12,7 +12,10 @@ import assert from 'node:assert/strict';
 import { execSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { createBashTool as piBash } from '@earendil-works/pi-coding-agent';
-import { codingTools } from '../../mox/src/tools.ts';
+import { loadMox, whose } from '../shared/mox-dir.ts';
+
+const { codingTools } = await loadMox('tools.ts');
+console.log(`${whose()}\n`);
 
 // 模式写成 [s]leep：pgrep 自己（以及启动它的 sh）的命令行里不会匹配到这个模式
 const count = (tag: string) => {
@@ -20,7 +23,7 @@ const count = (tag: string) => {
 };
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-const moxBash = codingTools(tmpdir()).find(t => t.name === 'bash')!;
+const moxBash = codingTools(tmpdir()).find((t: any) => t.name === 'bash')!;
 
 /** 朴素实现：mox 早先版本的 bash。超时和取消只向 bash 这一个进程发 SIGTERM，等所有输出管道关闭才返回。 */
 const naiveBash = (command: string, timeout = 120, signal?: AbortSignal) =>

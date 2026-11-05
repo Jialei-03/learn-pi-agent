@@ -6,12 +6,13 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { loadExtensions } from '../../mox/src/extensions.ts';
 import { runMox, type CliScript } from '../shared/mox-cli.ts';
-import { createGoalMoxExtension } from '../../extensions/goal/mox.ts';
+import { extFile } from './ext.ts';
+import { loadMox, whose } from '../shared/mox-dir.ts';
 
-const extension = fileURLToPath(new URL('../../extensions/goal/mox.ts', import.meta.url));
+const { loadExtensions } = await loadMox('extensions.ts');
+console.log(`${whose()}\n`);
+const extension = extFile('goal');
 const temp = (name: string) => mkdtempSync(join(tmpdir(), `ch18-${name}-`));
 
 function project() {
@@ -55,7 +56,7 @@ const stuck = await scenario('模型一直不改文件', (_r, n) => ({ text: ['�
 
 // ③ /goal 命令：交互模式里设定目标用的就是它（mox -p 没有命令，所以上面用了环境变量）
 const host = { cwd: project(), tools: [], ask: async () => undefined };
-const loaded = await loadExtensions([createGoalMoxExtension({ maxRounds: 2, check: undefined })], host);
+const loaded = await loadExtensions([extension], host);
 const written: string[] = [];
 const write = process.stdout.write.bind(process.stdout);
 process.stdout.write = ((chunk: string) => { written.push(String(chunk).trim()); return true; }) as typeof process.stdout.write;
@@ -73,4 +74,4 @@ assert.ok(!hasEdit(stuck.messages));
 assert.equal(stuck.run.requests.length, 2, '第二轮就被拦下：模型只回复了两次，没有等到轮数上限');
 assert.match(stuck.notice, /原地打转/);
 assert.match(written[0], /目标已设定：node test.js/);
-assert.match(next ?? '', /目标还没有达成（第 1\/2 轮）/);
+assert.match(next ?? '', /目标还没有达成（第 1\/\d+ 轮）/);

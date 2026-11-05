@@ -1,7 +1,7 @@
 // 第 0 章：检查环境能不能跑后面所有实验。
 //   node labs/ch00/check-env.ts
-// 每一项只打一行；mox 能启动，并且 mox 和 Pi 读同一段回放（第 2 章的实验）得到相同的结果。
-import { execFileSync } from 'node:child_process';
+// 每一项只打一行；参考实现 mox 能启动，并且它的模型调用和 Pi 的适配器读同一段回放得到相同的结果（第 2 章实战的检验）。
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
 const checks: Array<[string, boolean, string]> = [];
@@ -20,11 +20,10 @@ const moxReady = existsSync('mox/src/loop.ts');
 const moxHelp = moxReady ? execFileSync(process.execPath, ['mox/src/cli.ts', '--help'], { encoding: 'utf8' }) : '';
 checks.push(['mox（Mox-agent 子模块）', moxHelp.includes('用法'), moxReady ? '命令行能启动' : '没找到 mox/src，先运行 git submodule update --init']);
 
-// 第 2 章的回放实验：同一段 SSE 字节流交给 mox 的 openai() 和 Pi 的适配器
-const replay = moxReady ? execFileSync(process.execPath, ['labs/ch02/replay.ts'], { encoding: 'utf8' }) : '';
-const verdicts = replay.match(/是否一致：.*/g) ?? [];
-const same = verdicts.length > 0 && verdicts.every(v => v.endsWith('是'));
-checks.push(['mox 和 Pi 读同一段回放', same, same ? `${verdicts.length} 段样本，结果一致` : '结果不一致，见 node labs/ch02/replay.ts']);
+// 第 2 章实战的检验（默认检验参考实现）：mox 的 openai() 读同一段字节流，结果要和 Pi 的适配器一致
+const practice = moxReady ? spawnSync(process.execPath, ['labs/ch02/practice.ts'], { encoding: 'utf8', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'MOX_DIR')) }) : undefined;
+const same = practice?.status === 0 && practice.stdout.includes('全部通过');
+checks.push(['mox 和 Pi 读同一段回放', same, same ? '参考实现的模型调用与 Pi 的适配器结果一致' : '见 node labs/ch02/practice.ts']);
 
 for (const [label, ok, detail] of checks) console.log(`${ok ? '✓' : '✗'} ${label}：${detail}`);
 

@@ -2,8 +2,9 @@
 //   正确的解（必须通过）、只说不做（必须失败）、投机取巧（必须失败）。评分器做不到这一点，评测的数字就没有意义。
 //   node labs/ch20/validate.ts
 // 被测的是真正的 mox 命令行（mox -p --yolo），模型是本机起的假服务器，按剧本回复。
-import { CASES } from '../../evals/cases.ts';
-import { runOnce } from '../../evals/harness.ts';
+import { fileURLToPath } from 'node:url';
+import { CASES as REFERENCE_CASES } from '../../evals/cases.ts';
+import * as referenceHarness from '../../evals/harness.ts';
 import type { ScriptReply } from '../shared/scripted.ts';
 import { startFakeModel } from '../shared/mox-cli.ts';
 
@@ -78,23 +79,28 @@ export function parseDuration(text) {
   },
 };
 
-const expected = { 正确的解: true, 只说不做: false, 投机取巧: false } as const;
-console.log('| 任务 | 正确的解 | 只说不做 | 投机取巧 |');
-console.log('| --- | --- | --- | --- |');
-let ok = 0, total = 0;
-for (const c of CASES) {
-  const cells: string[] = [];
-  for (const kind of Object.keys(expected) as (keyof typeof expected)[]) {
-    // 剧本：每个回复一次请求；用完之后一律回答“完成了。”
-    const replies = agents[c.id][kind];
-    const model = await startFakeModel((_request, n) => replies[n - 1] ?? { text: '完成了。' });
-    const { grade } = await runOnce(c, { name: kind }, { baseUrl: model.url, apiKey: 'lab', model: 'fake' });
-    model.close();
-    total++;
-    if (grade.pass === expected[kind]) ok++;
-    cells.push(`${grade.pass ? '通过' : '失败'}${grade.pass === expected[kind] ? '' : ' ⚠'}：${grade.note}`);
+/** 对一个评测框架做“已知答案”检验。harness 默认是课程自带的 evals/harness.ts，也可以传你自己写的。 */
+export async function validate({ runOnce }: { runOnce: typeof referenceHarness.runOnce } = referenceHarness, cases = REFERENCE_CASES) {
+  const expected = { 正确的解: true, 只说不做: false, 投机取巧: false } as const;
+  console.log('| 任务 | 正确的解 | 只说不做 | 投机取巧 |');
+  console.log('| --- | --- | --- | --- |');
+  let ok = 0, total = 0;
+  for (const c of cases) {
+    const cells: string[] = [];
+    for (const kind of Object.keys(expected) as (keyof typeof expected)[]) {
+      // 剧本：每个回复一次请求；用完之后一律回答“完成了。”
+      const replies = agents[c.id][kind];
+      const model = await startFakeModel((_request, n) => replies[n - 1] ?? { text: '完成了。' });
+      const { grade } = await runOnce(c, { name: kind }, { baseUrl: model.url, apiKey: 'lab', model: 'fake' });
+      model.close();
+      total++;
+      if (grade.pass === expected[kind]) ok++;
+      cells.push(`${grade.pass ? '通过' : '失败'}${grade.pass === expected[kind] ? '' : ' ⚠'}：${grade.note}`);
+    }
+    console.log(`| ${c.id} | ${cells.join(' | ')} |`);
   }
-  console.log(`| ${c.id} | ${cells.join(' | ')} |`);
+  console.log(`\n${ok}/${total} 个结果符合预期${ok === total ? '：评分器能区分对错' : '：评分器有问题，先修它'}`);
+  if (ok !== total) process.exit(1);
 }
-console.log(`\n${ok}/${total} 个结果符合预期${ok === total ? '：评分器能区分对错' : '：评分器有问题，先修它'}`);
-if (ok !== total) process.exit(1);
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) await validate();

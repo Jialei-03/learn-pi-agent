@@ -1,4 +1,4 @@
-// 启动真正的 mox 命令行（mox/src/cli.ts），连到一个假的模型服务（labs/shared/mox-cli.ts）。命令行、扩展、工具都是真的，只有模型是脚本。
+// 启动真正的 mox 命令行（mox/src/cli.ts），连到一个假的模型服务（labs/shared/mox-cli.ts）；MOX_DIR 指向自己的 mox 时，跑的就是自己的 cli.ts。命令行、扩展、工具都是真的，只有模型是脚本。
 // HOME 指向临时目录，所以 ~/.mox 里的配置（权限规则、扩展）完全由实验提供。
 // 有 answers 时借一个伪终端运行（mox 的 ask 只在 stdin 是终端时才提问），没有时用 -p 一次性运行。
 import { spawn } from 'node:child_process';
@@ -8,7 +8,8 @@ import { dirname, join } from 'node:path';
 import type { Msg } from '../../mox/src/model.ts';
 import type { ChatRequest } from '../shared/mox-cli.ts';
 import type { Script } from '../shared/scripted.ts';
-import { runMox, startFakeModel } from '../shared/mox-cli.ts';
+import { startFakeModel } from '../shared/mox-cli.ts';
+import { MOX_DIR } from '../shared/mox-dir.ts';
 
 export interface CliRun {
   script: Script;
@@ -34,20 +35,17 @@ export async function runCli({ script, prompt, flags = [], answers, project = {}
     }
   }
   const adapted = (request: ChatRequest, n: number) => script(request.messages, n);
-  let requests: ChatRequest[];
-  if (!answers) {
-    // -p：没有终端，直接用共用的 runMox
-    requests = (await runMox([...flags, '-p', String(prompt)], { cwd: dirs.project, home: dirs.home, script: adapted })).requests;
-  } else {
-    // 交互：借一个伪终端，像用户那样回答提问。假模型服务器仍然用共用的那个
-    const model = await startFakeModel(adapted);
-    const env = { ...process.env, HOME: dirs.home, MOX_MODEL: 'scripted', MOX_BASE_URL: model.url, MOX_API_KEY: 'x' };
-    const argv = [process.execPath, join(process.cwd(), 'mox/src/cli.ts'), ...flags];
-    // 必须异步等待：假的模型服务在这个进程里，同步等待子进程会让它没法响应
-    await new Promise<void>(done => spawn('python3', ['-I', join(process.cwd(), 'labs/ch14/pty-driver.py'), JSON.stringify({ argv, prompts: [prompt].flat(), answers })], { cwd: dirs.project, env, stdio: 'ignore' }).on('close', () => done()));
-    requests = model.requests;
-    model.close();
-  }
+  const model = await startFakeModel(adapted);
+  const env = { ...process.env, HOME: dirs.home, MOX_MODEL: 'scripted', MOX_BASE_URL: model.url, MOX_API_KEY: 'x' };
+  const argv = [process.execPath, join(MOX_DIR, 'src/cli.ts'), ...flags];
+  // 有 answers 就借一个伪终端像用户那样回答（mox 的 ask 只在 stdin 是终端时才提问），否则用 -p 一次性运行。
+  // 必须异步等待：假的模型服务在这个进程里，同步等待子进程会让它没法响应
+  const [command, args] = answers
+    ? ['python3', ['-I', join(process.cwd(), 'labs/ch14/pty-driver.py'), JSON.stringify({ argv, prompts: [prompt].flat(), answers })]]
+    : [argv[0], [...argv.slice(1), '-p', String(prompt)]];
+  await new Promise<void>(done => spawn(command, args, { cwd: dirs.project, env, stdio: 'ignore' }).on('close', () => done()));
+  const requests = model.requests;
+  model.close();
   return { project: dirs.project, exists: (name: string) => existsSync(join(dirs.project, name)), outcomes: outcomes(requests.at(-1)!.messages), requests };
 }
 

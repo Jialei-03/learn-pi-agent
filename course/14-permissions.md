@@ -1,74 +1,26 @@
 ---
 motto: 权限系统要回答的不是“模型想做什么”，而是“谁有权决定它能做什么”。
 learn:
-  - 读懂 mox 自带的权限（只读工具放行、三选一、--yolo、没有终端就拒绝），说清楚它做不到什么
   - 两种安全哲学：Claude Code 的“逐项审批”与 Pi 的“靠隔离”
   - Claude Code 的规则语法：Tool(说明符)、deny → ask → allow、权限模式
-  - 把一行命令变成可以判断的东西：复合命令、包装命令、命令替换、只读命令、重定向，以及路径规则与符号链接
-  - 给 mox 写一个规则式权限扩展（`on('tool_call')` 加 `ask`），说明 `tool_call` 为什么既要能拒绝、也要能放行
+  - 把一行命令变成可以判断的东西：复合命令、包装命令、命令替换、只读命令、重定向
+  - 路径规则与符号链接，以及为什么规则不是安全边界
+  - 给 Pi 写一个规则式权限扩展；没有界面时怎么办
+  - 实战：给 mox 加上权限——cli.ts 的内置确认，加一个规则式的 permissions 扩展
 prereq: 第 4、9、13 章
 time: 70 分钟
-build: extensions/permissions —— 兼容 Claude Code 规则语法的权限扩展（mox 与 Pi 两个版本，共用规则引擎）
+build: 实战：给 mox 加上权限——cli.ts 的内置确认 + 规则式 permissions 扩展（extensions/permissions/mox.ts，和 Pi 版共用规则引擎）
 ---
 
-mox 在执行 `write`、`edit`、`bash` 之前会停下来问你一句。守住这道门的代码只有十来行，下面先把它跑一遍：启动真正的 mox 命令行（`mox/src/cli.ts`），让它连到一个脚本化的假模型（所以不需要 Key）。模型依次 `read` 一个文件、`write` 两个文件、`bash ls`，三种运行方式下每一步的下场如下：
+Pi 默认不审批任何工具调用：模型要 `rm -rf build`，它就执行。这是一个有意的立场，不是疏忽（后面会读它的安全文档）。可是在自己的电脑上交互地用 Agent，大多数人想要的是另一种东西：模型要改文件、跑命令的时候，停下来问一句；`npm run test` 这种每天跑几十次的命令别问；`cat .env` 这种干脆别让它碰。
 
-@lab node labs/ch14/builtin.ts
-
-三次运行是同一份脚本，差别只在怎么启动：
-
-- **`mox -p`**：没有终端，没法问人。只读的 `read` 放行，其余三个调用（两次 `write` 和 `bash`）全部被拒绝，理由里写着“没有终端可以确认，已拒绝。想自动执行请加 --yolo”。磁盘上什么都没有。
-- **`mox -p --yolo`**：不再询问，四个调用全部执行。
-- **交互模式**：每个调用前停下来问。第一次 `write` 选了“本次会话都允许”（输入 2），第二次 `write` 就不问了；`bash` 是另一个工具，要重新问，这次选了“拒绝”（输入 3）。
-
-这三种行为够用来防止“模型随手 `rm -rf`”，但也只能防这一种事。这一章的主线是：先读懂这十行，找出它不够用的地方，再用 mox 的扩展接口补上一套规则式的权限（语法和 Claude Code 兼容），最后和 Pi 的立场（不审批，靠隔离）放在一起比较。
-
-## mox 自带的权限：十行代码
-
-提问的函数和决定要不要提问的函数都在 `cli.ts` 里：
-
-@code mox/src/cli.ts#L50-L57 hl=53,56
-
-`ask` 是 mox 给人提问的唯一通道，扩展也能用（`mox.ask`）。第 53 行是关键：**没有终端（stdin 不是 TTY）就不提问，直接返回 `undefined`**。把选项列出来、取回输入的序号，只有第 54 到 56 行。
-
-@code mox/src/cli.ts#L64-L74 hl=65,67,69,70,71,72,73
-
-决定要不要提问的是 `beforeTool`，由 `runLoop` 在每个工具执行前调用。逐行看：
-
-1. **先问扩展**（67 行）。`extensions.verdict(name, args)` 把调用交给**每一个**扩展的 `tool_call` 处理器，汇总成一个结论：只要有一个返回**字符串**就是拒绝，调用到此结束，理由原样交给模型（68 行）；没有人拒绝、有一个返回 **`true`** 就是放行，跳过下面所有的检查（69 行）；都没有意见，就继续往下走。**拒绝优先**，和扩展的加载顺序无关。这一步在 `--yolo` 之前，所以扩展的拒绝对 `--yolo` 也有效。
-2. **放行几种情况**（69 行）：扩展说了 `true`，或者 `--yolo`，或者工具在 `allowed` 里——一开始是 `read`、`grep`、`find`、`ls` 这四个只读工具和 `task`（子 Agent 本身没有副作用，它里面的每个工具调用会单独走到这里）——或者用户之前选过“本次会话都允许”，那个工具名也会加进 `allowed`。
-3. **没有终端就拒绝**（70 行）。`mox -p` 在 CI 里运行时没人能回答，不能默认放行，所以拒绝，还把解决办法写进了错误信息。拿不准的时候拒绝，是无人值守场景唯一安全的默认值。
-4. **问用户**（71 行）。选“本次会话都允许”，把**工具名**加进 `allowed`（72 行）；选“允许”只放过这一次；其他回答（包括输错的序号，`ask` 返回 `undefined`）都按拒绝处理（73 行）。
-
-```mermaid
-flowchart TD
-  C[模型发出工具调用] --> E{扩展的 tool_call 返回了什么？}
-  E -- 字符串 --> R1[拒绝：理由交给模型]
-  E -- true --> RUN[执行]
-  E -- 没有意见 --> Y{"--yolo，或工具在 allowed 里<br/>（只读工具、task、本次会话已允许的）？"}
-  Y -- 是 --> RUN[执行]
-  Y -- 否 --> T{有终端？}
-  T -- 否 --> R2[拒绝：没有终端可以确认]
-  T -- 是 --> Q[ask：允许 / 本次会话都允许 / 拒绝]
-  Q -- 允许 --> RUN
-  Q -- 本次会话都允许 --> ADD[allowed 加入工具名] --> RUN
-  Q -- 拒绝或无效输入 --> R3[拒绝：用户拒绝了这次调用]
-```
-
-### 它在哪里不够用
-
-- **粒度是工具名。** “本次会话都允许”记下的是 `bash`，从此 `npm test` 和 `rm -rf ~` 一样不再询问。想放行 `npm test` 而继续盯着其他命令，做不到。
-- **不看内容。** 往项目里写一个文件和往 `/etc/hosts` 写一个文件，问的是同一句话；bash 的 `ls` 和 `curl … | sh` 也是。每个调用都问，用户很快就会养成不看就点“允许”的习惯，审批就失去了意义。
-- **只有“问”，没有“永远不行”。** 想让 `git push` 永远被拒绝，只能每次点拒绝。
-- **没有记忆。** 选择只活到这次会话结束，不能写进项目配置让团队共享。
-
-Claude Code 用一整套规则和模式来补这些，Pi 干脆换了一条路。先看这两种立场。
+Claude Code 为此建了一整套规则语言和权限模式。这一章先把这套东西读透：规则怎么写、怎么判断一条 Bash 命令、为什么规则永远不是安全边界，再把它做成一个 Pi 扩展。章末在 mox 里用不到一百行做一个最小版本：`cli.ts` 里十行的内置确认，加上同一个规则引擎驱动的扩展。
 
 ## 两种安全哲学
 
 Agent 会犯错（在错误的目录里执行 `rm`），也会被利用（第 1、9、10、12 章反复出现的提示注入）。问题是：由谁、在哪一层拦住它？
 
-**Claude Code 的答案是审批。** 工具分成几级：读文件不需要批准；执行命令、修改文件、访问网络需要用户点头。为了不让用户被确认框淹没，又有一整套规则（哪些命令直接放行、哪些一律禁止）和模式（比如“自动接受文件修改”）。mox 的十行代码是这条路线的最小形态。
+**Claude Code 的答案是审批。** 工具分成几级：读文件不需要批准；执行命令、修改文件、访问网络需要用户点头。为了不让用户被确认框淹没，又有一整套规则（哪些命令直接放行、哪些一律禁止）和模式（比如“自动接受文件修改”）。
 
 **Pi 的答案是隔离。** 它的安全文档开门见山：
 
@@ -76,7 +28,7 @@ Agent 会犯错（在错误的目录里执行 `rm`），也会被利用（第 1�
 
 Pi 默认不审批任何工具调用。它的立场是：盯着对话记录、审查改动都不构成安全边界；真正的安全来自限制 Agent **能接触到**的文件、凭据、进程和网络——在容器、虚拟机或沙箱里运行。
 
-两种答案并不矛盾，它们防的是不同的东西。审批让人参与关键决定，适合交互式地使用；隔离给出硬性的边界，即使审批被绕过、被用户随手点了“是”，损失也有上限。成熟的方案两者都要：Claude Code 也有沙箱（第 15 章），Pi 也有第 9 章那样的确认扩展。这一章补上审批这一半：一个与 Claude Code 规则语法兼容的权限扩展，先装进 mox，再看 Pi 里的同一份。
+两种答案并不矛盾，它们防的是不同的东西。审批让人参与关键决定，适合交互式地使用；隔离给出硬性的边界，即使审批被绕过、被用户随手点了“是”，损失也有上限。成熟的方案两者都要：Claude Code 也有沙箱（第 15 章），Pi 也有第 9 章那样的确认扩展。这一章补上 Pi 缺少的那一半：一个与 Claude Code 规则语法兼容的权限扩展。
 
 ## 规则
 
@@ -149,42 +101,42 @@ flowchart LR
   SP --> S1["npm run build"]:::dim --> M1{"命中 deny？"}:::dim
   SP --> S2["rm -rf /"]:::dim --> M2{"命中 deny？"}:::dim
   M2 -- Bash(rm *) --> OUT["deny"]:::dim
-  OUT --> BLK["tool_call 返回理由"]:::dim
+  OUT --> BLK["tool_call block"]:::dim
 --- `splitCommand` 按 `&&` 拆成两个子命令（引号里的不算，`$(…)` 里的也会拿出来）。`ok` 为真，说明这条命令能可靠解析。
 flowchart LR
   C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::on
   SP --> S1["npm run build"]:::dim --> M1{"命中 deny？"}:::dim
   SP --> S2["rm -rf /"]:::dim --> M2{"命中 deny？"}:::dim
   M2 -- Bash(rm *) --> OUT["deny"]:::dim
-  OUT --> BLK["tool_call 返回理由"]:::dim
+  OUT --> BLK["tool_call block"]:::dim
 --- 先过 deny：对每个子命令 `stripWrappers(sub, false)` 去掉包装命令和**所有**环境变量赋值，再逐条规则匹配。`npm run build` 没有命中任何 deny 规则。
 flowchart LR
   C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::done
   SP --> S1["npm run build"]:::on --> M1{"命中 deny？"}:::on
   SP --> S2["rm -rf /"]:::dim --> M2{"命中 deny？"}:::dim
   M2 -- Bash(rm *) --> OUT["deny"]:::dim
-  OUT --> BLK["tool_call 返回理由"]:::dim
+  OUT --> BLK["tool_call block"]:::dim
 --- 第二个子命令 `rm -rf /` 命中 `Bash(rm *)`。任何一个子命令命中 deny，整条命令就是 deny，函数在这里直接返回，不再看 allow。
 flowchart LR
   C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::done
   SP --> S1["npm run build"]:::done --> M1{"命中 deny？"}:::done
   SP --> S2["rm -rf /"]:::on --> M2{"命中 deny？"}:::on
   M2 -- Bash(rm *) --> OUT["deny"]:::dim
-  OUT --> BLK["tool_call 返回理由"]:::dim
+  OUT --> BLK["tool_call block"]:::dim
 --- 返回 `deny`，原因是“被规则 Bash(rm *) 禁止：rm -rf /”。注意 `Bash(npm run *)` 的 allow 规则根本没机会出场：deny → ask → allow，第一个匹配的组说了算。
 flowchart LR
   C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::done
   SP --> S1["npm run build"]:::done --> M1{"命中 deny？"}:::done
   SP --> S2["rm -rf /"]:::done --> M2{"命中 deny？"}:::done
   M2 -- Bash(rm *) --> OUT["deny"]:::on
-  OUT --> BLK["tool_call 返回理由"]:::dim
---- 扩展的 `tool_call` 处理函数拿到 `deny`，把原因（带“权限：”前缀）作为字符串返回——mox 里 `tool_call` 返回字符串就是拒绝，字符串是给模型看的理由；整个过程没有询问用户。
+  OUT --> BLK["tool_call block"]:::dim
+--- 扩展的 `tool_call` 处理函数拿到 `deny`，返回 `block: true`，原因带上“权限：”前缀交给模型；整个过程没有询问用户。
 flowchart LR
   C["npm run build && rm -rf /"]:::done --> SP[splitCommand]:::done
   SP --> S1["npm run build"]:::done --> M1{"命中 deny？"}:::done
   SP --> S2["rm -rf /"]:::done --> M2{"命中 deny？"}:::done
   M2 -- Bash(rm *) --> OUT["deny"]:::done
-  OUT --> BLK["tool_call 返回理由"]:::on
+  OUT --> BLK["tool_call block"]:::on
 :::
 
 ### 只读命令
@@ -227,35 +179,22 @@ Claude Code 的文档也明确说了，deny 规则拦的是“模型通常会写
 
 符号链接还在写这一章时制造了一个真实的 bug：macOS 上临时目录在 `/var` 下，而 `/var` 本身是 `/private/var` 的符号链接。规则引擎一开始只解析了文件的真实路径，没有解析工作目录的，结果工作目录里的文件被判断为“在工作目录之外”，指向 `.env` 的链接反而被放行。实验的第一版有五行不符合期望，修复的办法是两边都解析（`realish`），连还不存在的新文件也要解析它的上级目录。权限代码里，路径比较几乎总是比看起来难。
 
-## 装进 mox：on('tool_call') 加 ask
 
-扩展接口里有两样东西正好对上规则引擎的两端：`on('tool_call', (name, args) => 结论)` 在工具执行前被调用，返回字符串就拒绝，返回 `true` 就放行；`ask(question, choices)` 让用户从几个选项里选一个，没有终端时返回 `undefined`。规则引擎 `decidePermission` 给出 allow、ask、deny 三种结论，接上去就是：
+## 装进 Pi
 
-@code extensions/permissions/mox.ts#L16-L46 hl=26,27,29,30,33,36
+@code extensions/permissions/index.ts#createPermissionsExtension collapse=true
 
-- 第 26、27 行：**allow 返回 `true`，deny 返回原因**（带“权限：”前缀）。deny 不经过用户，规则不给用户“点错”的机会。
-- 第 29 行：**ask 就调用 `mox.ask`**，三个选项：允许一次；本会话都允许；拒绝。选“允许一次”返回 `true`（30 行）。
-- 第 31 到 33 行：“本会话都允许”不是放开整个工具，而是 `suggestRules` 为这次调用生成规则，存进 `sessionRules`，然后返回 `true`。Bash 按每个需要确认的子命令各生成一条精确的规则（批准 `git add -A && git commit -m "wip"`，得到的是两条规则，而不是一条拼起来的）；文件修改生成 `Edit(/**)`，只覆盖工作目录内。和 mox 内置的“记工具名”相比，粒度细了一个数量级。
-- 第 36 行：`ask` 返回 `undefined`（没有终端，或输入了无效的序号）按拒绝处理，原因里写明“当前没有终端可以确认”。
-- `/permissions` 命令：不带参数打印当前模式和规则（包括本会话新增的），带一个模式名（`/permissions plan`）切换模式。
+需要确认时，扩展弹出一个三选一的对话框：
 
-`INTERNAL_TOOLS` 里的三个工具（`task`、`todo_write`、`exit_plan_mode`）只改变 Agent 自己的状态，规则引擎不认识它们，按“未知工具”会要求确认。通过 `readOnlyTools` 告诉引擎它们没有副作用；第 16 章的两个工具会用到这条。子 Agent 发起的每个调用，仍然各自经过这里的检查——检查效果，不检查容器。
+- **允许一次**；
+- **本会话都允许**：为这次调用生成规则，加入本会话的 allow 列表。Bash 按每个需要确认的子命令各生成一条精确的规则（批准 `git add -A && git commit -m "wip"`，得到的是两条规则，而不是一条拼起来的）；文件修改生成 `Edit(/**)`，只覆盖工作目录内；
+- **拒绝**：原因作为工具错误交给模型。
 
-### 为什么 tool_call 需要“放行”
+**没有界面时**（`pi -p` 在 CI 里运行、通过 RPC 调用），没有人能回答“允许吗”，扩展按拒绝处理。这和第 9 章 Pi 官方的权限示例是同样的选择：拿不准的时候，拒绝。无人值守的场景应该把需要的操作提前写进 allow 规则，或者干脆在沙箱里用 `bypassPermissions`。
 
-这个扩展对每个调用都给出明确的结论：规则允许的返回 `true`，规则禁止的返回理由，要确认的自己问用户。如果 `tool_call` 只能拒绝，会发生什么？下面的实验最后两种情况，用同一份规则、同样的回答（每个问题都选第一项）对比。“旧接口”是把扩展的 `true` 吞掉，等于 `tool_call` 只能拒绝、返回空表示“没有意见”（mox 早先的行为）：
+这个实验用脚本化的界面（按预先写好的答案选择）跑三种情况：
 
-@lab node labs/ch14/mox-session.ts
-
-前三种情况是现在的接口：有终端、没有终端（`-p`）、计划模式。命令和回答与下面 Pi 的实验完全相同，放行和拒绝的结果逐步一致；而且不需要 `--yolo`。
-
-最后的对比是重点。旧接口下，规则明明允许的 `npm run build`，用户还是被内置确认问了一遍，同一组调用一共被问了 9 次，其中 5 次是内置确认。原因在 `beforeTool` 的结构里：扩展说“没有意见”，随后内置的 `allowed` 检查照常进行，规则里写的 `allow` 换不来少问一次。要少问只能加 `--yolo`，把内置确认整个关掉，可那样没有被扩展拒绝的调用，就彻底没人把关了。
-
-放行的结论让两层各司其职：**扩展掌握规则，内置确认是没有规则时的兜底**。扩展说 `true`，内置确认让路；扩展说字符串，调用被拒绝；扩展没有意见（比如 `todo_write` 没装权限扩展），内置确认照旧。现在同一组调用只被问 4 次，全部来自扩展，而且问的都是规则看不懂、必须由人决定的那几个。
-
-这里有一个要小心的性质：**拒绝优先**。`verdict` 会问到每一个扩展，只要有一个说“不行”，别的扩展再多的 `true` 也没用。这是 mox 早先犯过的一个错：当时 `emit` 遇到第一个有结论的就停，一个排在前面的扩展说了 `true`，后面扩展的拒绝就不会被调用，安全取决于加载顺序。现在放行和拒绝不对称：放行要所有人都不反对，拒绝一票就够。第 16 章的计划模式和检查点都用到这个性质，那里有对调顺序的实验。放行的权力也让 `--trust` 加载的项目扩展多了一项能力：它可以替用户跳过内置确认，但它放不开别的扩展的拒绝。所以项目里的扩展仍然默认不加载，要信任才加载。
-
-### 一次完整的过程
+@lab node labs/ch14/session.ts
 
 ::: steps 「本会话都允许」：第二次就不再问了
 --- 脚本模型发出 `edit src/app.ts`。`tool_call` 处理函数调用 `decidePermission`：没有 deny/ask/allow 规则命中，工作目录内的修改在 default 模式下是 `ask`。
@@ -265,37 +204,37 @@ sequenceDiagram
   participant U as 用户
   L->>X: tool_call（edit src/app.ts）
   Note over X: decidePermission：没有规则命中，default 模式下改文件是 ask
---- 返回的不是 allow 也不是 deny，扩展调用 `mox.ask` 弹出三选一。如果没有终端，`ask` 返回 `undefined`，这里就直接拒绝了。
+--- 返回的不是 allow 也不是 deny，而且有界面（`ctx.hasUI`），于是扩展用 `ctx.ui.select` 弹出三选一。没有界面的话，这里就直接 `block` 了。
 sequenceDiagram
   participant L as Agent 循环
   participant X as 权限扩展
   participant U as 用户
   L->>X: tool_call（edit src/app.ts）
   Note over X: decidePermission：没有规则命中，default 模式下改文件是 ask
-  X->>U: mox.ask：允许一次 本会话都允许 拒绝
+  X->>U: ctx.ui.select：允许一次 本会话都允许 拒绝
 --- 用户选“本会话都允许”。
 sequenceDiagram
   participant L as Agent 循环
   participant X as 权限扩展
   participant U as 用户
-  X->>U: mox.ask：允许一次 本会话都允许 拒绝
+  X->>U: ctx.ui.select：允许一次 本会话都允许 拒绝
   U-->>X: 本会话都允许
---- 扩展不是放开整个 Edit 工具，而是 `suggestRules` 为这次调用生成规则：文件修改是 `Edit(/**)`，基准是工作目录，只覆盖目录内。规则存进 `sessionRules`，处理函数返回 `true`，这次调用放行，内置确认让路。
+--- 扩展不是放开整个 Edit 工具，而是 `suggestRules` 为这次调用生成规则：文件修改是 `Edit(/**)`，基准是工作目录，只覆盖目录内。规则存进 `sessionRules`，这次调用放行。
 sequenceDiagram
   participant L as Agent 循环
   participant X as 权限扩展
   participant U as 用户
   U-->>X: 本会话都允许
   Note over X: suggestRules 给出 Edit(/**)，parseRule 后放进 sessionRules
-  X-->>L: 返回 true，放行
---- 接着模型调用 `write src/util.ts`。`context()` 每次都重新拼 `[...settings.rules, ...sessionRules]`，会话规则已经在里面了。
+  X-->>L: 返回 undefined，放行
+--- 接着模型调用 `write src/util.ts`。`context(ctx)` 每次都重新拼 `[...rules, ...sessionRules]`，会话规则已经在里面了。
 sequenceDiagram
   participant L as Agent 循环
   participant X as 权限扩展
   participant U as 用户
-  X-->>L: 返回 true，放行
+  X-->>L: 返回 undefined，放行
   L->>X: tool_call（write src/util.ts）
---- `decidePermission` 里 `Edit` 的路径规则同样适用于 `Write`，命中 allow，不再弹窗。`cat .env` 则不同：deny 规则命中后直接返回理由，连选择的机会都不给用户。
+--- `decidePermission` 里 `Edit` 的路径规则同样适用于 `Write`，命中 allow，不再弹窗。`cat .env` 则不同：deny 规则命中后直接 `block`，连选择的机会都不给用户。
 sequenceDiagram
   participant L as Agent 循环
   participant X as 权限扩展
@@ -305,54 +244,15 @@ sequenceDiagram
   X-->>L: 放行，没有弹窗
 :::
 
-几个细节：`npm run build` 匹配 allow 规则，没有弹窗；批准第一次 `edit` 时选了“本会话都允许”，紧接着的 `write` 就不再询问；`cat .env` 直接被拒绝，根本没有询问用户；`python3 -c "print(open('.env').read())"` 规则看不懂，落到 ask，用户这次选了拒绝。
+几个细节：`npm run build` 匹配 allow 规则，没有弹窗；批准第一次 `edit` 时选了“本会话都允许”，紧接着的 `write` 就不再询问；`cat .env` 直接被拒绝，根本没有询问用户——deny 规则不给用户“点错”的机会。
 
-### 真正的命令行
+扩展里负责“问人”的只有这一小段，规则判断全在 `rules.ts` 里：
 
-`labs/ch14/host.ts` 把 `cli.ts` 里和扩展有关的几十行搬了过来（权限那段一字不改），所以前面的实验是离线、确定的。但它终究是“仿”的。下面的实验启动真正的 `mox/src/cli.ts`，加载这个扩展，规则写在（临时目录里的）`~/.mox/permissions.json`；因为 mox 只在 stdin 是终端时才提问，实验借了一个伪终端（`labs/ch14/pty-driver.py`）像用户那样回答：
-
-@lab node labs/ch14/cli-rules.ts
-
-有终端时，`npm run build` 被 allow 规则直接放行，`cat .env` 被 deny 规则拒绝，两者都没有提问；`write` 要确认，输入 2（本会话都允许）；`python3` 那条要确认，输入 3（拒绝）。`-p` 模式下，需要确认的两个调用因为“当前没有终端可以确认”被拒绝，规则决定的两个照旧。
-
-## 装进 Pi
-
-同一个规则引擎，在 Pi 里是这样接的：
-
-@code extensions/permissions/index.ts#createPermissionsExtension collapse=true
-
-和 mox 版本相比有三处不同，都来自 Pi 的扩展接口更丰富：Pi 有 `session_start` 事件，规则在那里读取，整条 deny 的工具（比如 `"deny": ["WebFetch"]`）还能用 `setActiveTools` 直接从模型的工具列表里去掉，模型不会白白尝试（mox 的扩展拿不到工具列表，只能等调用时拒绝）；Pi 默认不做任何审批，所以没有内置确认可以“让路”，拒绝要返回 `{ block: true, reason }`，放行就是什么都不返回；Pi 的扩展之间有事件总线，第 16 章的计划模式用它通知权限扩展切换模式。
-
-**没有界面时**（`pi -p` 在 CI 里运行、通过 RPC 调用），没有人能回答“允许吗”，扩展按拒绝处理。这和第 9 章 Pi 官方的权限示例，以及 mox 的 `ask` 返回 `undefined` 是同样的选择：拿不准的时候，拒绝。无人值守的场景应该把需要的操作提前写进 allow 规则，或者干脆在沙箱里运行。
-
-同样的三种情况（有界面、没有界面、计划模式）装进一个真实的 Pi 会话，界面是脚本化的：
-
-@lab node labs/ch14/session.ts
-
-对照 mox 的实验：同一组命令、同样的回答，每一步的放行和拒绝完全一致。规则判断共用 `rules.ts`，区别只在“怎么问人”：
-
-::: tabs
-@@ mox
-@code extensions/permissions/mox.ts#L22-L35
-`mox.ask` 在没有终端时返回 `undefined`；deny 和拒绝都是返回一个字符串。规则每次由 `context()` 重新拼出。
-@@ Pi
 @code extensions/permissions/index.ts#L41-L56
-通过 `ctx.hasUI` 判断有没有界面，`ctx.ui.select` 提问；拒绝要返回 `{ block: true, reason }`；规则还带着 `readOnlyTools`（来自工具的 `readOnlyHint` 注解）和 `additionalDirectories`。
-:::
-
-三种做法放在一起：
-
-| | mox 内置 | mox + 权限扩展 | Claude Code | Pi |
-| --- | --- | --- | --- | --- |
-| 默认立场 | 除 read、task 外每次都问 | 按规则；没规则的问 | 读放行，写和命令按规则或问 | 不审批，靠隔离 |
-| 粒度 | 工具名 | 工具 + 说明符（命令前缀、路径、域名） | 同左，另有模式 | — |
-| 能不能“永远不行” | 不能 | deny 规则 | deny 规则 | 扩展自己写 |
-| 没有终端 | 拒绝 | 拒绝 | dontAsk 模式拒绝 | 不适用 |
-| 谁能放宽 | 只有用户 | 用户的规则和选择（扩展替用户执行，返回 `true`） | 用户和配置 | 用户 |
 
 ### 和钩子的关系
 
-第 13 章的 PreToolUse 钩子也能允许或拒绝工具调用，两者同时存在时听谁的？在 Pi 和 mox 里，它们都是 `tool_call` 上的闸门（第 9 章）：Pi 里任何一个说“拦下”，调用就被拦下。钩子说“允许”在 Pi 里只是“我没有意见”，不能推翻权限规则的拒绝；Claude Code 的规则相同：PreToolUse 钩子返回 `allow` 不能绕过 deny 和 ask 规则，而返回退出码 2 的钩子在规则之前就拦下了调用。mox 的 `verdict` 也是同样的“拒绝优先”：钩子扩展说 `true`，权限扩展的 deny 规则照样生效，反过来也一样；能放行的扩展再多，一票反对就够了。**放宽权限的只有用户自己，收紧权限的可以有很多方。**
+第 13 章的 PreToolUse 钩子也能允许或拒绝工具调用，两者同时存在时听谁的？在 Pi 里，它们都是 `tool_call` 上的闸门（第 9 章）：任何一个说“拦下”，调用就被拦下；钩子说“允许”只是“我没有意见”，不能推翻权限规则的拒绝。Claude Code 的规则相同：PreToolUse 钩子返回 `allow` 不能绕过 deny 和 ask 规则，而返回退出码 2 的钩子在规则之前就拦下了调用。**放宽权限的只有用户自己，收紧权限的可以有很多方。**
 
 ::: compare Claude Code 的权限
 - **auto 模式**：不再弹确认框，而是由一个后台的分类模型检查每个命令、每次网络请求是否符合用户的意图，不符合的才拦下。这是用模型对付“审批疲劳”的办法。
@@ -364,9 +264,122 @@ sequenceDiagram
 官方文档：[Configure permissions](https://code.claude.com/docs/en/permissions)
 :::
 
-## 你来改
 
-每道题先写下预测，再动手验证。
+## 实战：给 mox 加上权限
+
+**目标**：让 mox 在改文件、跑命令之前征求同意；再用一个扩展加上规则式权限（deny、allow、ask 三类规则，和这一章 Pi 版共用同一个规则引擎）。mox 只做最小可用版：没有权限模式切换界面、没有符号链接处理之外的路径细节、没有整条 deny 就从工具列表里去掉工具的能力，下面逐一说。
+
+先看你要做出来的东西。启动真正的 mox 命令行（连到脚本化的假模型，不需要 Key），模型依次 `read` 一个文件、`write` 两个文件、`bash ls`，三种启动方式下每一步的下场如下：
+
+@lab node labs/ch14/practice.ts
+
+这个文件检验五件事，对应下面的五步；下面几步写完一步就可以跑一次。
+
+- 默认运行检验参考实现 `mox/`（Mox-agent 子模块）。
+- `MOX_DIR=~/my-mox node labs/ch14/practice.ts` 检验你自己的 mox。你的 `~/my-mox/src/` 里要有前面几章写好的 `loop.ts`、`tools.ts`、`extensions.ts`、`cli.ts`，权限扩展写在 `~/my-mox/extensions/permissions.ts`（没写到这一步的部分，实验会说明并改用参考实现）。
+
+### 第一步：cli.ts 里的内置确认
+
+先让 mox 自己有一道最简单的门。`cli.ts` 里要有两样东西：给人提问的 `ask`，和决定要不要提问的 `beforeTool`。
+
+@code mox/src/cli.ts#L50-L57 hl=53,56
+
+`ask` 把选项编号列出来，把用户输入的下一行当作序号。关键是第 53 行：**没有终端（stdin 不是 TTY）就不提问，返回 `undefined`**。
+
+@code mox/src/cli.ts#L64-L75 hl=65,67,69,70,71,72,73
+
+`beforeTool` 由 `runLoop` 在每个工具执行前调用（第 4 章的钩子）。它做四件事：先问扩展（67 行，下一步讲）；然后放行 `--yolo`、`allowed` 里的工具（一开始是 `read`、`grep`、`find`、`ls` 和子 Agent 的 `task`）和用户之前选过“本次会话都允许”的工具（69 行）；没有终端就拒绝，并把办法写进错误信息（70 行）；最后问用户，三个选项：允许、本次会话都允许（把**工具名**加进 `allowed`）、拒绝（72、73 行）。
+
+```mermaid
+flowchart TD
+  C[模型发出工具调用] --> E{扩展的 tool_call 返回了什么？}
+  E -- 字符串 --> R1[拒绝：理由交给模型]
+  E -- true --> RUN[执行]
+  E -- 没有意见 --> Y{"--yolo，或工具在 allowed 里<br/>（只读工具、task、本次会话已允许的）？"}
+  Y -- 是 --> RUN
+  Y -- 否 --> T{有终端？}
+  T -- 否 --> R2[拒绝：没有终端可以确认]
+  T -- 是 --> Q[ask：允许 / 本次会话都允许 / 拒绝]
+  Q -- 允许 --> RUN
+  Q -- 本次会话都允许 --> ADD[allowed 加入工具名] --> RUN
+  Q -- 拒绝或无效输入 --> R3[拒绝：用户拒绝了这次调用]
+```
+
+实验的第一部分启动真正的 `cli.ts` 验证：`mox -p` 里除了 `read` 全部被拒绝；`--yolo` 全部执行；有终端时第一次 `write` 选“本次会话都允许”，第二次 `write` 就不再问了，`bash` 是另一个工具，要重新问。（mox 的 `ask` 只在终端里提问，所以实验借了一个伪终端 `labs/ch14/pty-driver.py`，像用户那样输入序号。）
+
+这和 Pi 的第 9 章示例是同一种选择：拿不准，拒绝。但它的不足也很明显：粒度是**工具名**，“本次会话都允许 `bash`”之后 `npm test` 和 `rm -rf ~` 一样不再询问；不看内容，每个调用都问，用户很快养成不看就点的习惯；只有“问”，没有“永远不行”；选择没有记忆。规则式的权限就是为了补这些。
+
+### 第二步：让扩展能放行，也能拒绝
+
+规则扩展要通过 `tool_call` 事件介入。`beforeTool` 第一行调用的是 `extensions.verdict`：
+
+@code mox/src/extensions.ts#L51-L60 hl=55,56,57,59
+
+它把调用交给**每一个**扩展的 `tool_call` 处理器，汇总成一个结论：返回**字符串**是拒绝（理由给模型看），一个就够，立刻结束（56 行）；没有人拒绝，有一个返回 **`true`** 就是放行（57 行），内置确认让路；都没有意见，就走第一步的内置确认。**拒绝优先**，和加载顺序无关。
+
+为什么需要“放行”？如果 `tool_call` 只能拒绝，扩展里的 allow 规则就没有意义：扩展说“没有意见”，内置确认照样再问一遍。实验第三部分把扩展的 `true` 吞掉来模拟这种接口，同一组调用、同样的回答：
+
+| | 总提问 | 来自扩展 | 来自内置确认 |
+| --- | --- | --- | --- |
+| tool_call 只能拒绝 | 9 | 4 | 5 |
+| tool_call 可以返回 true 放行 | 4 | 4 | 0 |
+
+（数字来自上面的实验输出。）而“拒绝优先”是为了安全：第四部分让一个总是返回 `true` 的扩展和一个拒绝 `write` 的扩展以两种顺序加载，`write` 都被拒绝。早先的实现遇到第一个有结论的扩展就停，排在前面的 `true` 会让后面的 deny 失效。放行的权力也让 `--trust` 加载的项目扩展多了一项能力：它可以替用户跳过内置确认，但放不开别人的拒绝。
+
+### 第三步：写权限扩展
+
+规则引擎 `rules.ts`（`decidePermission`、`suggestRules`）就是上一节读过的那一份，Pi 版和 mox 版共用，你不需要重写：把它复制到你的 mox 旁边引用就行。扩展本身只负责把引擎的三种结论翻译成 mox 的三种返回值：
+
+@code extensions/permissions/mox.ts#L16-L46 hl=26,27,29,30,33,36
+
+- 第 26、27 行：**allow 返回 `true`，deny 返回理由**（带“权限：”前缀）。deny 不经过用户。
+- 第 29、30 行：**ask 就调用 `mox.ask`**，三个选项；“允许一次”返回 `true`。
+- 第 31 到 33 行：“本会话都允许”不记工具名，而是用 `suggestRules` 为这次调用生成规则，存进 `sessionRules`，再返回 `true`。粒度比内置确认细了一个数量级。
+- 第 36 行：`ask` 返回 `undefined`（没有终端，或输入了无效序号）按拒绝处理。
+- 文件末尾的 `/permissions` 命令：不带参数打印规则，带模式名（`/permissions plan`）切换模式。规则从 `~/.mox/permissions.json` 读，格式和 Claude Code 的 `permissions` 一样。
+- `INTERNAL_TOOLS`（`task`、`todo_write`、`exit_plan_mode`）：只改变 Agent 自己状态的工具，规则引擎不认识它们，要告诉引擎它们没有副作用（对应 Pi 版的 `readOnlyHint` 注解）。第 16 章的两个工具会用到。
+
+同一个 `tool_call` 闸门，mox 和 Pi 的写法并排：
+
+::: tabs
+@@ mox
+@code extensions/permissions/mox.ts#L24-L37
+`mox.ask` 在没有终端时返回 `undefined`；deny 和拒绝都是返回一个字符串，放行是返回 `true`。
+@@ Pi
+@code extensions/permissions/index.ts#L41-L56
+`ctx.hasUI` 判断有没有界面，`ctx.ui.select` 提问；拒绝要返回 `{ block: true, reason }`，放行就是什么都不返回。
+:::
+
+实验第二部分把扩展装进脚本模型驱动的 mox（组装方式和 `cli.ts` 里的权限那几行一样），同一组七个调用走三种情况，和 Pi 版逐步一致：有终端时只问三次（`git commit`、`edit`、`python`；`write` 因为“本会话都允许”不再问）；没有终端时需要确认的全部拒绝；计划模式里除了 `read` 全部拒绝，不弹框。第五部分再把它接进真正的命令行，不加 `--yolo`。
+
+### 和 Pi 比，mox 省掉了什么
+
+| | mox（本章） | Pi（本章前半） |
+| --- | --- | --- |
+| 整条 deny 的工具 | 调用时才拒绝（扩展拿不到工具列表） | 用 `setActiveTools` 直接从模型的工具列表里去掉 |
+| 其他扩展切换模式 | 没有事件总线；放行和拒绝靠 `verdict` 的合并规则 | `pi.events` 总线（第 16 章用它切换权限模式） |
+| 内部工具的声明 | 扩展里写一份 `INTERNAL_TOOLS` 名单 | 工具自己声明 `readOnlyHint` 注解，MCP 工具的声明不信 |
+| 规则来源 | 只有 `~/.mox/permissions.json` | 全局 + 信任项目后的 `.pi/permissions.json` |
+
+最大的区别是立场：Pi 默认不审批，权限是它的扩展；mox 把最简审批放进了 `cli.ts`，规则是扩展。
+
+### 你来改
+
+::: predict 把 allow 的 true 改成不返回
+把 `extensions/permissions/mox.ts` 里 `if (decision.behavior === 'allow') return true;` 改成 `return;`，运行 `node labs/ch14/practice.ts`。会发生什么？
+???
+第二部分的断言报错。规则允许的 `npm run build` 不再返回 `true`，等于“没有意见”，内置确认接着问了一遍。内置确认的选项是“允许 / 本次会话都允许 / 拒绝”，和扩展的“允许一次 / 本会话都允许 / 拒绝”文字不同，脚本里的“允许一次”不在内置的选项里，`ask` 把它当作无效回答，按拒绝处理：`npm run build` 就这样被拒绝了。
+
+真正的 mox 里，用户输入的是序号，不会答非所问，但会被同一个调用问两遍。这正是第三部分对比里 9 次提问的来源。
+:::
+
+::: predict 把 todo_write 从 INTERNAL_TOOLS 里去掉
+第 16 章的 `todo_write` 只维护任务清单，不碰文件。把 `INTERNAL_TOOLS` 改成 `['task', 'exit_plan_mode']`，用 `mox -p -e extensions/todo/mox.ts -e extensions/permissions/mox.ts` 让模型列一份清单。结果是什么？交互模式下呢？
+???
+`-p` 模式下 `todo_write` 被拒绝：`权限：todo_write 需要确认。当前没有终端可以确认，已拒绝`。规则引擎不认识这个工具，按“未知工具”处理，默认是 `ask`；没有终端就拒绝。交互模式下每个新工具第一次调用都会弹出三选一，选“本会话都允许”后之后不再问。
+
+这是“白名单比黑名单可靠”的另一面：**新增的工具默认要确认**，扩展作者要显式声明哪些工具没有副作用，而不是让引擎去猜。MCP 工具也一样，服务器自称“只读”不可信（第 12 章），所以不在这个名单里。
+:::
 
 ::: predict 给 allow 加一条 Bash(*)
 在 `labs/ch14/rules.ts` 的 `allow` 列表最前面加一条 `'Bash(*)'`，运行实验。表格里哪些行会变？`cat .env`、`rm -rf` 这些 `deny` 的行呢？
@@ -382,22 +395,6 @@ sequenceDiagram
 只有第一行通过，另外两行得到 `ask`。匹配 allow 规则时，只去掉**已知安全**的环境变量（`NODE_ENV`、`CI`、`DEBUG`、`LANG` 等几个）。遇到不认识的变量（`FOO`）就停下来，剩下的 `FOO=bar npm run build` 不再以 `npm run` 开头，不匹配 `Bash(npm run *)`，没有规则命中，落到“需要确认”。第三行里 `CI=1` 虽然是安全变量，但它后面的 `FOO` 挡住了去路。
 
 对 deny 规则正好相反：`FOO=bar rm -rf tmp` 去掉**所有**赋值再匹配，得到 `rm`，被拒绝。放行要严，拦截要宽，这是同一条原则在环境变量上的体现。
-:::
-
-::: predict 把 todo_write 从 INTERNAL_TOOLS 里去掉
-第 16 章的 `todo_write` 只维护任务清单，不碰文件。把 `extensions/permissions/mox.ts` 里的 `INTERNAL_TOOLS` 改成 `['task', 'exit_plan_mode']`，用 `mox -p -e extensions/todo/mox.ts -e extensions/permissions/mox.ts` 让模型列一份清单。结果是什么？交互模式下呢？
-???
-`-p` 模式下 `todo_write` 被拒绝：`权限：todo_write 需要确认。当前没有终端可以确认，已拒绝`（`labs/ch14` 的组装里可以用 `assemble` 复现）。规则引擎不认识这个工具，按“未知工具”处理，默认是 `ask`；没有终端就拒绝。交互模式下每个新工具第一次调用都会弹出三选一，选“本会话都允许”后 `suggestRules` 生成一条 `todo_write` 规则，之后不再问。
-
-这是“白名单比黑名单可靠”的另一面：**新增的工具默认要确认**，扩展作者要显式声明哪些工具没有副作用，而不是让引擎去猜。MCP 工具也一样，服务器自称“只读”不可信（第 12 章），所以不在这个名单里。
-:::
-
-::: predict 把 allow 的 true 改成不返回
-把 `extensions/permissions/mox.ts` 里 `if (decision.behavior === 'allow') return true;` 改成 `return;`，运行 `node labs/ch14/mox-session.ts`，看第一种情况（回答仍然是 `['允许一次', '本会话都允许', '拒绝']`）。会发生什么？
-???
-回答被打乱了，第一种情况的放行与拒绝和预期对不上，断言会报错。规则允许的 `npm run build` 不再返回 `true`，等于“没有意见”，内置确认接着问了一遍。内置确认的选项是“允许 / 本次会话都允许 / 拒绝”，和扩展的“允许一次 / 本会话都允许 / 拒绝”文字不同，脚本里的“允许一次”不在内置的选项里，`ask` 把它当作无效回答，`beforeTool` 按拒绝处理：`npm run build` 就这样被拒绝了。
-
-真正的 mox 里，用户输入的是序号，不会“答非所问”，但会被同一个调用问两遍。这正是“旧接口”对比里 9 次提问的来源，也是 `tool_call` 需要能放行的原因。
 :::
 
 ## 面试题
@@ -432,10 +429,10 @@ sequenceDiagram
 
 ::: interview mox 的 tool_call 事件为什么既要能拒绝，又要能放行？
 - 只有拒绝的话，扩展里的 allow 规则没有意义：扩展说“没有意见”，内置确认照常再问一遍，用户为同一个调用被问两次；要少问只能加 `--yolo`，那就把兜底也关了。
-- 返回值有三种：字符串是拒绝（理由给模型看），`true` 是放行（内置确认让路），空是没有意见（交给后面的扩展和内置确认）。规则扩展对每个调用给出明确的结论，内置确认只在没人表态时兜底。
-- 放行和拒绝是不对称的：mox 的 `verdict` 问遍每一个扩展，**拒绝优先**，一个字符串就拒绝；没人拒绝、有一个 `true` 才放行。所以放行的权力不会盖过别人的拒绝，安全不取决于加载顺序。（早先的实现遇到第一个有结论的就停，一个排在前面的 `true` 会让后面的 deny 失效。）
+- 返回值有三种：字符串是拒绝（理由给模型看），`true` 是放行（内置确认让路），空是没有意见（交给后面的扩展和内置确认）。
+- 放行和拒绝是不对称的：`verdict` 问遍每一个扩展，**拒绝优先**，一个字符串就拒绝；没人拒绝、有一个 `true` 才放行。放行的权力不会盖过别人的拒绝，安全不取决于加载顺序。
 - 放行的权力来自用户：规则是用户写的，“本会话都允许”是用户点的；项目里的扩展（`--trust`）默认不加载，因为它们现在也能替用户放行。
-- 加分点：Claude Code 的 PreToolUse 钩子也不能绕过 deny 和 ask 规则，保证同样是“拒绝优先”。顺序仍有体验上的影响：权限扩展先问了用户、后面的扩展再拒绝，用户就白问了一次。
+- 加分点：Claude Code 的 PreToolUse 钩子也不能绕过 deny 和 ask 规则，保证同样是“拒绝优先”。
 :::
 
 ::: interview 用户被确认框烦得不行，怎么办？

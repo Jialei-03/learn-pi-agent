@@ -1,5 +1,7 @@
 // 第 6 章：回放用真实模型（MiniMax-M3.1-Flash，经 OpenAI 兼容接口）录制的两组数据，录制方法见 record-live.ts。
-//   node labs/ch06/live.ts
+//   node labs/ch06/live.ts cache    只看提示缓存
+//   node labs/ch06/live.ts tokens   只看 token 估算
+//   node labs/ch06/live.ts          两个都看
 //   1. 提示缓存：每次请求只在历史末尾追加一问一答，服务商报告的命中缓存的输入 token
 //   2. token 估算：mox 最初的公式（JSON 字符数 / 4）、现在的 estimateTokens 与服务商数出来的真实 token 数
 import assert from 'node:assert/strict';
@@ -8,13 +10,18 @@ import { estimateTokens } from '../../mox/src/compact.ts';
 import { samples } from './samples.ts';
 
 const live = JSON.parse(readFileSync(new URL('./recorded/live.json', import.meta.url), 'utf8'));
+const only = process.argv[2];   // 'cache' | 'tokens' | 不传
 console.log(`录制：${live.model}，${live.recordedAt}\n`);
+if (only !== 'tokens') {
 
-console.log('① 提示缓存（系统提示 = mox 的 systemPrompt() + 30 行 AGENTS.md）\n');
+console.log('① 提示缓存（系统提示 = 基本规则 + 30 行 AGENTS.md）\n');
 console.log('| 第几次请求 | 未命中缓存的输入 | 命中缓存的输入 | 命中比例 |');
 console.log('| --- | --- | --- | --- |');
 for (const r of live.cache) console.log(`| ${r.request} | ${r.promptTokens - r.cachedTokens} | ${r.cachedTokens} | ${Math.round((r.cachedTokens / r.promptTokens) * 100)}% |`);
 
+}
+
+if (only !== 'cache') {
 console.log('\n② token 估算：旧公式（JSON 字符数 / 4）、现在的 estimateTokens、服务商数出来的真实值\n');
 console.log('| 样本 | 字符数 | 旧公式 | 现在的公式 | 真实 | 旧 / 真实 | 现在 / 真实 |');
 console.log('| --- | --- | --- | --- | --- | --- | --- |');
@@ -31,3 +38,4 @@ assert.ok(live.cache.slice(1).every((r: any) => r.cachedTokens / r.promptTokens 
 assert.ok(live.cache.every((r: any) => r.cachedTokens % 128 === 0));                         // 命中的 token 数都是 128 的整数倍
 assert.ok(first.estimateOld / first.promptTokens < 0.5);                                    // 旧公式：中文为主的上下文只估到真实的不到一半
 assert.ok(Math.abs(first.estimate / first.promptTokens - 1) < 0.25);                         // 现在的公式：误差在 25% 以内
+}

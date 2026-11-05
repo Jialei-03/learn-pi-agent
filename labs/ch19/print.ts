@@ -8,10 +8,11 @@ import type { AddressInfo } from 'node:net';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { startFakeModel, type CliScript } from '../shared/mox-cli.ts';
+import { CLI as cli, startFakeModel, type CliScript } from '../shared/mox-cli.ts';
+import { whose } from '../shared/mox-dir.ts';
 
-const cli = fileURLToPath(new URL('../../mox/src/cli.ts', import.meta.url));
+console.log(`${whose()}\n`);
+
 
 /** 跑 mox -p，stdout 和 stderr 分开收 */
 function run(url: string, args: string[]) {

@@ -1,12 +1,10 @@
-// 第 2 章实验：同一段 SSE 字节流，分别交给 mox 的 openai() 和 Pi 的适配器。
+// 第 2 章实验：同一段 SSE 字节流，交给 Pi 的两个适配器，看它们归一化出来的消息。
 //   node labs/ch02/replay.ts
 // 样本一：fixtures/ 里的测试样本，同一个“读 src/cli.ts”的意图写成 OpenAI 和 Anthropic 两种线上格式。
-//         Anthropic 这一份只有 Pi 能读（mox 没有 Anthropic 适配器）。
-// 样本二：recorded/ 里 MiniMax-M3.1-Flash 的真实回复，原样的响应体字节。
+// 样本二：recorded/ 里 MiniMax-M3.1-Flash 的真实回复（OpenAI 格式），原样的响应体字节。
 // 本地假服务把字节每 7 个切一刀再发出去，所以解码器必须自己处理被切开的行和字符。
 import assert from 'node:assert/strict';
 import { getModel, streamSimpleAnthropic, streamSimpleOpenAICompletions } from '@earendil-works/pi-ai/compat';
-import { openai } from '../../mox/src/model.ts';
 import { startMock, type MockOptions } from './mock-server.ts';
 
 const readFile = { name: 'read_file', description: '读取文件', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } };
@@ -15,18 +13,6 @@ const piContext = { messages: [{ role: 'system', content: '你是代码助手。
 
 /** 各实现的结果，整理成可以逐项比较的样子。 */
 interface View { text: string; calls: { id: string; name: string; args: unknown }[]; finish: string; extra?: string }
-
-async function viaMox(files: MockOptions['files']): Promise<View> {
-  const mock = await startMock({ files });
-  try {
-    const { message, finish } = await openai({ baseUrl: mock.url, apiKey: 'test', model: 'x' })({ messages: [{ role: 'user', content: question }], tools: [readFile] });
-    return {
-      text: message.content ?? '',
-      calls: (message.tool_calls ?? []).map(c => ({ id: c.id, name: c.function.name, args: JSON.parse(c.function.arguments) })),
-      finish,
-    };
-  } finally { await mock.close(); }
-}
 
 async function viaPi(api: 'openai' | 'anthropic', files: MockOptions['files']): Promise<View> {
   const mock = await startMock({ files });
@@ -46,28 +32,26 @@ async function viaPi(api: 'openai' | 'anthropic', files: MockOptions['files']): 
 
 const row = (label: string, v: View) =>
   `| ${label} | ${v.text || '（无）'} | ${v.calls.map(c => `\`${c.name}(${JSON.stringify(c.args)})\``).join('<br>')} | ${v.finish} | ${v.extra ?? '—'} |`;
-const header = '| 实现 | 文字 | 工具调用 | finish（原始 → Pi 归一化） | Pi 多保存的 |\n| --- | --- | --- | --- | --- |';
+const header = '| 适配器 | 文字 | 工具调用 | finish（原始 → 归一化） | 另外保存的 |\n| --- | --- | --- | --- | --- |';
 /** 文字和工具调用（忽略 id）是否一致 */
 const sameContent = (views: View[]) => views.every(v => JSON.stringify([v.text, v.calls.map(c => [c.name, c.args])]) === JSON.stringify([views[0].text, views[0].calls.map(c => [c.name, c.args])]));
 
 // ── 样本一 ──────────────────────────────────────────────
 const fixtureOpenAI = { openai: 'fixtures/openai-tool-call.sse' }, fixtureAnthropic = { anthropic: 'fixtures/anthropic-tool-call.sse' };
-const a = [await viaMox(fixtureOpenAI), await viaPi('openai', fixtureOpenAI), await viaPi('anthropic', fixtureAnthropic)];
+const a = [await viaPi('openai', fixtureOpenAI), await viaPi('anthropic', fixtureAnthropic)];
 console.log('### 样本一：测试样本（一段文字加一个工具调用，参数分三片到达）\n');
 console.log(header);
-console.log(row('mox · OpenAI 格式', a[0]));
-console.log(row('Pi · OpenAI 格式', a[1]));
-console.log(row('Pi · Anthropic 格式', a[2]));
+console.log(row('openai-completions', a[0]));
+console.log(row('anthropic-messages', a[1]));
 assert.ok(sameContent(a));
-console.log(`\n样本一：三个结果的文字和工具调用是否一致：${sameContent(a) ? '是' : '否'}`);
+console.log(`\n样本一：两个格式归一化后的文字和工具调用是否一致：${sameContent(a) ? '是' : '否'}`);
 
 // ── 样本二 ──────────────────────────────────────────────
 const recorded = { openai: 'recorded/minimax-m31-flash-stream.sse' };
-const b = [await viaMox(recorded), await viaPi('openai', recorded)];
-console.log('\n### 样本二：MiniMax-M3.1-Flash 的真实回复（一句话加两个工具调用）\n');
+const b = await viaPi('openai', recorded);
+console.log('\n### 样本二：MiniMax-M3.1-Flash 的真实回复（一句话加两个工具调用，另有思考内容）\n');
 console.log(header);
-console.log(row('mox · OpenAI 格式', b[0]));
-console.log(row('Pi · OpenAI 格式', b[1]));
-const sameIds = JSON.stringify(b[0].calls.map(c => c.id)) === JSON.stringify(b[1].calls.map(c => c.id));
-assert.ok(sameContent(b) && sameIds);
-console.log(`\n样本二：两个结果的文字、工具调用和 id 是否一致：${sameContent(b) && sameIds ? '是' : '否'}`);
+console.log(row('openai-completions', b));
+assert.equal(b.calls.length, 2);
+assert.ok(b.extra);
+console.log('\n真实回复里的 `reasoning_content` 被存成了 thinking 块；两个工具调用各自带着服务端给的 id。');

@@ -1,7 +1,6 @@
-// 第 19 章实验：用 Pi 自带的 RpcClient，同时驱动真实的 Pi 和 labs/ch19/mox-rpc.ts。
+// 第 19 章实验：用 Pi 自带的 RpcClient 驱动真实的 Pi（实战里同一个客户端会去驱动 mox-rpc.ts）。
 //   node labs/ch19/client.ts
 // RpcClient 是正文里读的那份客户端代码（packages/coding-agent/src/modes/rpc/rpc-client.ts）。
-// mox-rpc 只实现了 prompt、abort、get_state、get_messages 四条命令，但协议的骨架（id、响应、事件）和 Pi 一致，所以这个客户端可以直接驱动它。
 import assert from 'node:assert/strict';
 import { RpcClient } from '@earendil-works/pi-coding-agent';
 import { label, serverConfig, type Which } from './servers.ts';
@@ -57,25 +56,20 @@ async function run(which: Which) {
 }
 
 const pi = await run('pi');
-const mox = await run('mox');
-const row = (name: string, f: (r: typeof pi) => string) => `| ${name} | ${f(pi)} | ${f(mox)} |`;
-console.log(`| RpcClient 的调用 | ${label('pi')} | ${label('mox')} |\n| --- | --- | --- |`);
-console.log(row('prompt() 返回', r => `\`${r.disposition}\``));
-console.log(row('collectEvents() 以 agent_settled 结束', r => (r.events.at(-1)?.type === 'agent_settled' ? '是' : '否')));
-console.log(row('getMessages() 里最后一条助手消息', r => JSON.stringify(r.finalText)));
-console.log(row('getLastAssistantText()', r => r.unsupported));
-console.log(row('写坏的一行，监听器收到', r => `\`{type: "${r.parse.type}", command: "${r.parse.command}", success: ${r.parse.success}}\``));
-console.log(row('第一个监听器抛异常，第二个监听器还能收到这个事件吗', r => (r.afterThrow ? '能' : '不能')));
-console.log(row('命令挂起时进程被杀，bash() 的结果', r => r.crash));
+console.log('| RpcClient 的调用 | 真实 Pi |\n| --- | --- |');
+const row = (name: string, f: (r: typeof pi) => string) => console.log(`| ${name} | ${f(pi)} |`);
+row('prompt() 返回', r => `\`${r.disposition}\``);
+row('collectEvents() 以 agent_settled 结束', r => (r.events.at(-1)?.type === 'agent_settled' ? '是' : '否'));
+row('getMessages() 里最后一条助手消息', r => JSON.stringify(r.finalText));
+row('getLastAssistantText()', r => r.unsupported);
+row('写坏的一行，监听器收到', r => `\`{type: "${r.parse.type}", command: "${r.parse.command}", success: ${r.parse.success}}\``);
+row('第一个监听器抛异常，第二个监听器还能收到这个事件吗', r => (r.afterThrow ? '能' : '不能'));
+row('命令挂起时进程被杀，bash() 的结果', r => r.crash);
 
 assert.equal(pi.disposition, 'started');
-assert.equal(mox.disposition, 'started');
 assert.equal(pi.events.at(-1)?.type, 'agent_settled');
-assert.equal(mox.events.at(-1)?.type, 'agent_settled');
 assert.equal(pi.finalText, '构建完成。');
-assert.equal(mox.finalText, '构建完成。');
 assert.match(pi.unsupported, /^✓/);
-assert.match(mox.unsupported, /^✗ 未知命令/);
-for (const r of [pi, mox]) assert.deepEqual([r.parse.type, r.parse.command, r.parse.success], ['response', 'parse', false]);
-for (const r of [pi, mox]) assert.deepEqual([r.thrown, r.afterThrow], [true, 0]);
+assert.deepEqual([pi.parse.type, pi.parse.command, pi.parse.success], ['response', 'parse', false]);
+assert.deepEqual([pi.thrown, pi.afterThrow], [true, 0]);
 assert.match(pi.crash, /Agent process exited/);

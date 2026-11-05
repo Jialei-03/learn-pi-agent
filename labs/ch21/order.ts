@@ -3,7 +3,11 @@
 // mox 的事件有三种汇总方式：tool_call 走 verdict，每个扩展都被问到，拒绝优先；tool_result 走 transform，依次接力；
 // agent_end 走 emit，按加载顺序，第一个给出结论（非空返回值）的说了算——后面的扩展这一轮根本没有机会开口。
 import assert from 'node:assert/strict';
-import { loadExtensions, type Extension } from '../../mox/src/extensions.ts';
+import type { Extension } from '../../mox/src/extensions.ts';
+import { loadMox, whose } from '../shared/mox-dir.ts';
+
+const { loadExtensions } = await loadMox('extensions.ts');
+console.log(`${whose()}\n`);
 
 const host = { cwd: process.cwd(), tools: [], ask: async () => undefined };
 

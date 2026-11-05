@@ -1,19 +1,127 @@
 ---
 motto: 二十章的部件，拼起来就是一个能用的 Agent；拼的过程，就是最后一课。
 learn:
-  - mox 的全貌：九个文件各管什么，谁依赖谁，为什么 cli.ts 是唯一知道全部零件的地方
-  - 一次请求在 cli.ts 里的完整旅程：配置、MCP、Skills、扩展、系统提示、循环、子 Agent、权限、续跑
+  - 回顾 Pi 的全貌：每一章读过的机制在 Pi 的哪个包、哪个文件，它们怎样组合在一起
+  - 一次回车在 Pi 里的完整旅程，以及 Pi 扩展事件的两种汇总方式（先到先拦、依次接力）
   - 组合时才会暴露的问题：加载顺序、职责重叠、环境泄漏、生命周期
   - mox、Pi、Claude Code 的功能对照
-  - 练习，以及“设计一个 coding agent”这道面试题
+  - 实战：把全课搭出来的 mox 组装起来，从头读一遍 cli.ts，跑一次完整的旅程
 prereq: 前面所有章节
 time: 40 分钟
-build: 回顾整个 mox：九个文件、六百多行，从上到下读完 cli.ts，把前面各章的零件组装在一起跑一遍
+build: 实战：组装——读懂 cli.ts 的全程，把全课搭出来的 mox 跑一遍
 ---
 
-## mox 的全貌
+## 回顾：二十章读过的 Pi
 
-第 1 章的 Agent 只有一个文件、不到一百行：一个循环、两个工具。二十章之后，课程里一直在读、一直在扩展的那个 Agent 长这样：
+第 0 章画过一张地图：Pi 由四层构成，模型层（`packages/ai`）、循环层（`packages/agent`）、产品层（`packages/coding-agent` 的 `core`），和最上面的界面。后面二十章，每一章把其中一块拆开读透。回头把它们摆在一起：
+
+| 章 | 机制 | 在 Pi 里读过的位置 | 章末在 mox 里搭的 |
+| --- | --- | --- | --- |
+| 2 | 模型协议、流式 | `packages/ai`：各服务商适配、事件流、半截 JSON | `model.ts` |
+| 3 | Agent 循环 | `packages/agent/src/agent-loop.ts` | `loop.ts` |
+| 4 | 工具流水线 | `agent-loop.ts` 的 `prepareToolCall`、参数校验、钩子 | `Tool`、`beforeTool`/`afterTool` |
+| 5 | 编程工具 | `packages/coding-agent/src/core/tools/` | `tools.ts` 的七个工具 |
+| 6 | 系统提示与上下文 | `core/resource-loader.ts` 与系统提示的拼装 | `context.ts` |
+| 7 | 会话 | `core/session-manager.ts`：JSONL 的树 | `session.ts` |
+| 8 | 压缩 | `core/compaction/`：切点、split turn、摘要 | `compact.ts` |
+| 9–16 | 扩展、记忆、Skills、MCP、钩子、权限、沙箱、计划模式 | `core/extensions/`、`packages/mcp`、`examples/extensions/` | `extensions.ts` 和各个扩展 |
+| 17 | 子 Agent | `examples/extensions/subagent/`：每个子 Agent 一个 pi 进程 | `cli.ts` 里的 `task` |
+| 18 | 长任务 | `packages/durable`、示例扩展 | `session.ts` 的补“中断”、goal、background |
+| 19 | 嵌入 | `core/sdk.ts`、`src/modes/`（print、json、rpc） | 当库用、`mox-rpc.ts` |
+| 20 | 评测 | `packages/evals` | `evals/` |
+
+这张表有一个很明显的特点：Pi 的**内核很小**。循环、工具流水线、会话、压缩，都是产品层里几千行的事；权限、记忆、子 Agent、计划模式、后台命令，Pi 一概没有放进内核，而是留给扩展和示例。这一点在 Claude Code 里是反过来的，后面的对照表会看到。
+
+## 一次回车，经过 Pi 的哪些地方
+
+把二十章的零件按一次请求的顺序串起来：
+
+::: steps 一次回车在 Pi 里的旅程
+--- 用户在终端里敲回车。`pi` 命令先决定进哪个模式：交互、打印、JSON、RPC；非交互模式在加载任何扩展之前就接管 stdout（第 19 章）。
+flowchart LR
+  A["main.ts<br/>选模式"]:::on --> B["AgentSession<br/>prompt()"]:::dim --> C["扩展<br/>输入事件"]:::dim --> D["agent-loop<br/>runLoop"]:::dim --> E["工具<br/>过关与执行"]:::dim --> F["会话<br/>追加 JSONL"]:::dim --> G["压缩 · 结算<br/>settle"]:::dim --> H["事件<br/>TUI · JSON · RPC"]:::dim
+  G -- 扩展要求继续 --> D
+--- `AgentSession.prompt()` 是所有模式共用的入口：校验模型和凭证，运行中的 prompt 必须声明是插话还是追加任务（第 3、19 章）。
+flowchart LR
+  A["main.ts<br/>选模式"]:::done --> B["AgentSession<br/>prompt()"]:::on --> C["扩展<br/>输入事件"]:::dim --> D["agent-loop<br/>runLoop"]:::dim --> E["工具<br/>过关与执行"]:::dim --> F["会话<br/>追加 JSONL"]:::dim --> G["压缩 · 结算<br/>settle"]:::dim --> H["事件<br/>TUI · JSON · RPC"]:::dim
+  G -- 扩展要求继续 --> D
+--- 扩展有机会改写输入、往系统提示里加东西（第 9、10 章）；系统提示由项目说明、Skills 目录、工具说明拼成，稳定的前缀留给提示缓存（第 6 章）。
+flowchart LR
+  A["main.ts<br/>选模式"]:::done --> B["AgentSession<br/>prompt()"]:::done --> C["扩展<br/>输入事件"]:::on --> D["agent-loop<br/>runLoop"]:::dim --> E["工具<br/>过关与执行"]:::dim --> F["会话<br/>追加 JSONL"]:::dim --> G["压缩 · 结算<br/>settle"]:::dim --> H["事件<br/>TUI · JSON · RPC"]:::dim
+  G -- 扩展要求继续 --> D
+--- `runLoop`：请求模型、解析流式的工具调用、执行工具、把结果交回去，直到模型不再调用工具。截断的回复不执行工具，取消沿着 `AbortSignal` 传到最底层（第 2、3 章）。
+flowchart LR
+  A["main.ts<br/>选模式"]:::done --> B["AgentSession<br/>prompt()"]:::done --> C["扩展<br/>输入事件"]:::done --> D["agent-loop<br/>runLoop"]:::on --> E["工具<br/>过关与执行"]:::dim --> F["会话<br/>追加 JSONL"]:::dim --> G["压缩 · 结算<br/>settle"]:::dim --> H["事件<br/>TUI · JSON · RPC"]:::dim
+  G -- 扩展要求继续 --> D
+--- 每个工具调用要过的关：查找工具、校验参数、扩展的 `tool_call`（钩子、权限、计划模式、沙箱都挂在这里，第 13–16 章）、执行、扩展的 `tool_result`。一个子 Agent 就是这条路径上的一个工具，里面再跑一遍（第 17 章）。
+flowchart LR
+  A["main.ts<br/>选模式"]:::done --> B["AgentSession<br/>prompt()"]:::done --> C["扩展<br/>输入事件"]:::done --> D["agent-loop<br/>runLoop"]:::done --> E["工具<br/>过关与执行"]:::on --> F["会话<br/>追加 JSONL"]:::dim --> G["压缩 · 结算<br/>settle"]:::dim --> H["事件<br/>TUI · JSON · RPC"]:::dim
+  G -- 扩展要求继续 --> D
+--- 每条消息一形成就追加进会话 JSONL（第 7 章）：崩溃后从这里恢复，durable 把它推到极致（第 18 章）。
+flowchart LR
+  A["main.ts<br/>选模式"]:::done --> B["AgentSession<br/>prompt()"]:::done --> C["扩展<br/>输入事件"]:::done --> D["agent-loop<br/>runLoop"]:::done --> E["工具<br/>过关与执行"]:::done --> F["会话<br/>追加 JSONL"]:::on --> G["压缩 · 结算<br/>settle"]:::dim --> H["事件<br/>TUI · JSON · RPC"]:::dim
+  G -- 扩展要求继续 --> D
+--- 上下文快满就压缩，切点绝不拆开工具调用和结果（第 8 章）。运行真正结束前还有最后一个决策点 `agent_before_settle`：目标循环在这里检查、不满意就让它继续（第 18 章）。
+flowchart LR
+  A["main.ts<br/>选模式"]:::done --> B["AgentSession<br/>prompt()"]:::done --> C["扩展<br/>输入事件"]:::done --> D["agent-loop<br/>runLoop"]:::done --> E["工具<br/>过关与执行"]:::done --> F["会话<br/>追加 JSONL"]:::done --> G["压缩 · 结算<br/>settle"]:::on --> H["事件<br/>TUI · JSON · RPC"]:::dim
+  G -- 扩展要求继续 --> D
+--- 整个过程中，每个状态变化都是一个事件，TUI、JSON 模式、RPC 的客户端、评测框架，订阅的是同一个事件流（第 19、20 章）。
+flowchart LR
+  A["main.ts<br/>选模式"]:::done --> B["AgentSession<br/>prompt()"]:::done --> C["扩展<br/>输入事件"]:::done --> D["agent-loop<br/>runLoop"]:::done --> E["工具<br/>过关与执行"]:::done --> F["会话<br/>追加 JSONL"]:::done --> G["压缩 · 结算<br/>settle"]:::done --> H["事件<br/>TUI · JSON · RPC"]:::on
+  G -- 扩展要求继续 --> D
+:::
+
+几个站点的源码，是前面读过的：模式的分叉、`prompt()` 的入口、循环本身。
+
+@pi packages/coding-agent/src/main.ts#L112-L127 hl=113-122
+
+@pi packages/coding-agent/src/core/agent-session.ts#L2157-L2195 hl=2158-2170,2193-2195
+
+@pi packages/agent/src/agent-loop.ts#runLoop collapse=true
+
+## 扩展事件怎样汇总：先到先拦，依次接力
+
+扩展是 Pi 把权限、钩子、沙箱、计划模式、后台命令都装进去的地方。装了不止一个扩展的时候，同一个事件有不止一个处理函数，谁说了算？Pi 对不同的事件用不同的汇总方式。
+
+**`tool_call`：任何一个拦下，就拦下。** 处理函数依次调用，返回 `block` 的立即结束，其余的只是被记下；一个“放行”不会盖住后面的“拒绝”：
+
+@pi packages/coding-agent/src/core/extensions/runner.ts#emitToolCall
+
+**`tool_result`：依次接力。** 每个处理函数拿到的是**上一个改过的结果**，各自可以改内容、改是否出错：
+
+@pi packages/coding-agent/src/core/extensions/runner.ts#emitToolResult collapse=true
+
+这两种汇总方式是对“这个事件最怕什么”的回答：拦截怕被盖掉，所以拒绝优先；改写怕丢，所以接力。而像“Agent 准备停下时给出下一句话”这样只能有一个答案的事件，只好先到先得。后面实战里 mox 的三种汇总方式，就是照着这个来的。
+
+## Pi、mox、Claude Code
+
+| 能力 | Pi v1.5 | mox | Claude Code |
+| --- | --- | --- | --- |
+| 模型协议 | 多服务商适配，统一内部格式 | 只走 OpenAI 兼容的 Chat Completions，消息格式就是它的格式（2） | 原生协议，自家服务 |
+| 循环、工具流水线 | 并行工具、参数校验、钩子 | 一个 `for` 加 `await`，工具顺序执行，不校验参数（3、4） | 并行只读工具，完整流水线 |
+| 编程工具 | 七个内置 | 七个，名字和参数与 Pi 一致（5） | 更多，含搜索、网页、计划等 |
+| 会话 | 树，可分支、可导航 | JSONL，线性，没有分支（7） | 会话恢复、`/branch` |
+| 压缩 | 内置，切开的轮次写两份摘要 | 单份摘要，切点只在用户消息前（8） | 内置 |
+| 扩展 | 四十多种事件 | 八个接口，扩展就是一个函数（9） | 插件、mods |
+| Skills | 内置，含提示模板 | 目录 + 名字描述，模型自己 `read`（11） | 内置 |
+| MCP | 内置，四种暴露方式、OAuth | 只有 stdio，工具名 `mcp__服务器__工具`（12） | 内置，默认推迟加载 |
+| 权限 | 无，本课写了兼容扩展 | `ask` 三选一，只读工具免确认，`--yolo` 跳过（14） | 规则与模式，还有 auto 模式 |
+| 沙箱 | 容器、微型虚拟机方案 | 无（15） | 内置 |
+| 子 Agent | 示例扩展，独立进程 | 一个 `task` 工具，七行（17） | 内置，定义文件，可后台 |
+| 后台命令、目标循环 | 示例与 durable 包（实验性） | 扩展（18） | 后台命令、`/loop` |
+| 崩溃恢复 | durable：意图先于效果、重启计数 | 恢复时补“中断”（18） | 会话恢复 |
+| SDK / JSON / RPC | 全部内置 | import 模块；`-p`；没有 RPC（19） | Agent SDK、无界面模式 |
+| 评测 | evals 包 | 小框架，评测对象是 `mox -p`（20） | — |
+
+Pi 的取舍很清楚：内核小而完整，很多功能留给扩展和示例。Claude Code 则把这些都做成了产品功能。mox 在 Pi 的另一头：它小到整个读完只要一个下午，是你亲手搭出来的最小版本。读 Pi，知道一个机制做到生产级是什么样；搭 mox，知道它最少需要多少行，多出来的行数花在了哪里。
+
+## 实战：组装——把全课搭出来的 mox 跑一遍
+
+**目标。** 前面每一章，你给 mox 加了一样东西：循环、工具、会话、压缩、扩展、权限、子 Agent、后台命令、RPC、评测。这一章不加新东西，只做一件事：**从头读一遍 `cli.ts`**——它是唯一知道全部零件的文件——然后把它们同时装上，跑一次完整的修 bug。
+
+### 第 1 步：mox 的地图
+
+第 1 章的 Agent 只有一个文件、不到一百行：一个循环、两个工具。二十章之后，你搭出来的 mox 长这样：
 
 @lab node labs/ch21/map.ts
 
@@ -43,11 +151,12 @@ flowchart TD
   COMP --> MODEL
 ```
 
-越往下越接近“和模型说话”，越往上越接近“和人、和别的程序说话”。这和 Pi 的分包是同一个原则（第 0 章），只是 Pi 分成了几个包、几万行，mox 分成了几个文件、六百多行。
 
-## 一次请求在 cli.ts 里的旅程
+越往下越接近“和模型说话”，越往上越接近“和人、和别的程序说话”。这和 Pi 的分包是同一个原则，只是 Pi 分成了几个包、几万行，mox 分成了几个文件、六百多行。
 
-`cli.ts` 是一个脚本，从上到下执行，没有导出。下面是它做的事，按顺序，每一步都对应前面讲过的一章：
+### 第 2 步：从头读 cli.ts
+
+`cli.ts` 是一个脚本，从上到下执行，没有导出。它做的事，按顺序，每一步都对应前面写过的一章：
 
 ::: steps 从敲下 mox 到回答结束，cli.ts 做了什么
 --- **启动。** 读环境变量（`MOX_MODEL` 必须有，第 2 章的 `openai()` 在第 39 行创建），确定 `cwd` 和 `home`。配置目录有两个：`~/.mox` 总是加载；项目里的 `.mox` 可能是别人写的代码，加了 `--trust` 才加载（第 38 行）。
@@ -84,6 +193,7 @@ flowchart LR
   H -- 扩展给了下一句话 --> F
 :::
 
+
 整个组装，在 `cli.ts` 的前三分之一：
 
 @code mox/src/cli.ts#L36-L62 hl=38,39,40,43,44,46,47,60,62
@@ -102,6 +212,7 @@ flowchart LR
 - **请求 6–7**：改了一处，没有验证就说“修好了”。`runLoop` 返回，`agent_end` 触发，目标扩展跑 `node test.js`，失败，返回下一句话；终端上出现“扩展让 Agent 继续”，请求 7 的最后一条消息就是那句话（第 18 章）。
 - **请求 8–9**：改对，`node test.js` 通过。再次 `agent_end`，检查通过，扩展不返回字符串，循环结束，打印“目标达成”。
 - **会话文件**里只有主 Agent 的十四条消息：子 Agent 的请求一条都不在里面（第 7、17 章）。
+
 
 一个工具调用要过的关，在 `cli.ts` 的 `beforeTool` 和 `afterTool` 里：
 
@@ -142,7 +253,8 @@ flowchart LR
 
 子 Agent 里的每一个工具调用，走的是同一组关；这是 `task` 只有七行的原因，也是第 17 章里扩展版子 Agent 比内置版麻烦的原因：扩展拿不到这个 `beforeTool`。
 
-## 组合时才暴露的问题
+
+### 第 3 步：组合起来会出什么问题
 
 每个部件单独测试都没问题，装在一起时却会冲突。这门课的实验里实际遇到过的：
 
@@ -162,29 +274,30 @@ flowchart LR
 
 这些问题都很难从任何一个部件的文档里读出来，面试里却经常被问到：“你在做 Agent 的时候遇到过什么坑？”
 
-## mox、Pi、Claude Code
 
-| 能力 | mox | Pi v1.5 | Claude Code |
-| --- | --- | --- | --- |
-| 模型协议 | 只走 OpenAI 兼容的 Chat Completions，消息格式就是它的格式（2） | 多服务商适配，统一内部格式 | 原生协议，自家服务 |
-| 循环、工具流水线 | 一个 `for` 加 `await`，工具顺序执行，不校验参数（3、4） | 并行工具、参数校验、钩子 | 并行只读工具，完整流水线 |
-| 编程工具 | 七个，名字和参数与 Pi 一致（5） | 七个内置 | 更多，含搜索、网页、计划等 |
-| 会话 | JSONL，线性，没有分支（7） | 树，可分支、可导航 | 会话恢复、`/branch` |
-| 压缩 | 单份摘要，切点只在用户消息前（8） | 内置，切开的轮次写两份摘要 | 内置 |
-| 扩展 | 八个接口，扩展就是一个函数（9） | 四十多种事件 | 插件、mods |
-| Skills | 目录 + 名字描述，模型自己 `read`（11） | 内置，含提示模板 | 内置 |
-| MCP | 只有 stdio，工具名 `mcp__服务器__工具`（12） | 内置，四种暴露方式、OAuth | 内置，默认推迟加载 |
-| 权限 | `ask` 三选一，只读工具免确认，`--yolo` 跳过（14） | 无，本课写了兼容扩展 | 规则与模式，还有 auto 模式 |
-| 沙箱 | 无（15） | 容器、微型虚拟机方案 | 内置 |
-| 子 Agent | 一个 `task` 工具，七行（17） | 示例扩展，独立进程 | 内置，定义文件，可后台 |
-| 后台命令、目标循环 | 扩展（18） | 示例与 durable 包（实验性） | 后台命令、`/loop` |
-| 崩溃恢复 | 恢复时补“中断”（18） | durable：意图先于效果、重启计数 | 会话恢复 |
-| SDK / JSON / RPC | import 模块；`-p`；没有 RPC（19） | 全部内置 | Agent SDK、无界面模式 |
-| 评测 | 小框架，评测对象是 `mox -p`（20） | evals 包 | — |
+### 验证
 
-Pi 的取舍很清楚：内核小而完整，很多功能留给扩展和示例。Claude Code 则把这些都做成了产品功能。mox 在 Pi 的另一头：它小到整个读完只要一个下午，缺的东西（沙箱、分支、并行、重试、RPC）一样一样都能在这门课里找到“Pi 怎么做”，并且自己补上。学习时先读 mox，再读 Pi：mox 告诉你一个机制最少需要多少行，Pi 告诉你把它做到生产级，多出来的行数花在了哪里。
+```bash
+node labs/ch21/practice.ts                      # 检验参考实现
+MOX_DIR=~/my-mox node labs/ch21/practice.ts     # 检验你自己的 mox
+```
 
-## 你来改
+依次运行 `map.ts`（九个文件的分层要对）、`journey.ts`（真正的 `mox -p` 完整旅程）、`order.ts`（三个事件的三种汇总方式）。你自己的 mox 把这三关都过了，课程的实战就全部搭完了。
+
+### 和 Pi 比，mox 省掉了什么
+
+回头一句话总结：Pi 做到生产级的，mox 都做了最小版本，省掉的是**为失败准备的那部分**：
+
+- 模型：只有 OpenAI 兼容协议，没有重试和退避，没有多服务商。
+- 循环与工具：顺序执行，没有并行、参数校验、工具进度。
+- 会话：线性的 JSONL，没有分支；崩溃后一律补“中断”，没有 durable 的意图和重启计数。
+- 扩展：八个接口，没有 UI、没有四十多种事件；子 Agent、后台命令、目标循环都只能在 `agent_end` 这一个口子上接话。
+- 安全：一个确认加一个扩展点，没有规则语言、没有沙箱。
+- 嵌入：`-p` 和库，RPC 只有四条命令，没有背压。
+
+这些省略都有对应的练习（下面），也都有对应的章节讲 Pi 是怎么做的。
+
+### 你来改
 
 每道题先写下预测，再动手验证。
 
@@ -200,7 +313,7 @@ Pi 的取舍很清楚：内核小而完整，很多功能留给扩展和示例�
 `add.js` 不会被改。`task` 在 `allowed` 里，子 Agent 的 `read` 也在，调研照常完成；但主 Agent 的 `edit` 和 `bash` 都需要确认，而 `mox -p` 没有终端，每一次都得到“没有终端可以确认，已拒绝。想自动执行请加 --yolo”（`rm -rf build` 还是先被扩展拦下，理由是“不允许删除文件”）。模型脚本不管这些，照样说“修好了”；目标循环运行 `node test.js`，仍然失败，把失败信息交回去；第二轮又被拒绝，文件一个字节都没变，指纹相同，目标循环以“上一轮没有修改任何文件……原地打转”停下。退出码是 0。几个默认值叠加的结果：权限、`-p`、目标循环各自都对，合起来是一个安静地失败的运行。
 :::
 
-## 练习
+### 练习
 
 每道题都能在 mox 上动手完成，括号里是相关的章节：
 
@@ -214,6 +327,7 @@ Pi 的取舍很清楚：内核小而完整，很多功能留给扩展和示例�
 8. **“意图先写”**（18）：执行工具之前先在会话里记下意图，恢复时据此区分“没开始”和“做了一半”，让 `session.ts` 的补“中断”少补一些。
 9. **LLM 评分器**（20）：给“解释代码”这类开放任务写一个评分提示，用十几条人工标注校准它。
 10. **为你自己的工作流写一个 Skill 和一个子 Agent，然后用评测证明它们有用**（11、17、20）。
+
 
 ## 面试
 

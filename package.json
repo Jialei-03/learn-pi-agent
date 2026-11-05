@@ -2,7 +2,7 @@
   "name": "learn-pi-agent",
   "private": true,
   "type": "module",
-  "description": "从零造一个 Coding Agent，读懂 Pi，补齐生产级能力",
+  "description": "读懂 Pi 这个生产级 Coding Agent，补齐扩展能力，章末实战搭出自己的 mox",
   "engines": {
     "node": ">=22.19.0"
   },

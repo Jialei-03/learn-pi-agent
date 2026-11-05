@@ -7,7 +7,10 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { codingTools } from '../../mox/src/tools.ts';
+import { loadMox, whose } from '../shared/mox-dir.ts';
+
+const { codingTools } = await loadMox('tools.ts');
+console.log(`${whose()}\n`);
 
 const dir = mkdtempSync(join(tmpdir(), 'ch05-search-'));
 const write = (path: string, text: string) => { mkdirSync(join(dir, path, '..'), { recursive: true }); writeFileSync(join(dir, path), text); };
@@ -18,7 +21,7 @@ write('node_modules/lib/index.js', '// TODO: lib 自己的待办\n');
 write('.git/config', '[core] # TODO\n');
 write('.gitignore', 'build/\n');
 
-const tools = Object.fromEntries(codingTools(dir).map(t => [t.name, t]));
+const tools = Object.fromEntries(codingTools(dir).map((t: any) => [t.name, t]));
 const run = async (name: string, args: object) => String(await tools[name].run(args));
 const show = (title: string, out: string) => console.log(`── ${title}\n${out.split('\n').map(l => `   ${l}`).join('\n')}\n`);
 

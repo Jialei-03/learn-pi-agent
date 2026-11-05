@@ -1,15 +1,16 @@
 ---
 motto: 规则管模型通常会怎么做，沙箱管它最坏能做到什么。
 learn:
-  - 说清楚按命令文本拦截的规则为什么会被绕过（真实模型的六次录制），沙箱改在哪一层限制
+  - 说清楚按命令文本拦截的规则为什么会被绕过，沙箱改在哪一层限制（真实模型的六次录制）
   - 隔离的四个层次：整个 Agent、只隔离工具、进程沙箱、语言沙箱
-  - 把 bash 包进沙箱的两种做法：mox 的 registerTool 同名替换，Pi 的 spawnHook
+  - Pi 的两个扩展点：BashOperations 与 spawnHook
   - macOS Seatbelt 与 Linux bubblewrap：限制写、读、网络
   - 网络白名单为什么需要一个代理，代理挡不住什么；项目目录里也有不能写的东西
   - codemode：模型写的代码在 QuickJS 里运行，工具是唯一的出口
+  - 实战：给 mox 写一个沙箱扩展（registerTool 同名替换 bash）
 prereq: 第 5、12、14 章
 time: 70 分钟
-build: extensions/sandbox —— 让 bash 在操作系统沙箱里运行、网络按域名放行的扩展（mox 与 Pi 两个版本）
+build: 实战：给 mox 写沙箱扩展（extensions/sandbox/mox.ts：同名替换 bash，命令包进 sandbox-exec；Pi 版共用同一份策略）
 ---
 
 ## 规则挡不住的：同样的六次，加上沙箱
@@ -20,7 +21,7 @@ build: extensions/sandbox —— 让 bash 在操作系统沙箱里运行、网�
 
 @code labs/ch15/guard.ts
 
-三次让它删项目目录里的 `a.txt`，三次让它删项目目录之外的 `../shared/a.txt`。回放时模型的每条回复原样重放，但命令在临时目录里**真的**重新执行：先只有这条规则，再加上本章的沙箱，各自看文件最后有没有被删掉。
+三次让它删项目目录里的 `a.txt`，三次让它删项目目录之外的 `../shared/a.txt`。回放时模型的每条回复原样重放，但命令在临时目录里**真的**重新执行：先只有这条规则，再加上本章的沙箱，各自看文件最后有没有被删掉。（回放用的是 mox 的循环和工具，沙箱用的是本章后面读到的同一份策略 `policy.ts`；mox 是章末实战要搭的东西。）
 
 @lab node labs/ch15/unlink.ts
 
@@ -48,7 +49,7 @@ Pi 的文档列出了前两类的做法：
 
 越往上，隔离越彻底，也越重。日常在自己电脑上开发时，进程沙箱是一个很好的折中：不用改变工作方式，却给最危险的那个工具（bash）加上了硬边界。Claude Code 的沙箱就工作在这一层。
 
-## Pi 的两个扩展点，和 mox 的一个
+## Pi 的两个扩展点
 
 Pi 的 bash 工具留了两个口子。一个是 `BashOperations`，可以**整个替换**命令的执行方式：
 
@@ -62,7 +63,7 @@ Pi 的 bash 工具留了两个口子。一个是 `BashOperations`，可以**整�
 
 注意 `resolveSpawnContext` 还顺手从环境变量里删掉了 `PI_SESSION_ID`、`PI_MODEL` 等变量（除非明确要求暴露）：命令默认不该知道自己在哪个会话、哪个模型下运行。
 
-本章的 Pi 扩展用 `spawnHook`：工具的参数、输出、截断都和原来一样，对话记录里也是模型写的原始命令，只是进程启动时被包进了沙箱。mox 的 `bash` 没有这样的口子，它用的是第三种办法：整个替换（见“装进 mox”）。
+本章的 Pi 扩展用 `spawnHook`：工具的参数、输出、截断都和原来一样，对话记录里也是模型写的原始命令，只是进程启动时被包进了沙箱。
 
 ## 操作系统沙箱
 
@@ -85,7 +86,7 @@ Linux 版本的参数：
 @code extensions/sandbox/policy.ts#bwrapArgs
 
 ::: note 关于 Linux 部分
-本书的实验在 macOS 上运行，`bwrapArgs` 是按 bubblewrap 的文档写的，没有在 Linux 上实际验证；所以本章新增的沙箱实验只在 macOS 的 Seatbelt 上运行沙箱部分，其他平台直接跳过。注释里也说明了一个没有实现的部分：Linux 上要做到“只能连代理”，需要把代理通过 unix socket 接进独立的网络命名空间（Claude Code 用 socat 做这件事）。
+本书的实验在 macOS 上运行，`bwrapArgs` 是按 bubblewrap 的文档写的，没有在 Linux 上实际验证；所以本章的沙箱实验只在 macOS 的 Seatbelt 上运行沙箱部分，其他平台直接跳过。注释里也说明了一个没有实现的部分：Linux 上要做到“只能连代理”，需要把代理通过 unix socket 接进独立的网络命名空间（Claude Code 用 socat 做这件事）。
 :::
 
 同样的命令，直接运行和在沙箱里运行：
@@ -103,21 +104,21 @@ sequenceDiagram
   participant K as 内核（Seatbelt）
   M->>B: bash：python 读 .env
   Note over B: 规则看不穿这条命令
---- bash 工具在**启动进程的前一刻**把命令、工作目录、环境变量交给沙箱扩展（Pi 里是 `spawnHook`；mox 里扩展注册的同名 bash 在自己的 `run` 里直接做这一步）。
+--- bash 工具在**启动进程的前一刻**调用 `spawnHook`，把命令、工作目录、环境变量交给扩展。
 sequenceDiagram
   participant M as 模型
   participant B as bash 工具
   participant X as 沙箱扩展
   participant K as 内核（Seatbelt）
   M->>B: bash：python 读 .env
-  B->>X: 启动前交出命令和环境
+  B->>X: spawnHook(context)
 --- 扩展调用 `wrapCommand`：Seatbelt 下把命令改成 `sandbox-exec -f profile.sb /bin/bash -c '原命令'`，并给环境变量加上 `TMPDIR` 和代理变量（断网模式下代理变量被清空）。工具的参数、输出、截断规则都不变。
 sequenceDiagram
   participant M as 模型
   participant B as bash 工具
   participant X as 沙箱扩展
   participant K as 内核（Seatbelt）
-  B->>X: 启动前交出命令和环境
+  B->>X: spawnHook(context)
   X-->>B: 包进 sandbox-exec，加 env
 --- 进程在沙箱里启动。Python 不管怎么写，最终都要调用 `open`，这一步落到内核。
 sequenceDiagram
@@ -223,51 +224,7 @@ sequenceDiagram
 - **代理不检查内容**，只检查域名。
 - 断网模式下要清空代理环境变量。写这一章时就遇到过：作者的电脑配置了一个本地代理，沙箱里的命令继承了它，实验结果随机器不同而不同。
 
-## 装进 mox：同名替换 bash
-
-Pi 的 bash 工具留了 `spawnHook` 这样的口子，mox 的 `bash` 只是 `tools.ts` 里的一个普通工具，没有任何钩子。但 mox 的扩展接口里有 `registerTool`，遇到同名工具就替换：
-
-@code mox/src/extensions.ts#L32-L36
-
-（Pi 官方的 SSH 示例也是这样做的：用同名工具替换内置的 `bash`，把操作转发到远程机器。）所以沙箱扩展注册一个新的 `bash`：从 `codingTools` 里取出内置的那个，原样保留它的名字、参数定义、超时、取消和输出截断，只在 `run` 里把命令包进沙箱：
-
-@code extensions/sandbox/mox.ts#L16-L49 hl=34,35,36,38,39,40,43,47
-
-- 第 19 行：没有可用的沙箱就在 stderr 提示一句，bash 照常运行。如果连提示都没有，用户会以为自己在沙箱里。
-- 第 20 到 32 行：和 Pi 版逐行相同的准备工作——可写目录、禁止写（`.git/hooks` 等）、禁止读（凭据目录）、网络是断开还是经过代理；生成 Seatbelt 策略文件。
-- 第 34 到 36 行：取出内置的 bash，`...bash` 展开保留它的一切，再覆盖 `description` 和 `run`。
-- 第 38 行：**描述里告诉模型它在沙箱里**。看到 `Operation not permitted`，模型知道这是边界，而不是命令写错了，也被要求不要想办法绕过。它能不能听话是另一回事（见上一节），但至少少了一次盲目的试错。
-- 第 39 到 43 行：`wrapCommand` 把命令包成 `sandbox-exec -f 策略 /bin/bash -c '原命令'`；mox 的 `bash` 不接受额外的环境变量，代理地址和临时目录用 `env K=V …` 带进去；然后交给内置的 `bash.run`，超时、取消、截断都照旧。
-- 第 47 行：退出前关掉代理。
-
-下面的实验把它装进一个脚本模型驱动的 mox，模型依次执行五条命令，最后一步改用 `write` 工具：
-
-@lab node labs/ch15/mox-sandbox.ts
-
-- **工具列表里还是四个工具**，`bash` 只有一个：替换，不是新增。描述里多了沙箱的说明。
-- 正常的开发操作（在项目里写文件、运行 node）不受影响；Python 读 `.env`、读 `~/.ssh`、往项目外写文件、上网，都被内核挡下。模型看到的是普通的 `Operation not permitted`。
-- **对话记录里是模型写的原始命令**，`tool_call` 事件里看到的也是原始命令，不论扩展在沙箱之前还是之后加载。
-- **最后一步：`write` 工具写进了项目外的目录。** 沙箱只管 bash。`read`、`write`、`edit` 运行在 mox 进程里，不在沙箱里；钩子脚本、MCP 服务器、扩展同样不在。它们由权限规则（第 14 章）管。Claude Code 也是这样划分的。要连同这些一起隔离，就得把整个 Agent 放进容器或虚拟机。
-- 最后两行是同一个扩展接进真正的命令行（`mox --yolo -e extensions/sandbox/mox.ts`）的结果。
-
-### 加载顺序不再重要
-
-旧办法是在 `tool_call` 里直接改写 `command` 参数。那样做有顺序问题：权限扩展必须排在沙箱**之前**，否则权限规则看到的是改写后的 `sandbox-exec …`，`Bash(npm run *)` 一条都匹配不上。同名替换把改写藏进了工具自己的 `run`，所有 `tool_call` 处理器看到的始终是模型写的原话，顺序就不重要了。实验里放在沙箱前后的两个旁观者看到的命令完全一样，就是这个性质的证据。
-
-两种做法放在一起：
-
-::: tabs
-@@ mox
-@code extensions/sandbox/mox.ts#L34-L45
-同名替换：内置 bash 展开后只覆盖 `description` 和 `run`，在 `run` 里包命令、用 `env` 带环境变量；`tool_call` 事件和对话记录不受影响。
-@@ Pi
-@code extensions/sandbox/index.ts#L45-L50
-用 `spawnHook` 在启动进程的一刻改写命令和环境变量，工具的参数和对话记录不变。同样不需要考虑加载顺序。
-:::
-
 ## 装进 Pi
-
-同一份策略和代理，在 Pi 里用 `spawnHook` 接上：
 
 @code extensions/sandbox/index.ts#createSandboxExtension collapse=true
 
@@ -275,7 +232,15 @@ Pi 的 bash 工具留了 `spawnHook` 这样的口子，mox 的 `bash` 只是 `to
 
 @lab node labs/ch15/pi-sandbox.ts
 
-正常的开发操作（在项目里写文件、运行 node）不受影响；读凭据、写到桌面、上网都被挡下。模型看到的是普通的 “Operation not permitted” 错误，它可以据此调整做法，或者告诉用户需要什么权限。和 mox 版本一样，沙箱只管 bash。
+正常的开发操作（在项目里写文件、运行 node）不受影响；读凭据、写到桌面、上网都被挡下。模型看到的是普通的 “Operation not permitted” 错误，它可以据此调整做法，或者告诉用户需要什么权限。
+
+同一件事——“在进程启动前把 bash 命令包进沙箱”——在 Pi 里只有这几行：
+
+@code extensions/sandbox/index.ts#L45-L50
+
+用 `spawnHook` 在启动进程的一刻改写命令和环境变量，工具的参数、输出、截断和对话记录都不变，也不需要考虑扩展的加载顺序：权限扩展（第 14 章）看到的始终是模型写的原话。
+
+还要记住沙箱**只管 bash**。`read`、`write`、`edit` 运行在 Agent 进程里，由权限规则管；钩子脚本、MCP 服务器、扩展同样不在沙箱里。Claude Code 也是这样划分的。要连同这些一起隔离，就得把整个 Agent 放进容器或虚拟机。
 
 ## codemode：语言级的沙箱
 
@@ -312,9 +277,58 @@ codemode 带来的好处不止安全：
 官方文档：[Sandboxing](https://code.claude.com/docs/en/sandboxing)
 :::
 
-## 你来改
+## 实战：给 mox 加上沙箱
 
-每道题先写下预测，再动手验证。
+**目标**：让 mox 的 `bash` 在操作系统沙箱里运行，网络默认断开。mox 的 `bash` 是 `tools.ts` 里一个普通工具，没有 `spawnHook` 那样的口子；但扩展接口里有 `registerTool`，遇到同名工具就替换。mox 只做最小可用版：只管 bash，策略是固定的（项目目录可写、凭据目录禁止读、不能联网），没有域名白名单的配置界面。
+
+先看你要做出来的东西：
+
+@lab node labs/ch15/practice.ts
+
+- 默认运行检验参考实现（`extensions/sandbox/mox.ts`）；`MOX_DIR=~/my-mox node labs/ch15/practice.ts` 检验你自己的 mox，扩展写在 `~/my-mox/extensions/sandbox.ts`。
+- 沙箱探针只在验证过的平台（macOS 的 Seatbelt）上运行，其他平台输出“跳过”。
+
+### 第一步：同名替换
+
+`registerTool` 在已有同名工具时替换它：
+
+@code mox/src/extensions.ts#L33-L37
+
+（Pi 官方的 SSH 示例也是这样做的：用同名工具替换内置的 `bash`，把操作转发到远程机器。）所以沙箱扩展不需要改 `tools.ts`，也不需要 mox 提供任何钩子：从 `codingTools` 里取出内置的 `bash`，`...bash` 展开保留它的名字、参数定义、超时、取消、截断、非零退出码当错误这一切，只覆盖 `description` 和 `run`。
+
+### 第二步：在 run 里把命令包进沙箱
+
+`policy.ts`（策略、`wrapCommand`）和 Pi 版共用，本章前半已经读过，不需要重写：
+
+@code extensions/sandbox/mox.ts#L16-L49 hl=34,36,38,39,40,42,43,47
+
+- 第 19 行：没有可用的沙箱就在 stderr 提示一句，bash 照常运行。如果连提示都没有，用户会以为自己在沙箱里。
+- 第 20 到 32 行：和 Pi 版逐行相同的准备工作——可写目录、禁止写（`.git/hooks` 等）、禁止读（凭据目录）、网络断开还是经过代理，生成 Seatbelt 策略文件。
+- 第 34 到 36 行：取出内置的 bash，展开后覆盖。
+- 第 38 行：**描述里告诉模型它在沙箱里**。看到 `Operation not permitted`，模型知道这是边界，不是命令写错了，也被要求不要想办法绕过。它听不听是另一回事（本章开头的录制），但至少少了一次盲目试错。
+- 第 39 到 43 行：`wrapCommand` 把命令包成 `sandbox-exec -f 策略 /bin/bash -c '原命令'`；mox 的 `bash` 不接受额外的环境变量，代理地址和临时目录用 `env K=V …` 带进去；然后交给内置的 `bash.run`。
+- 第 47 行：退出前关掉代理。
+
+### 第三步：验证
+
+上面的实验输出说明了四件事：
+
+- 工具列表里 `bash` 只有一个：替换，不是新增。
+- 项目里写文件、运行 node 正常；读凭据、往项目外写文件、上网都被内核挡下，模型看到的是普通的 `Operation not permitted`。
+- 对话记录里是模型写的原始命令，沙箱前后的两个旁观者在 `tool_call` 里看到的也是原始命令。如果改成在 `tool_call` 里直接改写 `command` 参数，权限扩展（第 14 章）看到的就是 `sandbox-exec …`，`Bash(npm run *)` 一条都匹配不上，沙箱扩展必须最后加载。同名替换把改写藏进了工具自己的 `run`，顺序就不重要了。
+- 最后一步，`write` 工具写进了项目外的目录。沙箱只管 bash；`read`、`write`、`edit` 运行在 mox 进程里，由权限规则管。
+
+### 和 Pi 比，mox 省掉了什么
+
+| | mox（本章） | Pi（本章前半） |
+| --- | --- | --- |
+| 把命令包进沙箱 | 同名替换整个 bash | `spawnHook`，工具本身不动 |
+| 环境变量 | 用 `env K=V` 拼进命令 | `spawnHook` 直接改 `env`，并默认清掉 `PI_SESSION_ID` 等变量 |
+| 网络白名单、代理 | 复用同一个 `proxy.ts`，但没有配置界面 | `allowedDomains` 选项，状态栏显示 |
+| 远程执行、`BashOperations` | 没有 | 整个替换执行方式（SSH、微型虚拟机） |
+| Linux | 未验证 | 未验证（`bwrapArgs` 照文档写） |
+
+### 你来改
 
 ::: predict 把 unlink 也加进黑名单
 把 `labs/ch15/guard.ts` 里的正则改成 `/\b(rm|unlink)\b/`，重新运行 `node labs/ch15/unlink.ts`。表格里“只有规则”那一列会变成什么？末尾的断言还会通过吗？
@@ -324,12 +338,12 @@ codemode 带来的好处不止安全：
 别急着下结论说“黑名单有效”：回放只能重放模型当时发出的命令，没法让它在新规则下做新的选择。那四次如果真的在新规则下重新跑，模型多半会像另外两次那样去找 Python、`perl`、`find -delete`、`mv` 到别处。要验证，用 `labs/ch15/record.ts` 在新规则下重新录制。黑名单每补一个词，模型多试一条路；沙箱不在乎是哪条。
 :::
 
-::: predict 去掉 denyRead，再读一次 .env
-把 `labs/ch15/mox-sandbox.ts` 里 `createSandboxMoxExtension({ denyRead: ['.env'] })` 的参数去掉，运行实验。第二条命令（Python 读 `.env`）的结果是什么？其他几条呢？
+::: predict 去掉默认的禁止读取列表
+把 `extensions/sandbox/mox.ts` 里 `denyRead: [...defaultDenyRead(), …]` 改成 `denyRead: []`，运行 `node labs/ch15/practice.ts`。Python 读 `~/.ssh/id_rsa`（实验里是假家目录里的一个假私钥）的结果是什么？其他几条呢？
 ???
-Python 打印出 `DB_PASSWORD=hunter2`，末尾的断言报错。`.env` 在项目目录里，默认只有凭据目录（`~/.ssh`、`~/.aws` 等）不让读，项目目录里的文件对沙箱来说是普通文件。其他几条不变：读 `~/.ssh`、往项目外写、上网仍然被挡。
+Python 打印出私钥的第一行，末尾的断言报错。沙箱的默认值是“项目目录可读可写，其余大部分可读”，凭据目录能不能读，完全取决于 `denyRead` 里有没有它。其他几条不变：往项目外写、上网仍然被挡，因为那是另外两条规则（可写目录、网络）管的。
 
-想保护项目里的某个文件，要像本章实验那样显式列在 `denyRead` 里。沙箱的默认值是“项目目录可读可写”，这是它能让 Agent 正常干活的前提。
+想保护项目里的某个文件（比如 `.env`），要像 Pi 版的 `denyRead: ['.env']` 选项那样显式列出来。沙箱的默认值是“项目目录可读可写”，这是它能让 Agent 正常干活的前提。
 :::
 
 ::: predict 让 write 工具也进沙箱

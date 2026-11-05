@@ -5,10 +5,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { runMox, type CliScript } from '../shared/mox-cli.ts';
+import { whose } from '../shared/mox-dir.ts';
+import { extFile } from './ext.ts';
 
-const extension = fileURLToPath(new URL('../../extensions/background/mox.ts', import.meta.url));
+console.log(`${whose()}\n`);
+const extension = extFile('background');
 const temp = (name: string) => mkdtempSync(join(tmpdir(), `ch18-${name}-`));
 // 一个“构建”：每 150ms 输出一行，0.9 秒后以退出码 0 结束
 const buildScript = "let i = 0;\nconst t = setInterval(() => { console.log('building module ' + (++i)); if (i === 6) { clearInterval(t); console.log('BUILD OK'); } }, 150);\n";

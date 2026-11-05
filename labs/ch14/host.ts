@@ -2,10 +2,32 @@
 // 实验用它加载真正的扩展、跑真正的 runLoop 和真正的工具；和命令行唯一的区别是没有 readline。
 //   - ask：answers 是一串预先写好的回答（选项的文字），也可以是一个按问题现场决定的函数；answers 为 undefined 表示“没有终端”，ask 返回 undefined
 //   - 权限：和 cli.ts 一样，先问扩展（tool_call），再按内置规则确认（read、task 直接放行，其余三选一，--yolo 跳过）
-import { loadExtensions, type Extension } from '../../mox/src/extensions.ts';
-import { runLoop, type Tool } from '../../mox/src/loop.ts';
+// mox 的各个模块通过 loadMox 加载：默认是参考实现 mox/，设置 MOX_DIR 就改为学员自己写的那份。
+import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import type { Extension } from '../../mox/src/extensions.ts';
+import type { Tool } from '../../mox/src/loop.ts';
 import type { Model, Msg } from '../../mox/src/model.ts';
-import { codingTools } from '../../mox/src/tools.ts';
+import { MOX_DIR, loadMox, usingReference } from '../shared/mox-dir.ts';
+
+const { loadExtensions } = await loadMox<typeof import('../../mox/src/extensions.ts')>('extensions.ts');
+const { runLoop } = await loadMox<typeof import('../../mox/src/loop.ts')>('loop.ts');
+const { codingTools } = await loadMox<typeof import('../../mox/src/tools.ts')>('tools.ts');
+
+/**
+ * 一个扩展文件的路径。参考实现在课程仓库的 extensions/<名字>/mox.ts；
+ * 检验自己的 mox 时，找 $MOX_DIR/extensions/<名字>.ts，没有的话退回参考实现（并说明）。
+ */
+const warned = new Set<string>();
+export function extFile(name: string): string {
+  const reference = fileURLToPath(new URL(`../../extensions/${name}/mox.ts`, import.meta.url));
+  if (usingReference) return reference;
+  const mine = join(MOX_DIR, 'extensions', `${name}.ts`);
+  if (existsSync(mine)) return mine;
+  if (!warned.has(mine)) { warned.add(mine); console.log(`（没有找到 ${mine}，这一部分使用参考实现）`); }
+  return reference;
+}
 
 export type Answers = string[] | ((question: string, choices: string[]) => string) | undefined;
 export interface Step { name: string; args: any; result: string; error: boolean }
@@ -27,7 +49,7 @@ export async function assemble({ cwd, model, sources = [], answers, yolo = false
   const extensions = await loadExtensions(sources, { cwd, tools, ask });
   const systemPrompt = () => [system, ...extensions.prompts.map(part => part())].filter(Boolean).join('\n\n');
 
-  // 这几行就是 cli.ts 里的权限（mox/src/cli.ts#L64-L74）
+  // 这几行就是 cli.ts 里的权限（mox/src/cli.ts#L64-L75）
   const allowed = new Set(['read', 'grep', 'find', 'ls', 'task']);
   async function beforeTool(name: string, args: unknown) {
     const verdict = await extensions.verdict(name, args);
@@ -38,7 +60,7 @@ export async function assemble({ cwd, model, sources = [], answers, yolo = false
     if (reply === '本次会话都允许') allowed.add(name);
     else if (reply !== '允许') return '用户拒绝了这次调用';
   }
-  const afterTool = async (name: string, args: unknown, result: string) => extensions.text(await extensions.emit('tool_result', name, args, result));
+  const afterTool = (name: string, args: unknown, result: string) => extensions.transform(name, args, result);
 
   const messages: Msg[] = [];
   const steps: Step[] = [];

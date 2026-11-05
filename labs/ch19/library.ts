@@ -6,12 +6,16 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { systemPrompt } from '../../mox/src/context.ts';
-import { runLoop, type Event } from '../../mox/src/loop.ts';
+import type { Event } from '../../mox/src/loop.ts';
 import type { Msg } from '../../mox/src/model.ts';
-import { openSession } from '../../mox/src/session.ts';
-import { codingTools } from '../../mox/src/tools.ts';
+import { loadMox, whose } from '../shared/mox-dir.ts';
 import { scripted } from '../shared/scripted.ts';
+
+const { systemPrompt } = await loadMox('context.ts');
+const { runLoop } = await loadMox('loop.ts');
+const { openSession } = await loadMox('session.ts');
+const { codingTools } = await loadMox('tools.ts');
+console.log(`${whose()}\n`);
 
 const cwd = mkdtempSync(join(tmpdir(), 'ch19-lib-')), home = mkdtempSync(join(tmpdir(), 'ch19-home-'));
 writeFileSync(join(cwd, 'add.js'), 'export const add = (a, b) => a - b;\n');

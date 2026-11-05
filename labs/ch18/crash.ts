@@ -7,7 +7,10 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { codingTools } from '../../mox/src/tools.ts';
+import { whose } from '../shared/mox-dir.ts';
 import { killGroup, spawnMox, startFakeModel, type CliScript } from '../shared/mox-cli.ts';
+
+console.log(`${whose()}\n`);
 
 const root = mkdtempSync(join(tmpdir(), 'ch18-crash-'));
 const cwd = join(root, 'project'), home = join(root, 'home');

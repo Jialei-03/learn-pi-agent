@@ -9,6 +9,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true   # mox/ 是 Mox-agent 仓库
+          fetch-depth: 0     # 第 6 章的实验要读 mox 的历史提交
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22.3'

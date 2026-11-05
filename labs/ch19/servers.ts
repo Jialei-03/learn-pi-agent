@@ -3,11 +3,12 @@
 //   mox-rpc：模型走 MOX_BASE_URL，指向一个本机起的“假模型”服务器（labs/shared/mox-cli.ts），按剧本回复
 //   Pi     ：命令行没有“用脚本当模型”的开关，所以用扩展 labs/ch19/faux-ext.ts 注册一个脚本模型提供方
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startFakeModel, type CliScript } from '../shared/mox-cli.ts';
+import { MOX_DIR, usingReference } from '../shared/mox-dir.ts';
 
 export const repo = fileURLToPath(new URL('../..', import.meta.url));
 export type Which = 'pi' | 'mox';
@@ -36,7 +37,10 @@ export async function serverConfig(which: Which, toolSeconds = '0.6') {
     return { cliPath: join(repo, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js'), args: ['--no-session', '--offline', '-e', join(repo, 'labs/ch19/faux-ext.ts'), '--provider', 'faux', '--model', 'faux-1'], env: base, cwd, close: () => {} };
   }
   const model = await startFakeModel(buildScript(toolSeconds));
-  return { cliPath: join(repo, 'labs/ch19/mox-rpc.ts'), args: [] as string[], env: { ...base, MOX_BASE_URL: model.url, MOX_API_KEY: 'lab', MOX_MODEL: 'fake' }, cwd, close: model.close };
+  // 检验自己的 mox 时，如果 $MOX_DIR/rpc.ts 存在，就启动你自己写的那份 RPC；否则用参考实现 labs/ch19/mox-rpc.ts
+  const mine = join(MOX_DIR, 'rpc.ts');
+  const cliPath = !usingReference && existsSync(mine) ? mine : join(repo, 'labs/ch19/mox-rpc.ts');
+  return { cliPath, args: [] as string[], env: { ...base, MOX_BASE_URL: model.url, MOX_API_KEY: 'lab', MOX_MODEL: 'fake' }, cwd, close: model.close };
 }
 
 /** 一条到 RPC 服务端的连接：按字节里的 \n 切分 stdout，把每条记录原样存下来。不做任何配对，配对是实验要观察的事。 */

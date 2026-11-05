@@ -1,45 +1,48 @@
-// 第 12 章实验：mox 的 MCP 客户端在线路上说了什么？
+// 第 12 章实验：MCP 在线路上长什么样？
 //   node labs/ch12/wire.ts
-// mox 的 connectMcp 连接实验用的 issue 服务器，但中间插了一个 tee（labs/fixtures/mcp-tee.ts）：
-// 它把双方的每一行原样转发，同时记进日志。客户端不知道有人在看。
+// Pi 的 MCP 客户端连接实验用的 issue 服务器，中间插了一个透明的 tee（labs/fixtures/mcp-tee.ts）：
+// 它启动真正的服务器，把两个方向的每一行原样转发，同时记进日志。客户端不知道有人在看。
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { connectMcp } from '../../mox/src/mcp.ts';
+import { McpClient, StdioTransport } from '@earendil-works/pi-mcp';
 import { SERVER } from './shared.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'ch12-wire-'));
 const log = join(dir, 'wire.log');
 const tee = join(import.meta.dirname, '../fixtures/mcp-tee.ts');
-const short = (value: unknown, n = 120) => { const s = JSON.stringify(value); return s.length > n ? s.slice(0, n) + '…' : s; };
+const short = (value: unknown, n = 130) => { const s = JSON.stringify(value); return s.length > n ? s.slice(0, n) + '…' : s; };
+let shown = 0;
+const dump = (title: string) => {
+  const lines = readFileSync(log, 'utf8').trim().split('\n');
+  console.log(`━━ ${title} ━━`);
+  for (const line of lines.slice(shown)) {
+    const m = JSON.parse(line.slice(2));
+    const kind = m.method ? (m.id !== undefined ? '请求' : '通知') : '响应';
+    console.log(`${line.startsWith('→') ? '客户端 → 服务器' : '服务器 → 客户端'}  ${kind}${m.id !== undefined ? ` #${m.id}` : ''}${m.method ? ` ${m.method}` : ''}`);
+    console.log(`    ${short(m.params ?? m.result ?? m.error ?? {})}`);
+  }
+  const n = lines.length - shown;
+  shown = lines.length;
+  return n;
+};
 
 try {
-  const mcp = await connectMcp({ issues: { command: process.execPath, args: [tee, log, process.execPath, SERVER] } }, m => console.log(`警告：${m}`));
-  const dump = (title: string, from: number) => {
-    const lines = readFileSync(log, 'utf8').trim().split('\n').slice(from);
-    console.log(`━━ ${title} ━━`);
-    for (const line of lines) {
-      const m = JSON.parse(line.slice(2));
-      const kind = m.method ? (m.id !== undefined ? '请求' : '通知') : '响应';
-      console.log(`${line.startsWith('→') ? 'mox → 服务器' : '服务器 → mox'}  ${kind}${m.id !== undefined ? ` #${m.id}` : ''}${m.method ? ` ${m.method}` : ''}`);
-      console.log(`    ${short(m.params ?? m.result ?? m.error ?? {})}`);
-    }
-    return lines.length;
-  };
-  const n1 = dump('连接：握手 + 列出工具（connectMcp 返回时已经全部完成）', 0);
-  assert.equal(n1, 5);
-
-  console.log(`\n得到 ${mcp.tools.length} 个 mox 工具：`);
-  for (const t of mcp.tools.slice(0, 3)) console.log(`  ${t.name}  参数：${short(t.parameters, 90)}`);
-  console.log('  ……');
-
-  const search = mcp.tools.find(t => t.name === 'mcp__issues__search_issues')!;
-  const result = await search.run({ query: '压缩' });
-  console.log('');
-  dump('模型调用 mcp__issues__search_issues', n1);
-  console.log(`\n模型看到的结果：${JSON.stringify(result)}`);
-  mcp.close();
+  const client = new McpClient({ name: 'lab', version: '1.0.0' });
+  await client.connect(new StdioTransport({ command: process.execPath, args: [tee, log, process.execPath, SERVER] }));
+  const n1 = dump('1. 握手');
+  const tools = await client.listTools();
+  dump('2. 列出工具');
+  console.log(`  → 共 ${tools.length} 个工具：${tools.map(t => t.name).join('、')}`);
+  const result: any = await client.callTool('search_issues', { query: '压缩' });
+  dump('3. 调用工具');
+  console.log(`  → 模型会看到：${result.content.map((c: any) => c.text).join('')}`);
+  await client.callTool('slow_count', { to: 2, delayMs: 50 }, { onProgress: (p: any) => console.log(`  ⋯ 进度回调：${p.message}`) });
+  dump('4. 带进度的调用');
+  await client.close();
+  assert.ok(n1 >= 3);
+  assert.equal(tools.length, 8);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }

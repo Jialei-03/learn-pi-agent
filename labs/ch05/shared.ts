@@ -2,9 +2,12 @@
 import { cpSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runLoop, type Event } from '../../mox/src/loop.ts';
+import type { Event } from '../../mox/src/loop.ts';
 import type { Model } from '../../mox/src/model.ts';
-import { codingTools } from '../../mox/src/tools.ts';
+import { loadMox } from '../shared/mox-dir.ts';
+
+const { runLoop } = await loadMox('loop.ts');
+const { codingTools } = await loadMox('tools.ts');
 
 /** 把有 bug 的示例项目复制到临时目录。 */
 export function freshProject() {

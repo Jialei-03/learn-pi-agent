@@ -53,31 +53,3 @@ assert.notEqual(fifo[0].id, 'b', 'FIFO 会把别人的响应交给 bash');
 assert.ok(pi.stderr.includes('[faux-ext]'));
 console.log(`\n扩展加载时执行了 console.log，它没有进入 stdout，而是出现在 stderr：\n  ${JSON.stringify(pi.stderr.trim())}`);
 await pi.close();
-
-// ── mox-rpc：同样的事，但每条命令都是同步处理的 ─────────────────────
-const mox = await Link.open('mox', '1.5');
-mox.send({ id: 'p', type: 'prompt', message: '构建项目' });
-await mox.until(r => r.type === 'tool_start');
-mox.send({ id: 's', type: 'get_state' });
-mox.send({ id: 'm', type: 'get_messages' });
-mox.send({ id: 'q', type: 'prompt', message: '顺便看看有没有警告' });
-await mox.until(r => r.id === 'q');
-const moxArrival = mox.received.filter(isResponse).map(r => r.id);
-assert.deepEqual(moxArrival, ['p', 's', 'm', 'q']);
-console.log(`\nmox-rpc：命令发送顺序 s → m → q，响应到达顺序 ${moxArrival.slice(1).join(' → ')}`);
-console.log('（同步处理，顺序碰巧一致；协议并不保证，客户端不能依赖）');
-await mox.until(r => r.type === 'agent_settled', 0);
-await mox.close();
-
-// 背靠背的两条 prompt：mox-rpc 在“收下”的那个同步片段里就创建了 AbortController，所以第二条到达时已经知道有运行了
-const burst = await Link.open('mox', '0.3');
-burst.send({ id: 'p1', type: 'prompt', message: '构建项目' });
-burst.send({ id: 'p2', type: 'prompt', message: '顺便看看有没有警告' });
-await burst.until(r => r.type === 'agent_settled');
-await burst.close();
-const dispositions = burst.received.filter(isResponse).map(r => `${r.id}=${r.data.disposition}`);
-const starts = burst.received.filter(r => r.type === 'agent_start').length;
-assert.deepEqual(dispositions, ['p1=started', 'p2=queued']);
-assert.equal(starts, 1, '只有一次运行');
-console.log(`mox-rpc：同时写入两条 prompt → ${dispositions.join('，')}`);
-console.log(`agent_start 出现 ${starts} 次（只有一个运行）`);

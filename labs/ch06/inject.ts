@@ -6,7 +6,10 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { systemPrompt } from '../../mox/src/context.ts';
+import { loadMox, whose } from '../shared/mox-dir.ts';
+
+const { systemPrompt } = await loadMox('context.ts');
+console.log(`${whose()}\n`);
 
 const root = mkdtempSync(join(tmpdir(), 'ch06-inject-'));
 const repo = join(root, 'cloned-repo');

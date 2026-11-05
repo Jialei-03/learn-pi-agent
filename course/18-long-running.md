@@ -1,14 +1,14 @@
 ---
 motto: 长任务的难处不在“做”，而在“等”“停”和“断了之后”。
 learn:
-  - 后台命令：开发服务器和长时间构建怎么跑，mox 的扩展为什么叫不醒一个空闲的 Agent，又怎样用 agent_end 做到“结束时通知”
-  - 目标循环：模型说“完成了”不算，检查通过才算；读懂 cli.ts 里那个 while 循环，以及两道刹车
-  - 崩溃之后：session.ts 恢复时补“中断”做了什么，没做什么；旧版 mox 的“重放安全”为什么不见了
-  - 崩溃的三个位置：为什么「没有结果」不等于「没有执行」，以及 Pi durable 怎样用“意图先于效果”和重启计数封住窗口
-  - 重放安全和幂等：什么时候可以重做，什么时候只能问模型
+  - 后台命令：开发服务器和长时间构建怎么跑，Pi 的扩展怎样在命令结束时叫醒空闲的 Agent
+  - 目标循环：模型说“完成了”不算，检查通过才算；`agent_before_settle` 与两道刹车
+  - 崩溃之后：记录停在哪里就知道断在哪里；崩溃的三个位置，为什么「没有结果」不等于「没有执行」
+  - Pi durable：“意图先于效果”的三次提交、重启计数，以及重放安全和幂等
+  - 实战：给 mox 加上崩溃恢复（补“中断”）、目标循环和后台命令
 prereq: 第 3、7、9 章
 time: 90 分钟
-build: extensions/background/mox.ts、extensions/goal/mox.ts（给 mox 写两个扩展，Pi 版本在同目录的 index.ts）；读懂 mox/src/session.ts 的崩溃恢复
+build: 实战：mox/src/session.ts 的崩溃恢复、extensions/goal/mox.ts、extensions/background/mox.ts
 ---
 
 ## 三种“长”
@@ -19,7 +19,7 @@ build: extensions/background/mox.ts、extensions/goal/mox.ts（给 mox 写两个
 2. **任务本身很长。** “把所有失败的测试修好”需要很多轮，模型可能在第三轮就宣布“完成了”。
 3. **运行本身会断。** 笔记本合上了，进程被杀了，网络断了。重新打开时，Agent 应该从哪里继续？
 
-前两种用 mox 的扩展接口就能解决，这一章写两个扩展：后台命令和目标循环。第三种在 mox 的 `session.ts` 里已经有一段处理，读完它，再去看 Pi 的 durable 包怎样把同一个问题做到极致。
+Pi 的扩展系统覆盖前两种（后台命令和目标循环都是扩展），第三种它的 `durable` 包从头为“随时可能断”设计。这一章按这个顺序读：先看两个扩展怎么用 Pi 的事件做出来，再看崩溃恢复，最后在 mox 里各做一个最小版本。
 
 ## 后台命令
 
@@ -33,101 +33,72 @@ build: extensions/background/mox.ts、extensions/goal/mox.ts（给 mox 写两个
 
 @code extensions/background/jobs.ts#BackgroundJobs collapse=true
 
-几个细节：输出只保留最后 1MB（一个跑了一整天的开发服务器不能把内存吃光）；`bash_output` 只返回新内容（模型每次查看都只付新增部分的 token）；结束时杀整个进程组（第 5 章）；会话结束时清理所有后台命令。这个类和 Pi 版本共用，mox 扩展只负责把它接到 mox 的接口上。
+几个细节：输出只保留最后 1MB（一个跑了一整天的开发服务器不能把内存吃光）；`bash_output` 只返回新内容（模型每次查看都只付新增部分的 token）；结束时杀整个进程组（第 5 章）；会话结束时清理所有后台命令。这个类和 mox 版本共用。
 
-### 结束时通知：Pi 能做的事，mox 做不到
+### 结束时通知，而不是轮询
 
-最关键的设计在命令**结束**的时候。模型如果不知道命令什么时候结束，就只能反复调用 `bash_output`，每次都是一次完整的模型请求。更好的办法是让 Agent 闲下来，命令结束时**通知它**。Pi 的扩展可以随时往会话里发一条消息，选项决定怎么送达：
+最关键的设计在命令**结束**的时候。模型如果不知道命令什么时候结束，就只能反复调用 `bash_output`——每次都是一次完整的模型请求。更好的办法是让 Agent 闲下来，命令结束时**通知它**。Pi 的扩展可以随时往会话里发一条消息：
 
 @code extensions/background/index.ts#L15-L26 hl=18,20-23,26
 
-`deliverAs: 'followUp'`：Agent 正在工作时，排在当前任务之后（第 3 章的追加队列）；`triggerTurn: true`：Agent 空闲时，开始新的一轮。扩展自己决定什么时候开口。
-
-mox 的扩展接口里没有这样的东西。八个接口（`registerTool`、`registerCommand`、`addSystemPrompt`、`ask`、四个事件）里，没有一个能“往会话里塞一句话并叫醒 Agent”。扩展唯一的一次发言机会，是 `agent_end`：Agent 准备停下的那一刻，处理函数可以返回一个字符串，`cli.ts` 把它当作新的用户消息再跑一轮（后面的目标循环用的也是这个）。
-
-所以 mox 的后台命令换了一种约定：**由模型在启动时声明**。`bash_background` 有一个 `notify` 参数：
-
-- 构建、测试这类会结束、而且模型需要结果的命令，设 `notify: true`。模型说完话之后，`agent_end` 处理函数发现还有 notify 的命令在跑，就**等**到它结束，再把结局当作下一句话交给模型。等待期间没有任何模型请求。
-- 开发服务器这类不会结束的命令不设 notify，Agent 照常停下。没有人会等它。
-
-@code extensions/background/mox.ts#createBackgroundMoxExtension hl=22,25,31,34,40,42,52,53 collapse=false
-
-逐段看：
-
-- **第 22 行：`shutdown` 事件。** mox 退出时（`-p` 跑完，或者 `/exit`）清理所有后台命令。没有这一行，`mox -p "启动开发服务器"` 结束后，`sleep` 还留在系统里。
-- **第 25–28 行：`addSystemPrompt`。** 系统提示每次运行前重新取值，所以下一次提问时，模型能看到“当前的后台命令：#2 运行中（134 秒）：npm run dev”。这是 mox 给“长期存在的状态”留的唯一通道。
-- **第 31–44 行：`agent_end`。** 循环里先看有没有已经结束、还没告诉过模型的 notify 命令，有就返回报告；没有但还有 notify 命令在跑，就 `await` 它们的“结束”信号（`Promise.race`，另加一个最长等待的超时）；都没有，返回空，让 Agent 停下。
-- **第 52–53 行：启动时登记。** 每个命令有一个“结束了”的 Promise（`exited`），`onExit` 把它解开；`notify` 为真的编号放进 `notify` 集合，`agent_end` 只关心这些。
-- **超时的计时器要 `unref`。** 否则它会挡住进程退出：命令明明结束了，`mox -p` 还要再等十分钟。这是实验写出来之后才发现的一个真问题。
-
-用真正的 `mox -p` 跑一遍，模型是一个照剧本说话的假服务器，它记下每次请求到达的时刻：
-
-@lab node labs/ch18/background.ts
-
-- 第 1–3 次请求紧挨着：启动构建（`notify: true`）、看一眼进度（还没有输出）、告诉用户“结束时会收到通知”。
-- 第 3 次到第 4 次之间隔了约一秒，正好是构建的时长。这一秒里，mox 在 `agent_end` 里等；**没有任何模型请求**。第 4 次请求的最后一条消息，就是扩展交来的报告：退出码和最后的输出，模型据此回答“构建成功”。
-- 第二段：不设 notify 的 `sleep 60`。mox 没有等它，立刻退出；退出时 `shutdown` 把它杀掉了，进程不在了。
-
-Pi 的版本在同一个场景下是这样的（同样的构建，通知由 `sendMessage` 发出，空闲的 Agent 被唤醒）：
+`pi.sendMessage` 的两个选项决定了通知怎么送达：`deliverAs: 'followUp'`——Agent 正在工作时，排在当前任务之后（第 3 章的追加队列）；`triggerTurn: true`——Agent 空闲时，开始新的一轮。扩展自己决定什么时候开口，Agent 空闲也能被叫醒。`session_shutdown` 里先置 `closed` 再 `killAll`：会话已经结束，就不再往一个不存在的会话里发消息。
 
 @lab node labs/ch18/background-pi.ts
 
-两种做法的差别：Pi 的扩展在任何时刻都能开口，Agent 空闲时也能被叫醒；mox 的扩展只能在 Agent 要停下的那一刻接话，而且要靠 `await` 把这一刻拖长。对 `mox -p` 这种一次性运行，这就够用；对交互模式，等待期间输入框是占住的（`controller` 还在，打的字会作为插话排队），Ctrl+C 也叫不停这个 `await`，因为处理函数拿不到取消信号。这是 mox 接口的真实边界，也是练习题的好材料。
+第 0.4 秒，模型启动构建、看了一眼进度，告诉用户“结束时会收到通知”，这次运行结束。第 0.9 秒，构建完成，通知唤醒了 Agent，模型根据最后的输出继续工作。中间这段时间没有任何模型请求。
 
-::: steps 后台命令：启动、看一眼、等待、被叫醒
---- 模型调用 `bash_background`，参数里 `notify: true`。扩展让 `BackgroundJobs` 启动进程，记下编号 #1 在 `notify` 集合里，**立即**返回，不等命令结束，这次工具调用几乎没有耗时。
+::: steps 后台命令：启动、看一眼、等通知
+--- 模型调用 `bash_background`。扩展让 `BackgroundJobs` 启动进程，**立即**返回编号 #1，不等命令结束，这次工具调用几乎没有耗时。
 sequenceDiagram
+  participant U as 用户
   participant M as 模型
-  participant C as cli.ts 的 run
   participant X as 后台扩展
   participant J as BackgroundJobs
-  M->>X: bash_background(构建, notify)
+  M->>X: bash_background(构建)
   X->>J: jobs.start(command)
   X-->>M: 已启动 #1（立即返回）
 --- 模型想看看进度，调用 `bash_output`。`jobs.read` 只返回自上次查看以来的新输出，模型只为新增的部分付 token。
 sequenceDiagram
+  participant U as 用户
   participant M as 模型
-  participant C as cli.ts 的 run
   participant X as 后台扩展
   participant J as BackgroundJobs
   X-->>M: 已启动 #1（立即返回）
   M->>X: bash_output(1)
-  X-->>M: 运行中，没有新输出
---- 模型知道结束时会收到通知，不再轮询：告诉用户“构建在后台进行”，这一轮没有工具调用，`runLoop` 返回。
+  X-->>M: 只返回新输出
+--- 模型知道结束时会有通知，不再轮询：告诉用户“构建在后台进行”，这次运行结束。到 0.4 秒，Agent 空闲，没有任何模型请求在进行。
 sequenceDiagram
+  participant U as 用户
   participant M as 模型
-  participant C as cli.ts 的 run
   participant X as 后台扩展
   participant J as BackgroundJobs
-  X-->>M: 运行中，没有新输出
-  M-->>C: 构建在后台进行（没有工具调用）
-  Note over M,C: runLoop 返回
---- `run` 的 while 循环调用 `extensions.emit('agent_end', final)`。后台扩展的处理函数发现 #1 是 notify 命令、还在跑，于是 `await` 它的结束信号。这一刻没有任何模型请求。
+  X-->>M: 只返回新输出
+  M-->>U: 构建进行中，结束会通知
+  Note over M,U: 运行结束，Agent 空闲
+--- 到 1.0 秒构建完成。`BackgroundJobs` 调用 `jobs.onExit`；扩展先检查会话有没有关闭（`closed`），再读出最后的输出。
 sequenceDiagram
+  participant U as 用户
   participant M as 模型
-  participant C as cli.ts 的 run
   participant X as 后台扩展
   participant J as BackgroundJobs
-  C->>X: agent_end
-  Note over X,J: await 命令结束（约 1 秒）
---- 构建结束，`BackgroundJobs` 调用 `onExit`，解除扩展的等待。处理函数读出最后的输出，拼成报告。
+  Note over M,U: 运行结束，Agent 空闲
+  J-->>X: onExit（1.0 秒，退出码 0）
+--- 扩展用 `pi.sendMessage` 发一条消息，选项是 `deliverAs: 'followUp'` 加 `triggerTurn: true`。Agent 正在工作就排在当前任务之后；空闲就像这里一样，开始新的一轮。
 sequenceDiagram
+  participant U as 用户
   participant M as 模型
-  participant C as cli.ts 的 run
   participant X as 后台扩展
   participant J as BackgroundJobs
-  Note over X,J: await 命令结束（约 1 秒）
-  J-->>X: onExit（退出码 0）
-  X-->>C: 返回报告（字符串）
---- 返回值非空，`run` 把它作为新的用户消息追加进会话，再调用 `runLoop`。模型看到退出码和最后的输出，继续工作。
+  J-->>X: onExit（1.0 秒，退出码 0）
+  X->>M: sendMessage：#1 已退出
+--- 通知唤醒了 Agent，模型看到退出码和最后的输出，继续工作。从 0.4 到 1.0 秒这段时间，没有消耗一次模型请求。
 sequenceDiagram
+  participant U as 用户
   participant M as 模型
-  participant C as cli.ts 的 run
   participant X as 后台扩展
   participant J as BackgroundJobs
-  X-->>C: 返回报告（字符串）
-  C->>M: 用户消息：后台命令 #1 已退出
-  M-->>C: 构建成功，可以继续部署了
+  X->>M: sendMessage：#1 已退出
+  M-->>U: 构建成功，可以继续部署了
 :::
 
 ## 目标循环：做完才停
@@ -142,36 +113,19 @@ sequenceDiagram
 /goal "node test.js" 修好 add 函数
 ```
 
-模型每次准备停下，扩展都运行一遍检查命令。退出码为 0 才算完成；否则把检查输出的最后部分交给模型，再来一轮。检查和判断的逻辑与 Pi 版本共用：
+模型每次准备停下，扩展都运行一遍检查命令。退出码为 0 才算完成；否则把检查输出的最后部分交给模型，再来一轮。
 
 @code extensions/goal/goal.ts#evaluate
 
-“再来一轮”由谁执行？mox 的 `cli.ts` 里有一个不起眼的 while 循环：
-
-@code mox/src/cli.ts#L119-L141 hl=125,129,130,131
-
-第 130 行是整个机制的入口：`runLoop` 返回（模型不再调用工具）之后，把最后的回答交给 `agent_end` 事件；处理函数返回的**第一个非空字符串**成为 `text`，循环回到第 125 行，把它当作一条新的用户消息追加到会话（第 126–128 行）、再跑一轮 `runLoop`。第 131 行把这句话打印在终端上（“扩展让 Agent 继续”），所以用户看得见每一次续跑。返回空，`text` 为 `undefined`，循环结束，这一次提问完成。
-
-扩展只是回答了一个问题：“要不要再来一轮，说什么？” 其余都是 `cli.ts` 的事。对照 Pi，同一个“准备停下”的时刻叫 `agent_before_settle`，是运行真正结束前的最后一个决策点（第 9 章）：
+挂在 Pi 的 `agent_before_settle` 上——运行真正结束前的最后一个决策点（第 9 章），处理函数可以追加一条消息并要求继续：
 
 @pi packages/coding-agent/docs/extensions.md#L665-L689
 
-同一个处理函数，Pi 和 mox 的写法并排看：
+Pi 版本的处理函数：
 
-::: tabs
-@@ Pi
 @code extensions/goal/index.ts#L22-L32
-返回 `entries` 加 `continue: true`：把失败信息追加成一条自定义消息，再跑一轮。
-@@ mox
-@code extensions/goal/mox.ts#L25-L32
-返回字符串：内核把这段文字当作下一条用户消息。`evaluate` 完全共用 `goal.ts`。
-:::
 
-设定目标的方式也不同：交互模式里 `/goal "检查命令" 目标描述` 是一个注册的命令（`registerCommand`）；`mox -p` 是一次性的，不处理 `/` 开头的命令，所以扩展还认环境变量 `MOX_GOAL="检查命令"`，CI 里可以直接用：
-
-```bash
-MOX_GOAL="npm test" mox -p "修好失败的测试" --yolo -e extensions/goal/mox.ts
-```
+返回 `entries` 加 `continue: true`：把失败信息追加成一条自定义消息，再跑一轮。`/goal` 命令本身用 `pi.sendUserMessage` 把目标作为第一条消息发出去，并在状态栏显示目标。
 
 ### 两道刹车
 
@@ -180,37 +134,33 @@ MOX_GOAL="npm test" mox -p "修好失败的测试" --yolo -e extensions/goal/mox
 - **轮数上限**：最多几轮。
 - **原地打转检测**：上一轮什么文件都没改，检查也还是失败，再继续也不会有不同的结果。工作目录的“指纹”（每个文件的路径、大小、修改时间）在两轮之间没有变化，就停下来交给人。
 
-@lab node labs/ch18/goal.ts
-
-第一个场景：模型先是嘴上说“已经修好了”，检查失败，测试的输出（`add(2, 3) = -1，期望 5`）被交回给它；第二轮它真的改了代码，检查通过，终端上出现“目标达成”。第二个场景：模型一直声称修好了却什么都没改，第二轮就被原地打转检测拦下，没有等到轮数上限。最后一段不经过命令行，直接调用扩展：`/goal` 命令设定目标，Agent 说“已经修好了”准备停下时，`agent_end` 返回的就是那句“目标还没有达成（第 1/2 轮）……”。
-
-同样的两个场景，Pi 版本的结果（目标由 `agent_before_settle` 追加一条自定义消息，Agent 被叫醒继续；轮数和打转的判断用的是同一个 `evaluate`）：
-
 @lab node labs/ch18/goal-pi.ts
+
+第一个场景：模型先是嘴上说“已经修好了”，检查失败，测试的输出（`add(2, 3) = -1，期望 5`）被交回给它；第二轮它真的改了代码，检查通过。第二个场景：模型一直声称修好了却什么都没改，第二轮就被原地打转检测拦下，没有等到轮数上限。
 
 这种“把同一个目标反复喂给 Agent，直到客观的检查通过”的做法，社区里常被叫作 Ralph loop。它的前提是有一个**可靠的、可以自动运行的检查**——测试、类型检查、lint。目标越难自动验证（“把界面做得好看一点”），这个模式就越不适用。
 
 ::: steps 目标循环：嘴上说完成不算，检查通过才算
---- `MOX_GOAL="node test.js"` 之后，模型第一轮什么文件都没改，就说“已经修好了”，没有工具调用，`runLoop` 返回。
+--- `/goal "node test.js" 修好 add 函数` 之后，模型第一轮什么文件都没改，就说“已经修好了”，准备停下。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts 的 run
+  participant L as Agent 循环
   participant G as 目标扩展
   participant C as node test.js
   M-->>L: 已经修好了（没改文件）
---- `run` 的 while 循环调用 `extensions.emit('agent_end', final)`：Agent 准备停下的最后一个决策点。目标扩展的处理函数调用 `evaluate`。
+--- 这是 `agent_before_settle`：运行真正结束前的最后一个决策点。目标扩展的处理函数调用 `evaluate`。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts 的 run
+  participant L as Agent 循环
   participant G as 目标扩展
   participant C as node test.js
   M-->>L: 已经修好了（没改文件）
-  L->>G: agent_end
+  L->>G: agent_before_settle
   G->>C: evaluate 运行检查
 --- `runCheck` 在工作目录里跑检查命令，退出码不是 0，输出里写着 `add(2, 3) = -1，期望 5`。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts 的 run
+  participant L as Agent 循环
   participant G as 目标扩展
   participant C as node test.js
   G->>C: evaluate 运行检查
@@ -218,82 +168,53 @@ sequenceDiagram
 --- `evaluate` 检查两道刹车：`goal.round` 加一，没超过轮数上限；`fingerprint` 对比上一轮的指纹——这是第一次失败，还没有可比较的，于是记下当前指纹，返回 `continue`。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts 的 run
+  participant L as Agent 循环
   participant G as 目标扩展
   participant C as node test.js
   C-->>G: 失败：add(2, 3) = -1
   Note over G: round 加一，记下指纹
---- 处理函数把失败信息（检查输出的最后 15 行以内）作为字符串返回。`run` 把它追加成用户消息，再跑一轮 `runLoop`，模型被告知“只说完成了不算数”，开始改代码。
+--- 处理函数把失败信息（检查输出的最后 15 行以内）作为 `custom_message` 追加，返回 `continue: true`，模型被告知“只说完成了不算数”，继续一轮。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts 的 run
+  participant L as Agent 循环
   participant G as 目标扩展
   participant C as node test.js
   Note over G: round 加一，记下指纹
-  G-->>L: 返回字符串：目标还没有达成……
-  L->>M: 用户消息：目标还没有达成
+  G-->>L: 追加消息，continue
   M->>L: edit：减号改加号
---- 第二轮模型真的改了代码，再次准备停下，第二次 `agent_end`。
+--- 第二轮模型真的改了代码，再次准备停下，第二次 `agent_before_settle`。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts 的 run
+  participant L as Agent 循环
   participant G as 目标扩展
   participant C as node test.js
   M->>L: edit：减号改加号
   M-->>L: 这次真的修好了
-  L->>G: agent_end（第二次）
---- 检查命令退出码为 0，`evaluate` 返回 `done`，扩展清掉目标，打印“目标达成”，不返回字符串，循环结束。如果模型这一轮仍然什么都没改，指纹和上一轮相同，`evaluate` 会返回 `stop`，交给人。
+  L->>G: agent_before_settle（第二次）
+--- 检查命令退出码为 0，`evaluate` 返回 `done`，扩展清掉目标，通知“目标达成”，运行结束。如果模型这一轮仍然什么都没改，指纹和上一轮相同，`evaluate` 会返回 `stop`，交给人。
 sequenceDiagram
   participant M as 模型
-  participant L as cli.ts 的 run
+  participant L as Agent 循环
   participant G as 目标扩展
   participant C as node test.js
-  L->>G: agent_end（第二次）
+  L->>G: agent_before_settle（第二次）
   G->>C: runCheck
   C-->>G: 退出码 0
-  G-->>L: done，不返回字符串，循环结束
+  G-->>L: done，运行结束
 :::
 
 ## 崩溃之后
 
 ### 记录停在哪里，就知道断在哪里
 
-第 7 章让会话的每一条消息一形成就写盘：`runLoop` 每 `push` 一条消息，`cli.ts` 的 `onEvent` 就 `session.save` 一次。这正是崩溃恢复的基础：重新打开会话，看最后一条记录是什么：
+第 7 章让会话的每一条消息一形成就写盘。这正是崩溃恢复的基础：重新打开会话，看最后一条记录是什么：
 
 - **用户消息或工具结果**：模型还欠一个回复。重新请求就行，最多是同一个请求发了两次。
 - **助手的工具调用，但缺少结果**：麻烦在这里。工具可能还没开始执行，也可能执行完了，只是结果还没来得及写下。
 
-mox 的工具是**顺序**执行的（第 3 章），每个调用的结果在它执行完的那一刻就写盘。所以最多只有**一个**调用处在“执行了一半”的状态，排在它后面的调用还没开始。但会话文件里看不出这个区别。
+最朴素的做法是把没有结果的调用全部重新执行一遍。对读文件来说重放无害，对部署、发邮件、扣款来说就是事故。
 
-### 实验：kill -9
-
-一个真正的 `mox -p` 进程，模型一次发出三个工具调用：读 README、执行部署命令（往 `deploy.log` 追加一行，然后 `sleep 30`）、读源码。部署命令把那一行写进去之后，整个进程组被 `kill -9`。然后用 `mox -c` 恢复：
-
-@lab node labs/ch18/crash.ts
-
-看第一段：会话里有助手的三个调用，只有 c1 的结果。`deploy.log` 里已经有了一行：c2 的效果**已经发生**，命令还在 sleep。c3 其实根本没开始，可是会话里它和 c2 一模一样：都没有结果。
-
-**朴素的做法**是把没有结果的调用全部重新执行一遍：部署执行了两次。对读文件来说重放无害，对部署、发邮件、扣款来说就是事故。
-
-### session.ts 补上“中断”
-
-mox 的恢复只有九行，写在 `openSession` 的末尾：
-
-@code mox/src/session.ts#L36-L44 hl=37,38,39,40,41
-
-- 第 37–38 行：找到**最后一条**助手消息，收集它后面已经有结果的 `tool_call_id`。只看最后一条，因为之前的助手消息之后一定跟着完整的结果，否则那次请求早就发不出去了。
-- 第 39–43 行：最后一条助手消息里没有结果的调用，每个补一条结果“中断：上次运行在这个工具执行时退出，结果未知，需要的话请检查后重试。”，既追加到内存里的 `messages`，也 `save` 进文件。
-- 为什么要补？OpenAI 的接口要求助手消息里的每个 `tool_call` 都有对应的 tool 消息，缺一个，这个请求就会被 400 拒绝。实验的最后一段数过：补之前有 2 个没有结果的调用，补之后是 0 个。
-
-进程如果恰好死在写一行记录的中途，文件的最后会剩下半行 JSON。`openSession` 在读文件时也准备了这种情况（同一个函数的第 21–25 行）：文件不以换行结尾，就先补一个换行，免得新记录和那半行粘在一起；解析不了的行直接跳过，不让一个坏行把整个会话变得打不开。
-
-补完之后模型看到两个“中断”，自己决定怎么办。实验里它先 `cat deploy.log`，发现部署已经做过，没有重复。`mox -c` 恢复会话时自动做这件事，用户什么都不用管。
-
-### 旧版 mox 多做的，和 mox 现在少做的
-
-课程原来用的 mox 比现在多一层：工具可以声明 `replaySafe`，恢复时 `read` 这类只读工具直接**重新执行**，不写“中断”，其余才交给模型。现在的 mox 没有这一层。这是有意的取舍，不是疏忽：每个工具多一个声明、恢复时多一段执行逻辑，换来的只是模型少花一轮重读文件。实验里 c3 就是这样：它被写成“中断”，模型想继续时要自己把源码再读一次。
-
-四种恢复策略放在一起，看每一种在三个崩溃位置会发生什么。这个实验不是 mox 的代码，只是一个最小模型：“崩溃”就是在那个位置抛出异常、丢掉内存里的一切，恢复时只能读存储；外部世界（部署了几次）不受崩溃影响。
+### 崩溃的三个位置
 
 把一个工具调用的时间线切开，崩溃可能落在三个位置：
 
@@ -301,13 +222,15 @@ mox 的恢复只有九行，写在 `openSession` 的末尾：
 - **② 意图已记录，工具刚要开始。** 只有执行前就把“我要执行了”写进存储的实现，才有这个位置。
 - **③ 工具跑完了，结果没来得及写。** 效果已经发生。
 
+下面的实验用一个最小的模型，把“三个位置 × 四种恢复策略”排成一张表。它不是 Pi 的代码，只复刻几种记录方式：“崩溃”就是在那个位置抛出异常、丢掉内存里的一切，恢复时只能读存储；外部世界（部署了几次）不受崩溃影响。
+
 @lab node labs/ch18/sandwich.ts
 
-四列策略分别是：**朴素重放**（没有结果的调用全部重新执行）、**mox**（一律写“中断”）、**声明重放安全**（旧版 mox 和 Pi durable 的规则：声明过的工具直接重跑，其余写“中断”）、**效果三明治**（执行前先把“意图”写进存储，执行后再写结果）。逐行看：
+四列策略分别是：**朴素重放**（没有结果的调用全部重新执行）、**一律中断**（只看会话记录，没有结果的一律写“中断”，交给模型去查证）、**声明重放安全**（工具声明自己能不能重放，声明过的直接重跑，其余写“中断”）、**效果三明治**（执行前先把“意图”写进存储，执行后再写结果）。逐行看：
 
 - `deploy` 的第 ③ 行是事故现场：朴素重放让部署生效了两次。后三种都只生效一次，并把“中断”告诉模型，让它去查证。
-- `read` 的三行是 mox 的代价：重放无害，mox 却也写“中断”，模型多花一轮重读。声明重放安全的两列把这一轮省掉了。
-- 第 ① 行是 mox 的另一处浪费：部署根本没开始，mox 却写下“中断”，模型要多花一轮 `cat deploy.log`，才知道还得重新部署。三明治在执行前写了意图，所以**没有意图，就说明工具肯定没开始**，可以直接执行，模型什么都不用管。
+- `read` 的三行是“一律中断”的代价：重放无害，却也写“中断”，模型多花一轮重读。声明重放安全的两列把这一轮省掉了。
+- 第 ① 行是一律中断的另一处浪费：部署根本没开始，却写下“中断”，模型要多花一轮查 `deploy.log`，才知道还得重新部署。三明治在执行前写了意图，所以**没有意图，就说明工具肯定没开始**，可以直接执行，模型什么都不用管。
 - 第 ② 和 ③ 行，三明治自己也分不清：意图写下了，但不知道工具有没有开始。这段窗口关不上，因为外部效果和本地写入不可能是同一个原子操作。能做的只有三件事：声明重放安全；给外部操作带上幂等键（最后一组的第 ③ 行：朴素重放让带键的部署执行了 2 次，但只生效 1 次）；老老实实告诉模型“不知道”。
 
 所以三明治的价值不是消灭不确定性，而是把它**压缩到最小的一段**：意图提交和结果提交之间。这段之外的状态都是确定的，恢复时不用问任何人。
@@ -391,7 +314,7 @@ flowchart LR
 
 ### 提交 ①：助手消息和工具任务一起写入
 
-mox 的 `session.ts` 靠“最后一条助手消息里，有没有对应的结果”来推断哪些调用没做完。Pi 不推断：助手消息写入的**同一次提交**里，每个工具调用都建好了自己的任务记录。
+一个只看会话文件的恢复（实战里的 mox 就是这样）靠“最后一条助手消息里，有没有对应的结果”来推断哪些调用没做完。Pi 不推断：助手消息写入的**同一次提交**里，每个工具调用都建好了自己的任务记录。
 
 @pi packages/durable/src/harness/generation.ts#L1028-L1055 hl=1030,1041,1054
 
@@ -418,18 +341,13 @@ mox 的 `session.ts` 靠“最后一条助手消息里，有没有对应的结�
 
 @pi packages/durable/test/harness-tools-recovery.test.ts#L109-L134 hl=122-124,126,129-131
 
-重新打开后，存储里的检查点正是 `{ phase: "execute", arguments: {}, replay: "unsafe" }`；工具一共只运行了 1 次（`state.runs`）；模型收到的结果是崩溃前已提交的输出 `run 1`，加上那句“was interrupted and may have partially run”。mox 补的那条“中断”做的是同一件事，只是没有那半截输出。
+重新打开后，存储里的检查点正是 `{ phase: "execute", arguments: {}, replay: "unsafe" }`；工具一共只运行了 1 次（`state.runs`）；模型收到的结果是崩溃前已提交的输出 `run 1`，加上那句“was interrupted and may have partially run”。实战里 mox 补的那条“中断”做的是同一件事，只是没有那半截输出。
 
-同一件事——“重启后，没有结果的工具调用怎么处理”——Pi 的 durable 和 mox 的写法对照：
+同一件事——“重启后，没有结果的工具调用怎么处理”——在 Pi 的 durable 里是这样决定的：
 
-::: tabs
-@@ Pi durable
 @pi packages/durable/src/harness/tool.ts#L202-L227
-重启时有任务记录：阶段、存下来的参数和策略。重放要求存下的策略和现在注册的策略都是 `safe`，并且用存下的参数。
-@@ mox
-@code mox/src/session.ts#L36-L44
-只有“最后一条助手消息里有哪些调用没有结果”这一条线索，所以不区分工具，也不区分崩在哪个位置：没有结果的一律写“中断”。
-:::
+
+重启时有任务记录：阶段、存下来的参数和策略。重放要求存下的策略和现在注册的策略都是 `safe`，并且用存下的参数。章末实战里 mox 只用最朴素的一条线索——最后一条助手消息里哪些调用没有结果——不区分工具，也不区分崩在哪个位置，一律写“中断”。
 
 ### 提交 ③：结果和终态一起写入
 
@@ -441,7 +359,7 @@ mox 的 `session.ts` 靠“最后一条助手消息里，有没有对应的结�
 
 @pi packages/durable/docs/spec.md#L2399-L2404
 
-写终态记录、追加结果条目、退休任务的文档、结算被它完成的提交，要么全部发生，要么全部不发生。所以存储里不会出现“结果条目已经在对话里，任务却还是 running”这种半成品。mox 用“最后一条消息是不是结果”来判断调用做完没有，在 Pi 里变成了“任务是不是终态”。
+写终态记录、追加结果条目、退休任务的文档、结算被它完成的提交，要么全部发生，要么全部不发生。所以存储里不会出现“结果条目已经在对话里，任务却还是 running”这种半成品。只看会话文件的做法用“最后一条消息是不是结果”来判断调用做完没有，在 Pi 里变成了“任务是不是终态”。
 
 ### 崩溃也要记账：restartLimit
 
@@ -504,33 +422,100 @@ mox 的 `session.ts` 靠“最后一条助手消息里，有没有对应的结�
 文档：[Interactive mode](https://code.claude.com/docs/en/interactive-mode)
 :::
 
-## 你来改
+## 实战：给 mox 加上崩溃恢复、目标循环和后台命令
+
+**目标。** mox 的三个最小版本：崩溃后 `session.ts` 给没有结果的调用补一条“中断”；`cli.ts` 里一个 `while` 循环让扩展在 Agent 停下时给出下一句话，用它写出目标循环；用同一个机制写出后台命令。它们都比 Pi 的版本简单一大截，差在哪里，每一步会说。
+
+### 第 1 步：崩溃恢复，九行
+
+在 `session.ts` 的 `openSession` 末尾，恢复出消息之后：找到**最后一条**助手消息，收集它后面已经有结果的 `tool_call_id`；这条助手消息里没有结果的调用，每个补一条“中断”，既追加到内存里的 `messages`，也 `save` 进文件。这就是要写出来的样子：
+
+@code mox/src/session.ts#L36-L44 hl=37,38,39,40,41
+
+为什么要补？OpenAI 的接口要求助手消息里的每个 `tool_call` 都有对应的 tool 消息，缺一个，这个请求就会被 400 拒绝。只看最后一条助手消息，因为之前的助手消息之后一定跟着完整的结果，否则那次请求早就发不出去了。进程如果恰好死在写一行记录的中途，文件最后会剩下半行 JSON；同一个函数的第 21–25 行处理这种情况：文件不以换行结尾就先补一个，解析不了的行直接跳过。
+
+跟刚才的表对照：这是“一律中断”那一列。真实地验证一次：一个真正的 `mox -p` 进程，模型一次发出三个调用（读 README、部署并 sleep、读源码），部署命令把一行写进 `deploy.log` 之后整个进程组被 `kill -9`，然后 `mox -c` 恢复：
+
+@lab node labs/ch18/crash.ts
+
+会话里有助手的三个调用，只有第一个有结果。`deploy.log` 里已经有了一行：c2 的效果**已经发生**，命令还在 sleep。c3 其实根本没开始，可是会话里它和 c2 一模一样：都没有结果（位置 ① 和 ③ 看起来一样）。朴素重放让部署执行了两次；补了“中断”之后，模型自己先 `cat deploy.log`，发现部署已经做过，没有重复。
+
+### 第 2 步：目标循环，一个 while 加一个扩展
+
+“再来一轮”由谁执行？`cli.ts` 的 `run` 里有一个 while 循环。要写出来的样子：
+
+@code mox/src/cli.ts#L119-L141 hl=125,129,130,131
+
+第 130 行是整个机制的入口：`runLoop` 返回（模型不再调用工具）之后，把最后的回答交给 `agent_end` 事件；处理函数返回的**第一个非空字符串**成为 `text`，循环回到第 125 行，把它当作一条新的用户消息追加到会话（第 126–128 行）、再跑一轮。返回空，循环结束。这对应 Pi 的 `agent_before_settle`，但扩展能做的少得多：只能给出“下一句话”。
+
+然后是扩展本身，`evaluate` 和 Pi 版本共用：
+
+@code extensions/goal/mox.ts#L25-L32
+
+设定目标有两种方式：交互模式里 `/goal "检查命令" 目标描述`（`registerCommand`）；`mox -p` 不处理 `/` 开头的命令，所以扩展还认环境变量 `MOX_GOAL="检查命令"`。
+
+@lab node labs/ch18/goal.ts
+
+和 Pi 的 `goal-pi` 实验是同样的两个场景：嘴上说“修好了”被检查揪出来、失败的输出交回去；一直不改文件的被原地打转检测拦下。
+
+### 第 3 步：后台命令，在 agent_end 里等
+
+mox 的扩展接口里没有 Pi 的 `sendMessage`：八个接口（`registerTool`、`registerCommand`、`addSystemPrompt`、`ask`、四个事件）里，没有一个能“往会话里塞一句话并叫醒 Agent”。扩展唯一的发言机会，是第 2 步那个 `agent_end`。所以 mox 的后台命令换一种约定：**由模型在启动时声明**。`bash_background` 有一个 `notify` 参数：构建、测试这类会结束、而且模型需要结果的命令，设 `notify: true`；开发服务器这类不会结束的不设。模型说完话之后，`agent_end` 处理函数发现还有 notify 的命令在跑，就**等**到它结束，再把结局当作下一句话交回去。等待期间没有任何模型请求。
+
+@code extensions/background/mox.ts#createBackgroundMoxExtension hl=22,25,31,34,40,42,52,53 collapse=false
+
+- **第 22 行：`shutdown` 事件。** mox 退出时清理所有后台命令；没有这一行，`mox -p "启动开发服务器"` 结束后，`sleep` 还留在系统里。
+- **第 25–28 行：`addSystemPrompt`。** 系统提示每次运行前重新取值，下一次提问时，模型能看到“当前的后台命令：#2 运行中”。
+- **第 31–44 行：`agent_end`。** 先看有没有已经结束、还没告诉过模型的 notify 命令，有就返回报告；没有但还有 notify 命令在跑，就 `await` 它们的“结束”信号；都没有，返回空，让 Agent 停下。
+- **超时的计时器要 `unref`**，否则它会挡住进程退出：命令明明结束了，`mox -p` 还要再等十分钟。这是实验写出来之后才发现的一个真问题。
+
+@lab node labs/ch18/background.ts
+
+第 1–3 次请求紧挨着：启动构建（`notify: true`）、看一眼进度、告诉用户“结束时会收到通知”。第 3 次到第 4 次之间隔了约一秒，正好是构建的时长，这一秒里 mox 在 `agent_end` 里等，**没有任何模型请求**。第 4 次请求的最后一条消息就是扩展交来的报告。第二段：不设 `notify` 的 `sleep 60`，mox 没有等它，立刻退出，退出时 `shutdown` 把它杀掉了。
+
+### 验证
+
+三部分一起检验：
+
+```bash
+node labs/ch18/practice.ts                      # 检验参考实现
+MOX_DIR=~/my-mox node labs/ch18/practice.ts     # 检验你自己的 mox（扩展放 ~/my-mox/extensions/goal.ts、background.ts）
+```
+
+它依次运行 `crash.ts`、`goal.ts`、`background.ts`，任何一部分的断言失败，进程就以非 0 退出。
+
+### 和 Pi 比，mox 省掉了什么
+
+| | Pi | mox |
+| --- | --- | --- |
+| 后台命令结束时 | `sendMessage` + `triggerTurn`，随时能叫醒空闲的 Agent | 只能在 `agent_end` 里接话，靠 `await` 把那一刻拖长；交互模式下等待期间输入框被占住，Ctrl+C 也叫不停这个 `await`（处理函数拿不到取消信号） |
+| 目标循环 | `agent_before_settle` 可以追加任意条目、显示状态栏 | 只能返回一句话 |
+| 崩溃恢复 | durable：意图先于效果、重放策略、重启计数 | 没有结果的调用一律“中断”，不区分没开始和做了一半，只读工具也要多花一轮；没有重启计数 |
+| 目标的状态 | 扩展里 | 在扩展的内存里，`mox -c` 恢复会话时不会恢复目标 |
+
+### 你来改
 
 每道题先写下预测，再动手验证。
 
 ::: predict 删掉 agent_end 处理函数
 把 `extensions/background/mox.ts` 里整个 `mox.on('agent_end', …)` 注释掉，运行 `node labs/ch18/background.ts`。模型一共发出几次请求？构建的结局，模型能看到吗？
 ???
-三次请求，模型看不到结局。前三次请求照旧：启动、看一眼、说完话；然后 `run` 的 while 循环调用 `agent_end`，没有处理函数，返回空，`mox -p` 结束，`exit()` 触发 `shutdown`，`jobs.killAll()` 把还没跑完的构建杀掉。构建在 0.9 秒时才会结束，这时进程早就没了。实验里 `requests.length === 4` 的断言会失败。这说明 mox 里“等”的责任完全在 `agent_end` 这个处理函数上：没有它，后台命令只是一个会被 `shutdown` 清理掉的孤儿。
+三次请求，模型看不到结局。前三次请求照旧：启动、看一眼、说完话；然后 `run` 的 while 循环调用 `agent_end`，没有处理函数，返回空，`mox -p` 结束，`exit()` 触发 `shutdown`，`jobs.killAll()` 把还没跑完的构建杀掉。构建在 0.9 秒时才会结束，这时进程早就没了。实验里 `requests.length === 4` 的断言会失败。这说明 mox 里“等”的责任完全在 `agent_end` 这个处理函数上。
 :::
 
 ::: predict 每一轮都改一点东西，但永远修不好
 目标是 `false`（永远失败的检查），`maxRounds` 是 3。模型每一轮都先 `write` 一次 `notes.txt`（内容每次不同），再回复一句话。这个模型一共发出几次请求？是哪道刹车拦下的？
 ???
-8 次请求，轮数上限拦下的。每一轮是两次请求（`write` 一次，回复一次）。原地打转检测（指纹）不会触发，因为每一轮 `notes.txt` 都变了：路径、大小或修改时间不同，指纹就不同。第 1、2、3 次检查失败，`round` 分别是 1、2、3，都不超过上限，各自返回“目标还没有达成（第 n/3 轮）”；第 4 次检查失败，`round` 变成 4，大于 3，`evaluate` 返回 `stop`：“已经尝试了 3 轮，检查仍然没有通过”。所以 `maxRounds` 是**续跑**的次数，模型实际工作了 4 轮。两道刹车拦的是两种不同的失败：没改东西，和改了东西但没用。
-:::
-
-::: predict 检查命令写成 true
-`MOX_GOAL="true"`，模型第一轮就回答“我不知道怎么做”，什么都没改。目标循环会怎么样？
-???
-立刻“目标达成”，不续跑一轮。`true` 的退出码永远是 0，`evaluate` 第一次检查就返回 `done`。目标循环把“完成”的定义整个交给了检查命令：检查是真的，循环才有意义；检查是假的（或者太宽松，比如只检查文件存在），循环就成了一个盖章机器。这也是第 20 章评分要用“隐藏的测试”的原因：Agent 能看到的检查，既要让它有方向，也要小心它去迎合。
+8 次请求，轮数上限拦下的。每一轮是两次请求（`write` 一次，回复一次）。原地打转检测（指纹）不会触发，因为每一轮 `notes.txt` 都变了。第 1、2、3 次检查失败，`round` 分别是 1、2、3，都不超过上限，各自返回“目标还没有达成（第 n/3 轮）”；第 4 次检查失败，`round` 变成 4，大于 3，`evaluate` 返回 `stop`。所以 `maxRounds` 是**续跑**的次数，模型实际工作了 4 轮。两道刹车拦的是两种不同的失败：没改东西，和改了东西但没用。
 :::
 
 ::: predict 崩在 c3 开始之前
 实验 `labs/ch18/crash.ts` 里，把脚本模型的三个调用改成只有两个（读 README、部署），其余不变。恢复之后，模型看到的“中断”有几条？
 ???
-一条。助手消息里只有两个调用，c1 有结果，c2 没有，`openSession` 只给 c2 补“中断”。这说明 mox 的恢复补的是“最后一条助手消息里没有结果的调用”，数量取决于崩溃时那一批里还剩几个：执行到第几个被杀，后面的就都是没有结果的。顺序执行让这个数字很小，而且一定是连续的一段（从被打断的那个调用开始，到这一批的末尾）。
+一条。助手消息里只有两个调用，c1 有结果，c2 没有，`openSession` 只给 c2 补“中断”。mox 的恢复补的是“最后一条助手消息里没有结果的调用”，数量取决于崩溃时那一批里还剩几个。顺序执行让这个数字很小，而且一定是连续的一段（从被打断的那个调用开始，到这一批的末尾）。
 :::
+
+练习：给 `session.ts` 的恢复加上“意图先写”：执行工具之前先在会话里记一条意图，恢复时据此区分“没开始”和“做了一半”，让补“中断”的情况少一些。
 
 ## 面试题
 

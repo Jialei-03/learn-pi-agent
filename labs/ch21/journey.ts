@@ -7,8 +7,11 @@ import { execSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { runMox, type CliScript } from '../shared/mox-cli.ts';
+import { whose } from '../shared/mox-dir.ts';
+import { extFile } from '../ch18/ext.ts';
+
+console.log(`${whose()}\n`);
 
 const root = mkdtempSync(join(tmpdir(), 'ch21-'));
 const cwd = join(root, 'project'), home = join(root, 'home');
@@ -23,7 +26,7 @@ writeFileSync(join(home, '.mox', 'skills', 'testing', 'SKILL.md'), '---\nname: t
 writeFileSync(join(root, 'guard.ts'), "export default mox => {\n  mox.on('tool_call', (name, args) => (name === 'bash' && /\\brm\\b/.test(args.command) ? '不允许删除文件' : undefined));\n  mox.addSystemPrompt(() => '团队约定：不要删除文件。');\n};\n");
 execSync('git init -q && git add -A && git -c user.email=a@b -c user.name=a commit -qm init', { cwd });
 
-const goalExtension = fileURLToPath(new URL('../../extensions/goal/mox.ts', import.meta.url));
+const goalExtension = extFile('goal');
 const firstUser = (messages: any[]) => messages.find(m => m.role === 'user').content as string;
 const isChild = (messages: any[]) => firstUser(messages).startsWith('调研');
 

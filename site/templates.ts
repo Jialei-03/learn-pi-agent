@@ -132,19 +132,19 @@ export function homePage() {
 <section class="hero">
   <div class="hero-copy">
     <p class="eyebrow">Agent 工程课<span>·</span>基于 Pi ${PI.version}</p>
-    <h1>从零造一个 Coding Agent<br><span class="hero-sub">再读懂一个生产级的</span></h1>
-    <p class="hero-lead">读代码、改文件、跑命令——Coding Agent 的每一个机制，在代码里是怎么做出来的？每章拆开一个：先用几十行代码亲手实现，再对照 Pi 的源码，看生产级的设计和它背后的取舍。Pi 没有内置的能力，我们写扩展补上。</p>
+    <h1>读懂一个生产级的 Coding Agent<br><span class="hero-sub">再亲手搭一个自己的</span></h1>
+    <p class="hero-lead">读代码、改文件、跑命令——Coding Agent 的每一个机制，在代码里是怎么做出来的？每章拆开 Pi 的一个：设计、源码、实验，看生产级的实现和它背后的取舍；Pi 没有内置的能力，我们写扩展补上。章末是实战：把读懂的机制用几十行代码加进你自己的 Agent，学完全课，mox 也就搭完了。</p>
     <div class="hero-actions">
       <a class="btn primary" href="chapters/00-course-map.html">开始学习</a>
-      <a class="btn-link" href="chapters/01-from-api-to-agent.html">直接写第一个 Agent →</a>
+      <a class="btn-link" href="chapters/01-from-api-to-agent.html">从第一个 Agent 读起 →</a>
     </div>
   </div>
   <figure class="hero-art"><img src="assets/mox-illustrations/mox-learning-path.png" alt="Mox 沿着模型、上下文、工具、循环、源码一路学习"></figure>
 </section>
 
 <section class="pillars">
-  <article><span class="pillar-num">01</span><h3>亲手实现</h3><p>每章在 <a href="https://github.com/Jialei-03/Mox-agent">mox</a> 里读懂、跑通一个机制。约 680 行零依赖 TypeScript，实验没有 API Key 也能离线运行。</p></article>
-  <article><span class="pillar-num">02</span><h3>读生产源码</h3><p>源码摘录在构建时从 Pi 的固定提交读取，行号自动校验。</p></article>
+  <article><span class="pillar-num">01</span><h3>读生产源码</h3><p>每章拆开 Pi 的一个机制：设计、源码逐段讲解、实验。摘录在构建时从固定提交读取，行号自动校验。</p></article>
+  <article><span class="pillar-num">02</span><h3>章末实战</h3><p>把读懂的机制亲手加进你自己的 Agent。学完全课，<a href="https://github.com/Jialei-03/Mox-agent">mox</a> 也就一块块搭完了，实验没有 API Key 也能离线运行。</p></article>
   <article><span class="pillar-num">03</span><h3>写扩展补齐</h3><p>权限、Hooks、记忆、子 Agent——Pi 没有内置的，我们自己写。</p></article>
   <article><span class="pillar-num">04</span><h3>讲得出取舍</h3><p>每章附面试题和回答要点，汇总在<a href="interview.html">面试题库</a>。</p></article>
 </section>
@@ -167,7 +167,7 @@ node mox/src/cli.ts                  # 开始和 mox 对话</code></pre>
   ${roadmap}
 </section>
 </div>`;
-  return head('Learn Pi Agent · 从零造一个 Coding Agent', '从零实现、读懂生产源码、补齐扩展能力的 Agent 工程课程。', '') + shell('', undefined, main, '', true);
+  return head('Learn Pi Agent · 读懂生产级 Coding Agent', '读懂 Pi 的源码，补齐扩展能力，再在每章末尾亲手搭出自己的 Agent。', '') + shell('', undefined, main, '', true);
 }
 
 export function interviewPage(items: { chapter: string; title: string; question: string; answer: string }[]) {

@@ -1,5 +1,5 @@
 // 第 14 章实验：权限扩展装进一个真实的 Pi 会话。界面是脚本：每次弹出确认框，按预先写好的答案选择。
-// （mox 一侧的同一组情况见 labs/ch14/mox-session.ts）
+// （mox 一侧的同一组情况见 labs/ch14/practice.ts）
 //   node labs/ch14/session.ts
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';

@@ -4,10 +4,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { MOX_DIR } from './mox-dir.ts';
 import type { ScriptReply } from './scripted.ts';
 
-const CLI = fileURLToPath(new URL('../../mox/src/cli.ts', import.meta.url));
+// 默认是课程自带的参考实现；设置 MOX_DIR 就运行你自己的 mox
+export const CLI = join(MOX_DIR, 'src', 'cli.ts');
 
 export type ChatRequest = { messages: any[]; tools?: { type: 'function'; function: { name: string; description: string; parameters: object } }[] };
 /** n 是第几次请求（从 1 开始）。 */
