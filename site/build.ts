@@ -147,7 +147,9 @@ function runLab(command: string, where: string, mergeStderr = true) {
     // 用 shell 运行，允许 `cd 目录 && 命令`；stderr 合并进输出，和读者在终端里看到的一致
     return execFileSync('sh', ['-c', mergeStderr ? `${command} 2>&1` : command], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, MOX_API_KEY: '', FORCE_COLOR: '0' }, timeout: 60_000 });
   } catch (error: any) {
-    errors.push(`${where}: 实验失败 \`${command}\`\n${error.stderr ?? error.message}`);
+    // stderr 已经合并进 stdout：失败时把输出的最后几行带上，CI 日志里才看得到原因
+    const output = `${error.stdout ?? ''}${error.stderr ?? ''}`.trim() || error.message;
+    errors.push(`${where}: 实验失败 \`${command}\`\n${output.split('\n').slice(-15).map((l: string) => `      ${l}`).join('\n')}`);
     return '';
   }
 }
